@@ -43,7 +43,7 @@ Web API tests require the `server` extra. Neo4j integration tests require `CG_RU
 
 ## Code Style
 
-We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting. Configuration lives in `ruff.toml`.
+We use [Ruff](https://docs.astral.sh/ruff/) for both linting and formatting. Configuration lives in `pyproject.toml`.
 
 ```bash
 # Check for lint errors

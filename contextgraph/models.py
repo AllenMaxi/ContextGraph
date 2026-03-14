@@ -80,6 +80,8 @@ class Memory:
     metadata: dict[str, str]
     created_at: datetime
     updated_at: datetime
+    access_list: list[str] = field(default_factory=list)
+    price: float = 0.0
 
 
 @dataclass(slots=True)

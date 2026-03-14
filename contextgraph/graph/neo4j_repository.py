@@ -100,6 +100,15 @@ class Neo4jRepository:
         self._write(query, params)
         return memory
 
+    def update_memory(self, memory: Memory) -> Memory:
+        query = """
+        MATCH (m:Memory {memory_id: $memory_id})
+        SET m += $props
+        RETURN m
+        """
+        self._write(query, {"memory_id": memory.memory_id, "props": self._serialize(memory)})
+        return memory
+
     def get_memory(self, memory_id: str) -> Memory | None:
         record = self._fetch_one("MATCH (m:Memory {memory_id: $memory_id}) RETURN m", {"memory_id": memory_id})
         if record is None:
@@ -415,6 +424,8 @@ class Neo4jRepository:
             metadata=dict(props.get("metadata", {})),
             created_at=self._parse_dt(props["created_at"]),
             updated_at=self._parse_dt(props["updated_at"]),
+            access_list=list(props.get("access_list", [])),
+            price=float(props.get("price", 0.0)),
         )
 
     def _entity_from_node(self, node: Any) -> Entity:
@@ -448,6 +459,9 @@ class Neo4jRepository:
             expires_at=self._parse_dt(props.get("expires_at")),
             updated_at=self._parse_dt(props["updated_at"]),
             review_reasons=list(props.get("review_reasons", [])),
+            source_org_id=props.get("source_org_id", ""),
+            access_list=list(props.get("access_list", [])),
+            price=float(props.get("price", 0.0)),
         )
 
     def _query_from_node(self, node: Any) -> StandingQuery:

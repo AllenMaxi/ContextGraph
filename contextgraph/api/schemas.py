@@ -122,6 +122,8 @@ class MemoryResponse(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    access_list: list[str] = Field(default_factory=list)
+    price: float = 0.0
 
 
 class ReviewTaskResponse(BaseModel):
@@ -257,6 +259,12 @@ class ClaimUpdateRequest(BaseModel):
     access_list: list[str] | None = None
 
 
+class MemoryAccessUpdateRequest(BaseModel):
+    visibility: Visibility | None = None
+    price: float | None = Field(default=None, ge=0.0)
+    access_list: list[str] | None = None
+
+
 class TrustScoreResponse(BaseModel):
     agent_id: str
     reputation_score: float
@@ -275,7 +283,10 @@ class FeedItemResponse(BaseModel):
     claims: list[ClaimResponse] = Field(default_factory=list)
     entities: list[EntityResponse] = Field(default_factory=list)
     source_agent_name: str
+    source_org_id: str = ""
     source_reputation_score: float
     created_at: datetime
     is_paid: bool = False
     price: float = 0.0
+    is_locked: bool = False
+    requires_payment: bool = False

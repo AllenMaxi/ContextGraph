@@ -16,6 +16,8 @@ from .schemas import (
     ClaimUpdateRequest,
     FeedItemResponse,
     FollowRequest,
+    MemoryAccessUpdateRequest,
+    MemoryResponse,
     MemoryStoreRequest,
     NotificationResponse,
     OperatorSummaryResponse,
@@ -93,6 +95,8 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 visibility=payload.visibility.value,
                 license=payload.license,
                 metadata=payload.metadata,
+                access_list=payload.access_list,
+                price=payload.price,
             )
         )
 
@@ -307,6 +311,20 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
             graph.update_claim(
                 requester_agent_id=authenticated.agent_id,
                 claim_id=claim_id,
+                visibility=payload.visibility.value if payload.visibility else None,
+                price=payload.price,
+                access_list=payload.access_list,
+            )
+        )
+
+    @app.patch("/v1/memories/{memory_id}/access", response_model=MemoryResponse)
+    def update_memory_access(
+        memory_id: str, payload: MemoryAccessUpdateRequest, authenticated: Any = Depends(authenticated_agent)
+    ) -> Any:
+        return to_jsonable(
+            graph.update_memory_access(
+                requester_agent_id=authenticated.agent_id,
+                memory_id=memory_id,
                 visibility=payload.visibility.value if payload.visibility else None,
                 price=payload.price,
                 access_list=payload.access_list,

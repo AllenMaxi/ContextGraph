@@ -80,6 +80,7 @@ class ContextGraphService:
         self._delivery_dead_letter_total = 0
         self._bm25 = BM25Scorer(k1=1.5, b=0.75)
         self._bm25_indexed_claims: set[str] = set()
+        self._normalized_memory_policies: set[str] = set()
         self._background_worker = BackgroundWorker(
             name="contextgraph-worker",
             handler=self._process_job,
@@ -169,6 +170,8 @@ class ContextGraphService:
         visibility: str = "private",
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        access_list: list[str] | None = None,
+        price: float = 0.0,
     ) -> BackgroundJob:
         agent = self.get_agent(agent_id)
         return self._create_job(
@@ -179,6 +182,7 @@ class ContextGraphService:
             payload_summary={
                 "visibility": visibility,
                 "license": license,
+                "price": f"{price:.4f}",
                 "content_preview": content.strip()[:120],
             },
             payload={
@@ -187,6 +191,8 @@ class ContextGraphService:
                 "visibility": visibility,
                 "license": license,
                 "metadata": dict(metadata or {}),
+                "access_list": list(access_list or []),
+                "price": price,
             },
             max_attempts=1,
             audit_action="enqueue_memory_store",
@@ -281,6 +287,8 @@ class ContextGraphService:
             metadata=dict(metadata or {}),
             created_at=now,
             updated_at=now,
+            access_list=list(access_list or []),
+            price=price,
         )
         self.repository.save_memory(memory)
 
@@ -336,6 +344,7 @@ class ContextGraphService:
             actor_agent_id=agent.agent_id,
             details={"memory_id": memory.memory_id, "claim_count": str(len(created_claims))},
         )
+        self._normalized_memory_policies.add(memory.memory_id)
 
         return StoreResult(
             memory=memory,
@@ -367,26 +376,23 @@ class ContextGraphService:
     ) -> list[RecallHit]:
         requester = self.get_agent(agent_id)
         payment_gate = PaymentGate(enabled=self.settings.enable_payments, currency=self.settings.payment_currency)
-        all_claims = self.repository.list_claims()
+        all_claims = self._list_claims_with_normalized_policies()
         self._sync_bm25_index(all_claims)
         hits: list[RecallHit] = []
         for claim in all_claims:
-            if not self._can_access(requester, claim):
+            memory = self.repository.get_memory(claim.memory_id)
+            if memory is None or not self._can_access(requester, claim):
                 continue
-            # x402 payment check for priced cross-org claims
-            if claim.price > 0:
-                payment_gate.check_access(
-                    agent_id=agent_id,
-                    claim_price=claim.price,
-                    payment_token=payment_token,
-                    requester_org=requester.org_id,
-                    claim_org=claim.source_org_id,
-                )
             score = self._score_claim(query, claim)
             if score <= 0:
                 continue
+            self._check_memory_payment(
+                requester=requester,
+                memory=memory,
+                payment_gate=payment_gate,
+                payment_token=payment_token,
+            )
             entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
-            memory = self.repository.get_memory(claim.memory_id)
             source_agent = self.repository.get_agent(claim.source_agent_id)
             hits.append(
                 RecallHit(
@@ -590,21 +596,57 @@ class ContextGraphService:
         claim = self.repository.get_claim(claim_id)
         if claim is None:
             raise NotFoundError(f"Claim '{claim_id}' not found.")
-        if claim.source_agent_id != requester_agent_id:
-            raise PermissionDeniedError("Only the source agent can update a claim.")
+        memory = self.update_memory_access(
+            requester_agent_id=requester_agent_id,
+            memory_id=claim.memory_id,
+            visibility=visibility,
+            price=price,
+            access_list=access_list,
+            audit_action="update_claim",
+            audit_target=claim_id,
+        )
+        updated_claim = self.repository.get_claim(claim_id)
+        if updated_claim is None:
+            raise NotFoundError(f"Claim '{claim_id}' not found after update.")
+        self._normalized_memory_policies.add(memory.memory_id)
+        return updated_claim
+
+    def update_memory_access(
+        self,
+        requester_agent_id: str,
+        memory_id: str,
+        visibility: str | None = None,
+        price: float | None = None,
+        access_list: list[str] | None = None,
+        audit_action: str = "update_memory_access",
+        audit_target: str | None = None,
+    ) -> Memory:
+        self.get_agent(requester_agent_id)
+        memory = self.repository.get_memory(memory_id)
+        if memory is None:
+            raise NotFoundError(f"Memory '{memory_id}' not found.")
+        if memory.agent_id != requester_agent_id:
+            raise PermissionDeniedError("Only the source agent can update a memory policy.")
 
         if visibility is not None:
-            claim.visibility = Visibility(visibility)
+            memory.visibility = Visibility(visibility)
         if price is not None:
-            claim.price = price
+            memory.price = price
         if access_list is not None:
-            claim.access_list = list(access_list)
+            memory.access_list = list(access_list)
 
-        claim.updated_at = utcnow()
-        self.repository.update_claim(claim)
-        self._audit("update_claim", actor_agent_id=requester_agent_id, details={"claim_id": claim_id})
-        self._emit_notifications([claim])
-        return claim
+        memory.updated_at = utcnow()
+        self.repository.update_memory(memory)
+        claims = self._normalize_memory_policy(memory.memory_id, force=True, audit=False)
+        self._audit(
+            audit_action,
+            actor_agent_id=requester_agent_id,
+            details={"memory_id": memory_id, "target_id": audit_target or memory_id},
+        )
+        if claims:
+            self._emit_notifications(claims)
+        self._normalized_memory_policies.add(memory.memory_id)
+        return memory
 
     def list_agents(self, requester_agent_id: str) -> list[Agent]:
         agents = self.repository.list_agents()
@@ -656,7 +698,7 @@ class ContextGraphService:
         if claim is None:
             raise NotFoundError(f"Claim '{claim_id}' was not found.")
         if self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org):
-            return claim
+            return self.repository.get_claim(claim_id) or claim
         raise PermissionDeniedError("Requester cannot access this claim.")
 
     def list_claims(
@@ -675,7 +717,7 @@ class ContextGraphService:
         )
         status_filter = ValidationStatus(validation_status) if validation_status is not None else None
         claims: list[Claim] = []
-        for claim in self.repository.list_claims():
+        for claim in self._list_claims_with_normalized_policies():
             if not self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org):
                 continue
             if status_filter is not None and claim.validation_status != status_filter:
@@ -784,18 +826,147 @@ class ContextGraphService:
         claim: Claim,
         include_private_same_org: bool = False,
     ) -> bool:
-        # Use the granular permissions module
-        if can_access_claim(requester.agent_id, requester.org_id, claim):
+        memory = self._get_memory_with_normalized_policy(claim.memory_id)
+        if memory is None:
+            # Fall back to the mirrored claim policy if the parent memory is missing.
+            if can_access_claim(requester.agent_id, requester.org_id, claim):
+                return True
+            return include_private_same_org and claim.source_org_id == requester.org_id
+
+        mirrored_claim = self.repository.get_claim(claim.claim_id) or claim
+        if can_access_claim(requester.agent_id, requester.org_id, mirrored_claim):
             return True
-        # Legacy: allow same-org to see private claims when reviewing
+
         if include_private_same_org:
-            source_org = claim.source_org_id
-            if not source_org:
-                source_agent = self.repository.get_agent(claim.source_agent_id)
-                source_org = source_agent.org_id if source_agent else ""
+            source_org = self._memory_source_org(memory)
             if source_org == requester.org_id:
                 return True
         return False
+
+    def _list_claims_with_normalized_policies(self) -> list[Claim]:
+        claims = self.repository.list_claims()
+        for memory_id in {claim.memory_id for claim in claims}:
+            self._normalize_memory_policy(memory_id)
+        return self.repository.list_claims()
+
+    def _get_memory_with_normalized_policy(self, memory_id: str) -> Memory | None:
+        memory = self.repository.get_memory(memory_id)
+        if memory is None:
+            return None
+        self._normalize_memory_policy(memory_id)
+        return self.repository.get_memory(memory_id) or memory
+
+    def _normalize_memory_policy(self, memory_id: str, force: bool = False, audit: bool = True) -> list[Claim]:
+        memory = self.repository.get_memory(memory_id)
+        if memory is None:
+            return []
+        claims = [claim for claim in self.repository.list_claims() if claim.memory_id == memory_id]
+        if not claims:
+            self._normalized_memory_policies.add(memory_id)
+            return []
+        source_org_id = self._memory_source_org(memory)
+        if not force and memory_id in self._normalized_memory_policies:
+            policies_match = all(
+                claim.visibility == memory.visibility
+                and claim.access_list == memory.access_list
+                and claim.price == memory.price
+                and ((not source_org_id) or claim.source_org_id == source_org_id)
+                for claim in claims
+            )
+            if policies_match:
+                return claims
+
+        target_access_list = self._normalize_access_lists(memory.access_list, claims)
+        target_price = max([memory.price] + [claim.price for claim in claims])
+        memory_changed = memory.access_list != target_access_list or memory.price != target_price
+        if memory_changed:
+            memory.access_list = target_access_list
+            memory.price = target_price
+            memory.updated_at = utcnow()
+            self.repository.update_memory(memory)
+
+        normalized_claims: list[Claim] = []
+        claims_changed = 0
+        for claim in claims:
+            if self._apply_memory_policy_to_claim(claim, memory):
+                claims_changed += 1
+            normalized_claims.append(claim)
+
+        if audit and (memory_changed or claims_changed):
+            self._audit(
+                "normalize_memory_policy",
+                actor_agent_id=memory.agent_id,
+                details={
+                    "memory_id": memory_id,
+                    "normalized_claim_count": str(len(normalized_claims)),
+                    "claims_changed": str(claims_changed),
+                },
+            )
+
+        self._normalized_memory_policies.add(memory_id)
+        return normalized_claims
+
+    def _normalize_access_lists(self, memory_access_list: list[str], claims: list[Claim]) -> list[str]:
+        lists = [list(dict.fromkeys(memory_access_list))]
+        lists.extend(list(dict.fromkeys(claim.access_list)) for claim in claims)
+        non_empty = [items for items in lists if items]
+        if not non_empty:
+            return []
+        if all(items == non_empty[0] for items in non_empty[1:]):
+            return non_empty[0]
+
+        intersection = set(non_empty[0])
+        for items in non_empty[1:]:
+            intersection &= set(items)
+        if not intersection:
+            return []
+        return [item for item in non_empty[0] if item in intersection]
+
+    def _apply_memory_policy_to_claim(self, claim: Claim, memory: Memory, persist: bool = True) -> bool:
+        source_org_id = self._memory_source_org(memory)
+        changed = False
+        if claim.visibility != memory.visibility:
+            claim.visibility = memory.visibility
+            changed = True
+        if claim.access_list != memory.access_list:
+            claim.access_list = list(memory.access_list)
+            changed = True
+        if claim.price != memory.price:
+            claim.price = memory.price
+            changed = True
+        if source_org_id and claim.source_org_id != source_org_id:
+            claim.source_org_id = source_org_id
+            changed = True
+        if changed and persist:
+            claim.updated_at = max(claim.updated_at, memory.updated_at)
+            self.repository.update_claim(claim)
+        return changed
+
+    def _memory_source_org(self, memory: Memory) -> str:
+        source_agent = self.repository.get_agent(memory.agent_id)
+        return source_agent.org_id if source_agent is not None else ""
+
+    def _memory_requires_payment(self, requester: Agent, memory: Memory) -> bool:
+        return (
+            self.settings.enable_payments
+            and memory.price > 0
+            and requester.org_id != self._memory_source_org(memory)
+        )
+
+    def _check_memory_payment(
+        self,
+        requester: Agent,
+        memory: Memory,
+        payment_gate: PaymentGate,
+        payment_token: str | None,
+    ) -> None:
+        payment_gate.check_access(
+            agent_id=requester.agent_id,
+            claim_price=memory.price,
+            payment_token=payment_token,
+            requester_org=requester.org_id,
+            claim_org=self._memory_source_org(memory),
+        )
 
     def _score_claim(self, query: str, claim: Claim) -> float:
         # Use BM25 if the claim is indexed; fall back to Jaccard otherwise
@@ -1246,7 +1417,7 @@ class ContextGraphService:
         if not subscriptions:
             return []
 
-        all_claims = self.repository.list_claims()
+        all_claims = self._list_claims_with_normalized_policies()
         self._sync_bm25_index(all_claims)
 
         # Group claims by memory_id
@@ -1269,7 +1440,7 @@ class ContextGraphService:
         now = utcnow()
         feed_items: list[dict[str, Any]] = []
         for memory_id in matched_memory_ids:
-            memory = self.repository.get_memory(memory_id)
+            memory = self._get_memory_with_normalized_policy(memory_id)
             if memory is None:
                 continue
             mem_claims = claims_by_memory.get(memory_id, [])
@@ -1279,6 +1450,8 @@ class ContextGraphService:
             if source_agent is None:
                 continue
 
+            requires_payment = self._memory_requires_payment(requester, memory)
+            is_locked = requires_payment
             entities: list[Entity] = []
             for claim in mem_claims:
                 for eid in claim.entity_ids:
@@ -1290,21 +1463,22 @@ class ContextGraphService:
             recency = math.exp(-age_hours / 168)
             score = recency * 0.6 + source_agent.reputation_score * 0.4
 
-            max_price = max((c.price for c in mem_claims), default=0.0)
-
             feed_items.append(
                 {
                     "memory_id": memory.memory_id,
-                    "memory_content": memory.content,
+                    "memory_content": "" if is_locked else memory.content,
                     "agent_id": memory.agent_id,
                     "visibility": memory.visibility.value,
                     "claims": mem_claims,
                     "entities": entities,
                     "source_agent_name": source_agent.name,
+                    "source_org_id": source_agent.org_id,
                     "source_reputation_score": source_agent.reputation_score,
                     "created_at": memory.created_at,
-                    "is_paid": max_price > 0,
-                    "price": max_price,
+                    "is_paid": memory.price > 0,
+                    "price": memory.price,
+                    "is_locked": is_locked,
+                    "requires_payment": requires_payment,
                     "feed_score": round(score, 4),
                 }
             )

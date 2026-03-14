@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from typing import Any
 
 from .api._compat import FastAPI, JSONResponse
@@ -18,7 +19,15 @@ def create_app(service: ContextGraphService | None = None) -> Any:
         raise RuntimeError('FastAPI is not installed. Install with `pip install -e ".[server]"`.')
 
     graph = service or create_service()
-    app = FastAPI(title="ContextGraph", version="0.2.0")
+
+    @asynccontextmanager
+    async def lifespan(_: Any):
+        try:
+            yield
+        finally:
+            graph.close()
+
+    app = FastAPI(title="ContextGraph", version="0.2.0", lifespan=lifespan)
 
     # --- CORS middleware ---
     try:
@@ -85,9 +94,5 @@ def create_app(service: ContextGraphService | None = None) -> Any:
     @app.exception_handler(ValueError)
     async def handle_value_error(_, exc: ValueError) -> Any:
         return JSONResponse(status_code=400, content={"detail": str(exc)})
-
-    @app.on_event("shutdown")
-    async def shutdown() -> None:
-        graph.close()
 
     return app

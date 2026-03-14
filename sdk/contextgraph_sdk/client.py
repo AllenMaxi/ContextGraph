@@ -23,6 +23,7 @@ class Transport(Protocol):
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def watch(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -50,6 +51,9 @@ class LocalTransport:
 
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.enqueue_memory_store(**payload))
+
+    def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.update_memory_access(**payload))
 
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.recall(**payload))
@@ -150,6 +154,15 @@ class HttpTransport:
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/memory/store-async", payload)
 
+    def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]:
+        memory_id = payload["memory_id"]
+        body = {
+            key: value
+            for key, value in payload.items()
+            if key in {"visibility", "price", "access_list"} and value is not None
+        }
+        return self._request("PATCH", f"/v1/memories/{memory_id}/access", body)
+
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return self._request("POST", "/v1/memory/recall", payload)
 
@@ -225,6 +238,8 @@ class ContextGraph:
         visibility: str = "private",
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        access_list: list[str] | None = None,
+        price: float = 0.0,
     ) -> dict[str, Any]:
         return self.transport.store(
             {
@@ -233,6 +248,8 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
+                "access_list": access_list or [],
+                "price": price,
             }
         )
 
@@ -243,6 +260,8 @@ class ContextGraph:
         visibility: str = "private",
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        access_list: list[str] | None = None,
+        price: float = 0.0,
     ) -> dict[str, Any]:
         return self.transport.store_async(
             {
@@ -251,6 +270,26 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
+                "access_list": access_list or [],
+                "price": price,
+            }
+        )
+
+    def update_memory_access(
+        self,
+        requester_agent_id: str,
+        memory_id: str,
+        visibility: str | None = None,
+        price: float | None = None,
+        access_list: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.update_memory_access(
+            {
+                "requester_agent_id": requester_agent_id,
+                "memory_id": memory_id,
+                "visibility": visibility,
+                "price": price,
+                "access_list": access_list,
             }
         )
 

@@ -21,6 +21,10 @@ Please include the following information in your report:
 - Potential impact assessment
 - Any suggested fixes (if applicable)
 
+## Operational Responsibility
+
+ContextGraph is open-source software released under the MIT License and provided as-is. Operators remain responsible for deployment choices, access policies, regulatory compliance, and the data they put into the system.
+
 ## Security Considerations
 
 ### API Keys and Secrets

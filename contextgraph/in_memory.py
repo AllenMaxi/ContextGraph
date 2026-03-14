@@ -57,6 +57,11 @@ class InMemoryRepository:
             self._memories[memory.memory_id] = memory
             return memory
 
+    def update_memory(self, memory: Memory) -> Memory:
+        with self._lock:
+            self._memories[memory.memory_id] = memory
+            return memory
+
     def get_memory(self, memory_id: str) -> Memory | None:
         with self._lock:
             return self._memories.get(memory_id)

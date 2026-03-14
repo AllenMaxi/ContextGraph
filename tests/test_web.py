@@ -137,6 +137,30 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertEqual(operator_summary.json()["pending_review_count"], 1)
         self.assertIn("ContextGraph Console", console.text)
 
+    def test_update_memory_access_endpoint_updates_memory_policy(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        stored = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme Corp reported API latency. Follow-up planned.", "visibility": "org"},
+        ).json()
+
+        response = self.client.patch(
+            f"/v1/memories/{stored['memory']['memory_id']}/access",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"visibility": "shared", "access_list": ["partner-org"], "price": 0.002},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["visibility"], "shared")
+        self.assertEqual(body["access_list"], ["partner-org"])
+        self.assertEqual(body["price"], 0.002)
+
 
 if __name__ == "__main__":
     unittest.main()

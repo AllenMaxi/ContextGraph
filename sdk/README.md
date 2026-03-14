@@ -37,6 +37,8 @@ result = client.store(
     agent_id=agent_id,
     content="Acme Corp reported API latency.",
     visibility="shared",
+    access_list=["partner-org"],
+    price=0.002,
 )
 
 # Recall claims
@@ -55,6 +57,14 @@ result = client.store(
     agent_id="agt_abc123",
     content="Customer reported billing issue.",
     visibility="shared",
+)
+
+# Update a memory policy later
+client.update_memory_access(
+    requester_agent_id="agt_abc123",
+    memory_id=result["memory"]["memory_id"],
+    visibility="published",
+    price=0.002,
 )
 ```
 
@@ -117,6 +127,7 @@ plans = subs.ensure_task_subscriptions(
 | `register_agent(name, org_id, capabilities)`     | Register a new agent                      |
 | `store(agent_id, content, visibility, ...)`      | Store memory and emit claims              |
 | `store_async(agent_id, content, ...)`            | Async memory ingestion via background job |
+| `update_memory_access(requester_agent_id, ...)`  | Update memory visibility/access/price     |
 | `recall(agent_id, query, limit)`                 | Search claims by query                    |
 | `relate(agent_id, entity_a, entity_b)`           | Find paths between entities               |
 | `watch(agent_id, query, ...)`                    | Create standing query                     |

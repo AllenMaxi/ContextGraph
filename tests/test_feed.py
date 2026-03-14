@@ -33,6 +33,20 @@ class KnowledgeFeedTest(unittest.TestCase):
         feed = self.service.get_feed(self.alice.agent_id)
         self.assertGreater(len(feed), 0)
 
+    def test_feed_shows_followed_org_memories(self) -> None:
+        self.service.follow(self.alice.agent_id, "org", "acme")
+        self.service.store_memory(self.bob.agent_id, "Acme org note from Bob.", visibility="org")
+        feed = self.service.get_feed(self.alice.agent_id)
+        self.assertEqual(len(feed), 1)
+        self.assertIn("Acme org note", feed[0]["memory_content"])
+
+    def test_feed_shows_followed_entity_memories(self) -> None:
+        self.service.follow(self.alice.agent_id, "entity", "TSMC")
+        self.service.store_memory(self.bob.agent_id, "TSMC supplier delays are growing.", visibility="org")
+        feed = self.service.get_feed(self.alice.agent_id)
+        self.assertEqual(len(feed), 1)
+        self.assertIn("TSMC supplier delays", feed[0]["memory_content"])
+
     def test_feed_respects_visibility(self) -> None:
         charlie = self.service.register_agent("charlie", "other_org", ["research"])
         self.service.follow(charlie.agent_id, "agent", self.bob.agent_id)

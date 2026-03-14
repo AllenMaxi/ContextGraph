@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-03-14
+
+### Added
+
+- Memory-level access ownership with `visibility`, `access_list`, and `price` persisted on memories
+- Canonical memory policy update endpoint at `PATCH /v1/memories/{memory_id}/access`
+- Locked feed items for priced cross-org knowledge with `is_locked` and `requires_payment`
+- Regression coverage for feed payment leaks, mixed-policy memories, and cross-org follow/access flows
+- Public launch docs: roadmap, FAQ, use cases, and runnable examples
+
+### Changed
+
+- Claim policy updates now act as a compatibility shim that rewrites the parent memory policy
+- Feed now acts as discovery for priced cross-org memories instead of exposing locked content
+- Recall now enforces payment at the memory level and normalizes legacy sibling-claim policy drift on access
+- FastAPI app lifecycle uses lifespan handlers instead of deprecated shutdown hooks
+
 ## [0.1.0] - 2026-03-09
 
 ### Added
