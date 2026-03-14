@@ -12,7 +12,7 @@
 
 Instead, report vulnerabilities by emailing:
 
-**security@contextgraph.dev**
+**maxiallendee97@gmail.com**
 
 Please include the following information in your report:
 
@@ -20,20 +20,6 @@ Please include the following information in your report:
 - Steps to reproduce the issue
 - Potential impact assessment
 - Any suggested fixes (if applicable)
-
-## Response Timeline
-
-- **Acknowledgement**: Within 48 hours of receiving your report
-- **Initial assessment**: Within 5 business days
-- **Resolution target**: Within 30 days for critical issues, 90 days for non-critical
-
-You will receive updates at each stage. If the vulnerability is accepted, we will:
-
-1. Develop and test a fix
-2. Prepare a security advisory
-3. Release the fix and publish the advisory simultaneously
-
-If the vulnerability is declined, we will provide a detailed explanation.
 
 ## Security Considerations
 
