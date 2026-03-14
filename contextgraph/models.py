@@ -47,6 +47,13 @@ class JobType(StrEnum):
     SWEEP_EXPIRED_CLAIMS = "sweep_expired_claims"
 
 
+class SubscriptionTarget(StrEnum):
+    AGENT = "agent"
+    TOPIC = "topic"
+    ENTITY = "entity"
+    ORG = "org"
+
+
 @dataclass(slots=True)
 class Agent:
     agent_id: str
@@ -60,6 +67,7 @@ class Agent:
     erc8004_address: str = ""
     identity_verified: bool = False
     reputation_score: float = 0.0
+    followers_count: int = 0
 
 
 @dataclass(slots=True)
@@ -180,6 +188,9 @@ class RecallHit:
     claim: Claim
     score: float
     entities: list[Entity]
+    memory_content: str = ""
+    source_agent_name: str = ""
+    source_reputation_score: float = 0.0
 
 
 @dataclass(slots=True)
@@ -195,3 +206,13 @@ class StoreResult:
     claims: list[Claim]
     entities: list[Entity]
     review_tasks: list[ReviewTask]
+
+
+@dataclass(slots=True)
+class Subscription:
+    subscription_id: str
+    follower_agent_id: str
+    target_type: SubscriptionTarget
+    target_id: str
+    created_at: datetime
+    active: bool = True

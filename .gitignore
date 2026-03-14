@@ -50,3 +50,9 @@ htmlcov/
 
 # Neo4j local data
 neo4j_data/
+
+# Git worktrees
+.worktrees/
+
+# Superpowers
+.superpowers/

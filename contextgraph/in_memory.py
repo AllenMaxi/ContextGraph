@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from threading import RLock
 
-from .models import Agent, AuditEntry, Claim, Entity, Memory, Notification, ReviewTask, StandingQuery
+from .models import (
+    Agent,
+    AuditEntry,
+    Claim,
+    Entity,
+    Memory,
+    Notification,
+    ReviewTask,
+    StandingQuery,
+    Subscription,
+    SubscriptionTarget,
+)
 
 
 class InMemoryRepository:
@@ -18,6 +29,7 @@ class InMemoryRepository:
         self._notifications: dict[str, Notification] = {}
         self._reviews: dict[str, ReviewTask] = {}
         self._audit_entries: dict[str, AuditEntry] = {}
+        self._subscriptions: dict[str, Subscription] = {}
 
     def save_agent(self, agent: Agent) -> Agent:
         with self._lock:
@@ -154,6 +166,31 @@ class InMemoryRepository:
         with self._lock:
             return list(self._audit_entries.values())
 
+    def save_subscription(self, subscription: Subscription) -> Subscription:
+        with self._lock:
+            self._subscriptions[subscription.subscription_id] = subscription
+            return subscription
+
+    def get_subscription(self, subscription_id: str) -> Subscription | None:
+        with self._lock:
+            return self._subscriptions.get(subscription_id)
+
+    def get_subscriptions_by_follower(self, agent_id: str) -> list[Subscription]:
+        with self._lock:
+            return [s for s in self._subscriptions.values() if s.follower_agent_id == agent_id and s.active]
+
+    def get_followers_of_agent(self, agent_id: str) -> list[Subscription]:
+        with self._lock:
+            return [
+                s
+                for s in self._subscriptions.values()
+                if s.target_type == SubscriptionTarget.AGENT and s.target_id == agent_id and s.active
+            ]
+
+    def delete_subscription(self, subscription_id: str) -> None:
+        with self._lock:
+            self._subscriptions.pop(subscription_id, None)
+
     def snapshot(self) -> dict[str, int]:
         with self._lock:
             return {
@@ -165,6 +202,7 @@ class InMemoryRepository:
                 "notifications": len(self._notifications),
                 "review_tasks": len(self._reviews),
                 "audit_entries": len(self._audit_entries),
+                "subscriptions": len(self._subscriptions),
             }
 
     def close(self) -> None:

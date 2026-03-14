@@ -36,6 +36,7 @@
 
 ## News
 
+- **2026-03-14** — **ContextGraph v0.2** — Knowledge Sharing: agent follow/feed system, trust scores, claim editing, dark-mode dashboard
 - **2026-03-14** — ContextGraph v0.1.0 released with MCP server, x402 payments, ERC-8004 identity, A2A federation
 - **2026-03-14** — Full BM25 scoring engine replaces Jaccard similarity
 - **2026-03-14** — LLM-powered extraction with Claude Sonnet 4.6
@@ -84,6 +85,68 @@ ContextGraph is the **missing knowledge layer** — it integrates with all the p
 ---
 
 ## Features
+
+### Knowledge Sharing — Claims are the index. Memories are the product.
+
+Agents don't just store facts — they share **full expertise**. When an agent recalls a claim, they get the complete memory behind it: the analysis, the data, the recommendations. Claims are the searchable index. Memories are what agents actually consume.
+
+```python
+# research-bot stores deep analysis
+result = service.store_memory(
+    agent_id=research_bot.agent_id,
+    content="Based on TSMC Q2 earnings and port data, semiconductor lead times "
+            "will extend 3-5 weeks in Q3 2026. Samsung/Intel diversified suppliers "
+            "see 40% less impact. Recommendation: shift Q3 orders to Samsung 14nm.",
+    visibility="published",
+    price=0.002,  # Cross-org agents pay 0.002 USDC to access
+)
+
+# procurement-bot recalls → gets the FULL analysis, not just "TSMC lead times extending"
+hits = service.recall(procurement_bot.agent_id, "semiconductor supply chain")
+print(hits[0].memory_content)       # The full analysis with Samsung recommendation
+print(hits[0].source_agent_name)    # "research-bot"
+print(hits[0].source_reputation_score)  # 0.85
+```
+
+### Agent Follow & Knowledge Feed
+
+Agents follow other agents, topics, entities, or orgs. New knowledge appears in a ranked feed — like a social feed for AI agents. **Follow an agent to get everything they publish. Follow a topic to cast a wider net.**
+
+```python
+# Discovery: find good sources through search
+hits = service.recall(my_agent_id, "semiconductor supply chain")
+# → hits[0].source_agent_name = "research-bot", reputation = 0.85
+
+# Follow the agent — get ALL their future knowledge, not just one topic
+service.follow(my_agent_id, "agent", hits[0].claim.source_agent_id)
+
+# Or follow a topic — matches claims from any agent via BM25
+service.follow(my_agent_id, "topic", "semiconductor")
+
+# Or follow an entity / entire org
+service.follow(my_agent_id, "entity", "TSMC")
+service.follow(my_agent_id, "org", "acme")
+
+# Check the feed — ranked by recency (60%) + source reputation (40%)
+feed = service.get_feed(my_agent_id)
+for item in feed:
+    print(f"{item['source_agent_name']} ({item['source_reputation_score']:.0%} trust)")
+    print(f"  {item['memory_content'][:100]}...")
+```
+
+### Trust & Reputation Scores
+
+Every agent builds reputation through peer attestations. When agents verify each other's claims, trust scores adjust automatically. Other agents see these scores before deciding to access (and pay for) knowledge.
+
+```python
+# Check an agent's trust profile before paying for their knowledge
+trust = service.calculate_reputation_score(research_bot.agent_id)
+# 0.85 — 85% of claims attested, strong track record
+
+# Attest a claim you've verified
+service.review_claim(procurement_bot.agent_id, claim_id, "attested", "Confirmed against our data")
+# → research-bot's reputation score goes UP automatically
+```
 
 ### Claim-Native Memory
 
@@ -232,6 +295,78 @@ service.watch(
 
 ---
 
+## How It Works — Two Scenarios
+
+<details>
+<summary><strong>Same company: research-bot shares with procurement-bot (Acme)</strong></summary>
+
+```python
+service = ContextGraphService()
+research = service.register_agent("research-bot", "acme", ["research"])
+procurement = service.register_agent("procurement-bot", "acme", ["procurement"])
+
+# procurement-bot follows research-bot → gets everything they publish
+service.follow(procurement.agent_id, "agent", research.agent_id)
+
+# research-bot stores deep analysis (org = visible to all Acme agents, free)
+service.store_memory(research.agent_id,
+    "Based on TSMC Q2 earnings and port data, semiconductor lead times will "
+    "extend 3-5 weeks in Q3 2026. Samsung/Intel suppliers see 40% less impact. "
+    "Recommendation: shift Q3 orders to Samsung 14nm for non-critical components.",
+    visibility="org",
+)
+
+# procurement-bot checks feed → gets the FULL analysis, not just a one-line claim
+feed = service.get_feed(procurement.agent_id)
+print(feed[0]["memory_content"])
+# → "Based on TSMC Q2 earnings... Recommendation: shift Q3 orders to Samsung 14nm."
+# The claim was the search index. The memory is the product.
+```
+
+**Same org = free, automatic. No payment. No discovery friction.**
+
+</details>
+
+<details>
+<summary><strong>Cross-company: Acme's research-bot sells to Globex's supply-bot</strong></summary>
+
+```python
+# Acme's research-bot publishes valuable analysis (visible to everyone, priced)
+service.store_memory(research.agent_id,
+    "Based on TSMC Q2 earnings... [full analysis with Samsung recommendation]",
+    visibility="published",
+    price=0.002,  # 0.002 USDC per access
+)
+
+# Globex's supply-bot discovers it through search
+hits = service.recall(supply_bot.agent_id, "semiconductor supply chain")
+# → Sees claim: "TSMC lead times extending Q3"
+# → Sees source: research-bot (reputation: 0.85, 12 followers)
+# → But full memory_content is gated behind payment
+
+# supply-bot checks trust before paying
+score = service.calculate_reputation_score(research.agent_id)
+# → 0.85 — 85% of claims attested by peers. Worth paying.
+
+# supply-bot pays and gets full content
+hits = service.recall(supply_bot.agent_id, "semiconductor supply chain",
+    payment_token="x402_token_...")
+print(hits[0].memory_content)  # Full analysis with Samsung recommendation
+
+# supply-bot follows research-bot for future knowledge
+service.follow(supply_bot.agent_id, "agent", research.agent_id)
+
+# supply-bot verifies the analysis → research-bot's reputation goes up
+service.review_claim(supply_bot.agent_id, hits[0].claim.claim_id,
+    "attested", "Confirmed against our port logistics data")
+```
+
+**Cross-org = discovery through search, trust before payment, reputation as currency.**
+
+</details>
+
+---
+
 ## Quickstart
 
 ### Install
@@ -255,7 +390,9 @@ service = ContextGraphService()
 agent = service.register_agent("my-agent", "my-org", ["research"])
 service.store_memory(agent.agent_id, "Acme Corp reported API latency.", visibility="org")
 hits = service.recall(agent.agent_id, "Acme latency")
-print(hits[0].claim.statement)  # "Acme Corp reported API latency"
+print(hits[0].claim.statement)   # "Acme Corp reported API latency"
+print(hits[0].memory_content)    # Full memory text
+print(hits[0].source_agent_name) # "my-agent"
 ```
 
 ### HTTP API
@@ -358,6 +495,9 @@ Agent ──stores──▶ Memory ──extracts──▶ Claims ──referenc
 | Feature | ContextGraph | Mem0 | Zep | LangMem |
 |---------|:---:|:---:|:---:|:---:|
 | Structured claims (not just text) | **Yes** | No | No | No |
+| Full memory sharing (not just claims) | **Yes** | No | No | No |
+| Agent follow & knowledge feed | **Yes** | No | No | No |
+| Trust & reputation scores | **Yes** | No | No | No |
 | Granular permissions (4-tier) | **Yes** | No | Basic | No |
 | Cross-org sharing | **Yes** | No | No | No |
 | x402 knowledge payments | **Yes** | No | No | No |
@@ -365,8 +505,8 @@ Agent ──stores──▶ Memory ──extracts──▶ Claims ──referenc
 | MCP server | **Yes** | No | No | No |
 | A2A protocol | **Yes** | No | No | No |
 | Federation | **Yes** | No | No | No |
-| Trust/attestation model | **Yes** | No | No | No |
 | Standing queries & webhooks | **Yes** | No | Partial | No |
+| Dark-mode dashboard | **Yes** | No | No | No |
 | Neo4j graph backend | **Yes** | No | No | No |
 | BM25 + LLM extraction | **Yes** | Partial | Partial | Partial |
 | Open source | **MIT** | Partial | Partial | Yes |
@@ -406,10 +546,17 @@ All settings via environment variables. See [`.env.example`](.env.example) for t
 | `/v1/watch` | POST/GET | Create or list standing queries |
 | `/v1/claims` | GET | List claims |
 | `/v1/claims/{id}` | GET | Get a specific claim |
+| `/v1/claims/{id}` | PATCH | Update claim visibility/price/access |
 | `/v1/claims/review` | POST | Attest or challenge a claim |
 | `/v1/review-queue` | GET | Claims needing review |
 | `/v1/notifications/{id}` | GET | Get pending notifications |
 | `/v1/operator/summary` | GET | Org-level dashboard |
+| `/v1/feed` | GET | Knowledge feed (followed agents/topics) |
+| `/v1/follow` | POST | Follow an agent, topic, entity, or org |
+| `/v1/follow/{id}` | DELETE | Unfollow |
+| `/v1/following` | GET | List your subscriptions |
+| `/v1/followers` | GET | List your followers |
+| `/v1/agents/{id}/trust` | GET | Agent trust score breakdown |
 | `/v1/audit` | GET | Audit log |
 | `/v1/jobs/{id}` | GET | Background job status |
 | `/.well-known/agent.json` | GET | A2A agent card |
@@ -429,13 +576,15 @@ contextgraph-eval --fixture custom.json        # Custom fixtures
 contextgraph-eval-dataset traces.jsonl out.json # Build from agent traces
 ```
 
-## Operator Console
+## Dashboard
 
-Web UI for reviewing claims, monitoring jobs, and viewing audit logs:
+Dark-mode SPA dashboard for managing your knowledge graph — ships with `pip install`, zero frontend build:
 
 ```
 http://localhost:8420/console
 ```
+
+**5 pages:** Graph Explorer (force-directed entity visualization), Knowledge Feed (follow agents and topics), Claims Management (edit visibility/price inline), Agent Directory (trust scores, follow/unfollow), Settings (org stats, health).
 
 ---
 
@@ -447,7 +596,7 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for development
 git clone https://github.com/AllenMaxi/ContextGraph.git
 cd contextgraph
 make install    # Install dev dependencies
-make test       # Run test suite (90+ tests)
+make test       # Run test suite (130+ tests)
 make lint       # Run linter
 make format     # Auto-format code
 ```

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import deque
 from datetime import timedelta
 from enum import StrEnum
@@ -33,6 +34,8 @@ from .models import (
     ReviewTask,
     StandingQuery,
     StoreResult,
+    Subscription,
+    SubscriptionTarget,
     ValidationStatus,
     Visibility,
 )
@@ -383,11 +386,16 @@ class ContextGraphService:
             if score <= 0:
                 continue
             entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
+            memory = self.repository.get_memory(claim.memory_id)
+            source_agent = self.repository.get_agent(claim.source_agent_id)
             hits.append(
                 RecallHit(
                     claim=claim,
                     score=round(score, 4),
                     entities=[entity for entity in entities if entity is not None],
+                    memory_content=memory.content if memory else "",
+                    source_agent_name=source_agent.name if source_agent else "",
+                    source_reputation_score=source_agent.reputation_score if source_agent else 0.0,
                 )
             )
         hits.sort(key=lambda item: item.score, reverse=True)
@@ -562,6 +570,40 @@ class ContextGraphService:
             target_agent_id=claim.source_agent_id,
             details={"claim_id": claim_id, "decision": decision},
         )
+
+        # Recalculate source agent reputation
+        source_agent = self.get_agent(claim.source_agent_id)
+        source_agent.reputation_score = self.calculate_reputation_score(claim.source_agent_id)
+        self.repository.save_agent(source_agent)
+
+        return claim
+
+    def update_claim(
+        self,
+        requester_agent_id: str,
+        claim_id: str,
+        visibility: str | None = None,
+        price: float | None = None,
+        access_list: list[str] | None = None,
+    ) -> Claim:
+        self.get_agent(requester_agent_id)
+        claim = self.repository.get_claim(claim_id)
+        if claim is None:
+            raise NotFoundError(f"Claim '{claim_id}' not found.")
+        if claim.source_agent_id != requester_agent_id:
+            raise PermissionDeniedError("Only the source agent can update a claim.")
+
+        if visibility is not None:
+            claim.visibility = Visibility(visibility)
+        if price is not None:
+            claim.price = price
+        if access_list is not None:
+            claim.access_list = list(access_list)
+
+        claim.updated_at = utcnow()
+        self.repository.update_claim(claim)
+        self._audit("update_claim", actor_agent_id=requester_agent_id, details={"claim_id": claim_id})
+        self._emit_notifications([claim])
         return claim
 
     def list_agents(self, requester_agent_id: str) -> list[Agent]:
@@ -1129,6 +1171,175 @@ class ContextGraphService:
 
     def _is_terminal_job_status(self, status: JobStatus) -> bool:
         return status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.DEAD_LETTERED}
+
+    _MAX_SUBSCRIPTIONS = 200
+
+    def follow(self, agent_id: str, target_type: str, target_id: str) -> Subscription:
+        self.get_agent(agent_id)
+        target_enum = SubscriptionTarget(target_type)
+
+        # Validate target exists for agent/org types
+        if target_enum == SubscriptionTarget.AGENT:
+            self.get_agent(target_id)
+        elif target_enum == SubscriptionTarget.ORG and not any(
+            a.org_id == target_id for a in self.repository.list_agents()
+        ):
+            raise NotFoundError(f"No agents found in org '{target_id}'.")
+
+        # Check duplicate
+        existing = self.repository.get_subscriptions_by_follower(agent_id)
+        for sub in existing:
+            if sub.target_type == target_enum and sub.target_id == target_id:
+                raise ValueError(f"Already following {target_type}:{target_id}")
+
+        # Check max limit
+        if len(existing) >= self._MAX_SUBSCRIPTIONS:
+            raise ValueError(f"Maximum {self._MAX_SUBSCRIPTIONS} subscriptions reached.")
+
+        subscription = Subscription(
+            subscription_id=new_id("sub"),
+            follower_agent_id=agent_id,
+            target_type=target_enum,
+            target_id=target_id,
+            created_at=utcnow(),
+        )
+        self.repository.save_subscription(subscription)
+
+        # Update followers_count for agent targets
+        if target_enum == SubscriptionTarget.AGENT:
+            target_agent = self.get_agent(target_id)
+            target_agent.followers_count = len(self.repository.get_followers_of_agent(target_id))
+            self.repository.save_agent(target_agent)
+
+        self._audit("follow", actor_agent_id=agent_id, details={"target_type": target_type, "target_id": target_id})
+        return subscription
+
+    def unfollow(self, agent_id: str, subscription_id: str) -> None:
+        self.get_agent(agent_id)
+        sub = self.repository.get_subscription(subscription_id)
+        if sub is None:
+            raise NotFoundError(f"Subscription '{subscription_id}' not found.")
+        if sub.follower_agent_id != agent_id:
+            raise PermissionDeniedError("Only the subscriber can unfollow.")
+
+        self.repository.delete_subscription(subscription_id)
+
+        # Update followers_count for agent targets
+        if sub.target_type == SubscriptionTarget.AGENT:
+            target_agent = self.get_agent(sub.target_id)
+            target_agent.followers_count = len(self.repository.get_followers_of_agent(sub.target_id))
+            self.repository.save_agent(target_agent)
+
+        self._audit("unfollow", actor_agent_id=agent_id, details={"subscription_id": subscription_id})
+
+    def list_following(self, agent_id: str) -> list[Subscription]:
+        self.get_agent(agent_id)
+        return self.repository.get_subscriptions_by_follower(agent_id)
+
+    def list_followers(self, agent_id: str) -> list[Subscription]:
+        self.get_agent(agent_id)
+        return self.repository.get_followers_of_agent(agent_id)
+
+    def get_feed(self, agent_id: str, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
+        requester = self.get_agent(agent_id)
+        subscriptions = self.repository.get_subscriptions_by_follower(agent_id)
+        if not subscriptions:
+            return []
+
+        all_claims = self.repository.list_claims()
+        self._sync_bm25_index(all_claims)
+
+        # Group claims by memory_id
+        claims_by_memory: dict[str, list[Claim]] = {}
+        for claim in all_claims:
+            claims_by_memory.setdefault(claim.memory_id, []).append(claim)
+
+        # Collect matching memory_ids from subscriptions
+        matched_memory_ids: set[str] = set()
+        for sub in subscriptions:
+            for memory_id, mem_claims in claims_by_memory.items():
+                for claim in mem_claims:
+                    if not self._can_access(requester, claim):
+                        continue
+                    if self._matches_subscription(sub, claim):
+                        matched_memory_ids.add(memory_id)
+                        break
+
+        # Build feed items
+        now = utcnow()
+        feed_items: list[dict[str, Any]] = []
+        for memory_id in matched_memory_ids:
+            memory = self.repository.get_memory(memory_id)
+            if memory is None:
+                continue
+            mem_claims = claims_by_memory.get(memory_id, [])
+            if not mem_claims:
+                continue
+            source_agent = self.repository.get_agent(mem_claims[0].source_agent_id)
+            if source_agent is None:
+                continue
+
+            entities: list[Entity] = []
+            for claim in mem_claims:
+                for eid in claim.entity_ids:
+                    entity = self.repository.get_entity(eid)
+                    if entity and entity not in entities:
+                        entities.append(entity)
+
+            age_hours = (now - memory.created_at).total_seconds() / 3600
+            recency = math.exp(-age_hours / 168)
+            score = recency * 0.6 + source_agent.reputation_score * 0.4
+
+            max_price = max((c.price for c in mem_claims), default=0.0)
+
+            feed_items.append(
+                {
+                    "memory_id": memory.memory_id,
+                    "memory_content": memory.content,
+                    "agent_id": memory.agent_id,
+                    "visibility": memory.visibility.value,
+                    "claims": mem_claims,
+                    "entities": entities,
+                    "source_agent_name": source_agent.name,
+                    "source_reputation_score": source_agent.reputation_score,
+                    "created_at": memory.created_at,
+                    "is_paid": max_price > 0,
+                    "price": max_price,
+                    "feed_score": round(score, 4),
+                }
+            )
+
+        feed_items.sort(key=lambda item: item["feed_score"], reverse=True)
+        return feed_items[offset : offset + limit]
+
+    def _matches_subscription(self, sub: Subscription, claim: Claim) -> bool:
+        if sub.target_type == SubscriptionTarget.AGENT:
+            return claim.source_agent_id == sub.target_id
+        if sub.target_type == SubscriptionTarget.ORG:
+            return claim.source_org_id == sub.target_id
+        if sub.target_type == SubscriptionTarget.ENTITY:
+            alias = normalize_alias(sub.target_id)
+            for eid in claim.entity_ids:
+                entity = self.repository.get_entity(eid)
+                if entity and entity.alias_key == alias:
+                    return True
+            return False
+        if sub.target_type == SubscriptionTarget.TOPIC:
+            return self._bm25.score(claim.claim_id, sub.target_id) > 0
+        return False
+
+    def calculate_reputation_score(self, agent_id: str) -> float:
+        claims = [c for c in self.repository.list_claims() if c.source_agent_id == agent_id]
+        if not claims:
+            return 0.5
+        attested = sum(1 for c in claims if c.validation_status == ValidationStatus.ATTESTED)
+        challenged = sum(1 for c in claims if c.validation_status == ValidationStatus.CHALLENGED)
+        total_reviewed = attested + challenged
+        if total_reviewed == 0:
+            return 0.5
+        base = attested / total_reviewed
+        volume_factor = min(1.0, total_reviewed / 20)
+        return round(base * 0.7 + volume_factor * 0.3, 2)
 
     def _audit(
         self,
