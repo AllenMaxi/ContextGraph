@@ -33,6 +33,8 @@ from .models import (
     ReviewTask,
     StandingQuery,
     StoreResult,
+    Subscription,
+    SubscriptionTarget,
     ValidationStatus,
     Visibility,
 )
@@ -1135,6 +1137,73 @@ class ContextGraphService:
 
     def _is_terminal_job_status(self, status: JobStatus) -> bool:
         return status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.DEAD_LETTERED}
+
+    _MAX_SUBSCRIPTIONS = 200
+
+    def follow(self, agent_id: str, target_type: str, target_id: str) -> Subscription:
+        self.get_agent(agent_id)
+        target_enum = SubscriptionTarget(target_type)
+
+        # Validate target exists for agent/org types
+        if target_enum == SubscriptionTarget.AGENT:
+            self.get_agent(target_id)
+        elif target_enum == SubscriptionTarget.ORG:
+            if not any(a.org_id == target_id for a in self.repository.list_agents()):
+                raise NotFoundError(f"No agents found in org '{target_id}'.")
+
+        # Check duplicate
+        existing = self.repository.get_subscriptions_by_follower(agent_id)
+        for sub in existing:
+            if sub.target_type == target_enum and sub.target_id == target_id:
+                raise ValueError(f"Already following {target_type}:{target_id}")
+
+        # Check max limit
+        if len(existing) >= self._MAX_SUBSCRIPTIONS:
+            raise ValueError(f"Maximum {self._MAX_SUBSCRIPTIONS} subscriptions reached.")
+
+        subscription = Subscription(
+            subscription_id=new_id("sub"),
+            follower_agent_id=agent_id,
+            target_type=target_enum,
+            target_id=target_id,
+            created_at=utcnow(),
+        )
+        self.repository.save_subscription(subscription)
+
+        # Update followers_count for agent targets
+        if target_enum == SubscriptionTarget.AGENT:
+            target_agent = self.get_agent(target_id)
+            target_agent.followers_count = len(self.repository.get_followers_of_agent(target_id))
+            self.repository.save_agent(target_agent)
+
+        self._audit("follow", actor_agent_id=agent_id, details={"target_type": target_type, "target_id": target_id})
+        return subscription
+
+    def unfollow(self, agent_id: str, subscription_id: str) -> None:
+        self.get_agent(agent_id)
+        sub = self.repository.get_subscription(subscription_id)
+        if sub is None:
+            raise NotFoundError(f"Subscription '{subscription_id}' not found.")
+        if sub.follower_agent_id != agent_id:
+            raise PermissionDeniedError("Only the subscriber can unfollow.")
+
+        self.repository.delete_subscription(subscription_id)
+
+        # Update followers_count for agent targets
+        if sub.target_type == SubscriptionTarget.AGENT:
+            target_agent = self.get_agent(sub.target_id)
+            target_agent.followers_count = len(self.repository.get_followers_of_agent(sub.target_id))
+            self.repository.save_agent(target_agent)
+
+        self._audit("unfollow", actor_agent_id=agent_id, details={"subscription_id": subscription_id})
+
+    def list_following(self, agent_id: str) -> list[Subscription]:
+        self.get_agent(agent_id)
+        return self.repository.get_subscriptions_by_follower(agent_id)
+
+    def list_followers(self, agent_id: str) -> list[Subscription]:
+        self.get_agent(agent_id)
+        return self.repository.get_followers_of_agent(agent_id)
 
     def calculate_reputation_score(self, agent_id: str) -> float:
         claims = [c for c in self.repository.list_claims() if c.source_agent_id == agent_id]
