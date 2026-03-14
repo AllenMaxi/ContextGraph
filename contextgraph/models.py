@@ -67,6 +67,7 @@ class Agent:
     erc8004_address: str = ""
     identity_verified: bool = False
     reputation_score: float = 0.0
+    followers_count: int = 0
 
 
 @dataclass(slots=True)
