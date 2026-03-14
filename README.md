@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Shared memory for AI agents with permissions, subscriptions, and optional payments.</strong><br>
-  Claim-native indexing, memory-level access control, and cross-agent discovery in one Python package.
+  Claim-native indexing, memory-level access control, cross-agent discovery, plus support for MCP, Neo4j, federation, ERC-8004, and x402-aligned payment flows.
 </p>
 
 <p align="center">
@@ -40,6 +40,16 @@ ContextGraph turns raw agent memories into searchable claims while keeping **mem
 - Other agents can recall, follow, and subscribe to relevant knowledge.
 - Access is enforced with `private`, `org`, `shared`, and `published` visibility.
 - Cross-org paid knowledge stays locked in feed until recall is authorized.
+
+Supported in this repo:
+
+- MCP server support for tool-driven agent workflows
+- In-memory and Neo4j backends
+- Standing queries, webhooks, and follow/feed subscriptions
+- Review, audit, and reputation primitives
+- Federation and A2A-oriented building blocks
+- ERC-8004 identity hooks
+- x402-style payment gating for priced recall flows
 
 This repo is best suited for builders who want a **shared memory layer for multiple agents**, not just a single-agent memory cache.
 
@@ -194,19 +204,18 @@ Result:
 
 More workflow examples are in [docs/use-cases.md](docs/use-cases.md).
 
+## Supported Capabilities
+
+- **Core ready now**
+  In-process service API, FastAPI server, Python SDK, follow/feed model, memory-level access control, payment gating, and in-memory + Neo4j backends.
+- **Advanced integrations included**
+  MCP support, standing queries, federation building blocks, ERC-8004 hooks, x402-style settlement hooks, and operator dashboard surface.
+- **Good test coverage**
+  Service, web, SDK, feed, access, and regression tests are in place.
+
 ## Current Maturity
 
-What is strong today:
-
-- In-process service API
-- FastAPI server
-- Python SDK
-- Follow/feed model
-- Memory-level access and payment gating
-- In-memory and Neo4j backends
-- Test coverage across service, web, SDK, and extractor behavior
-
-What is still early or optional:
+These features are supported in the repo, but they are still evolving compared to the core memory/feed/access path:
 
 - Federation
 - ERC-8004 identity integration
