@@ -7,10 +7,37 @@ from typing import Protocol
 from .utils import normalize_alias
 
 SENTENCE_PATTERN = re.compile(r"[^.!?]+")
-ENTITY_PATTERN = re.compile(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")
+ENTITY_PATTERN = re.compile(r"\b(?:[A-Z]{2,}[A-Z0-9]*|[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")
 WORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9-]*")
 COMPANY_HINTS = {"corp", "inc", "llc", "ltd", "labs", "systems"}
 DROP_ENTITY_PREFIXES = {"customer", "client", "issue", "problem", "team"}
+ACRONYM_STOPWORDS = {
+    "AI",
+    "IT",
+    "OR",
+    "AN",
+    "AT",
+    "BY",
+    "IF",
+    "IN",
+    "IS",
+    "NO",
+    "OF",
+    "ON",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
+    "Q1",
+    "Q2",
+    "Q3",
+    "Q4",
+    "AM",
+    "PM",
+    "HR",
+    "PR",
+}
 BOUNDARY_WORDS = {"a", "an", "and", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"}
 
 
@@ -127,6 +154,8 @@ class RuleBasedExtractor:
         name = " ".join(parts).strip()
         if not name:
             return None
+        if name in ACRONYM_STOPWORDS:
+            return None
         entity_type = self._classify_entity(name)
         return ExtractedEntity(
             name=self._normalize_entity_name(name, entity_type),
@@ -137,6 +166,8 @@ class RuleBasedExtractor:
         last = name.split()[-1].lower()
         if last in COMPANY_HINTS:
             return "company"
+        if name.isupper() and len(name) >= 3 and name not in ACRONYM_STOPWORDS:
+            return "organization"
         if len(name.split()) >= 2:
             return "person"
         return "topic"
