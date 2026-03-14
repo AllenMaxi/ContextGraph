@@ -13,6 +13,9 @@ from .schemas import (
     AuditEntryResponse,
     BackgroundJobResponse,
     ClaimResponse,
+    ClaimUpdateRequest,
+    FeedItemResponse,
+    FollowRequest,
     MemoryStoreRequest,
     NotificationResponse,
     OperatorSummaryResponse,
@@ -25,6 +28,8 @@ from .schemas import (
     ReviewTaskResponse,
     StandingQueryResponse,
     StoreResultResponse,
+    SubscriptionResponse,
+    TrustScoreResponse,
     WatchRequest,
 )
 
@@ -241,3 +246,69 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/audit", response_model=list[AuditEntryResponse])
     def audit_entries(authenticated: Any = Depends(authenticated_agent)) -> Any:
         return to_jsonable(graph.list_audit_entries(requester_agent_id=authenticated.agent_id))
+
+    @app.get("/v1/feed", response_model=list[FeedItemResponse])
+    def feed(
+        limit: int = 20,
+        offset: int = 0,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        return to_jsonable(
+            graph.get_feed(
+                agent_id=authenticated.agent_id,
+                limit=min(limit, 100),
+                offset=max(offset, 0),
+            )
+        )
+
+    @app.post("/v1/follow", response_model=SubscriptionResponse, status_code=201)
+    def follow(payload: FollowRequest, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(
+            graph.follow(
+                agent_id=authenticated.agent_id,
+                target_type=payload.target_type.value,
+                target_id=payload.target_id,
+            )
+        )
+
+    @app.delete("/v1/follow/{subscription_id}", status_code=204, response_model=None)
+    def unfollow(subscription_id: str, authenticated: Any = Depends(authenticated_agent)) -> None:
+        graph.unfollow(agent_id=authenticated.agent_id, subscription_id=subscription_id)
+
+    @app.get("/v1/following", response_model=list[SubscriptionResponse])
+    def following(authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.list_following(agent_id=authenticated.agent_id))
+
+    @app.get("/v1/followers", response_model=list[SubscriptionResponse])
+    def followers(authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.list_followers(agent_id=authenticated.agent_id))
+
+    @app.get("/v1/agents/{agent_id}/trust", response_model=TrustScoreResponse)
+    def trust_score(agent_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        agent = graph.get_agent(agent_id)
+        claims = [c for c in graph.repository.list_claims() if c.source_agent_id == agent_id]
+        from ..models import ValidationStatus
+
+        return {
+            "agent_id": agent_id,
+            "reputation_score": agent.reputation_score,
+            "total_claims": len(claims),
+            "attested_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.ATTESTED),
+            "challenged_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.CHALLENGED),
+            "unreviewed_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.UNREVIEWED),
+            "followers_count": agent.followers_count,
+        }
+
+    @app.patch("/v1/claims/{claim_id}", response_model=ClaimResponse)
+    def update_claim(
+        claim_id: str, payload: ClaimUpdateRequest, authenticated: Any = Depends(authenticated_agent)
+    ) -> Any:
+        return to_jsonable(
+            graph.update_claim(
+                requester_agent_id=authenticated.agent_id,
+                claim_id=claim_id,
+                visibility=payload.visibility.value if payload.visibility else None,
+                price=payload.price,
+                access_list=payload.access_list,
+            )
+        )
