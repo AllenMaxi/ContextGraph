@@ -577,6 +577,34 @@ class ContextGraphService:
 
         return claim
 
+    def update_claim(
+        self,
+        requester_agent_id: str,
+        claim_id: str,
+        visibility: str | None = None,
+        price: float | None = None,
+        access_list: list[str] | None = None,
+    ) -> Claim:
+        self.get_agent(requester_agent_id)
+        claim = self.repository.get_claim(claim_id)
+        if claim is None:
+            raise NotFoundError(f"Claim '{claim_id}' not found.")
+        if claim.source_agent_id != requester_agent_id:
+            raise PermissionDeniedError("Only the source agent can update a claim.")
+
+        if visibility is not None:
+            claim.visibility = Visibility(visibility)
+        if price is not None:
+            claim.price = price
+        if access_list is not None:
+            claim.access_list = list(access_list)
+
+        claim.updated_at = utcnow()
+        self.repository.update_claim(claim)
+        self._audit("update_claim", actor_agent_id=requester_agent_id, details={"claim_id": claim_id})
+        self._emit_notifications([claim])
+        return claim
+
     def list_agents(self, requester_agent_id: str) -> list[Agent]:
         agents = self.repository.list_agents()
         requester = self.get_agent(requester_agent_id)
