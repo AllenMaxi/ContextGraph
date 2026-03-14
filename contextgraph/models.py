@@ -187,6 +187,9 @@ class RecallHit:
     claim: Claim
     score: float
     entities: list[Entity]
+    memory_content: str = ""
+    source_agent_name: str = ""
+    source_reputation_score: float = 0.0
 
 
 @dataclass(slots=True)
