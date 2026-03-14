@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..models import DeliveryMode, JobStatus, JobType, ValidationStatus, Visibility
+from ..models import DeliveryMode, JobStatus, JobType, SubscriptionTarget, ValidationStatus, Visibility
 from ..service import ReviewDecision
 from ._compat import BaseModel, ConfigDict, Field
 
@@ -20,6 +20,7 @@ class AgentResponse(BaseModel):
     erc8004_address: str = ""
     identity_verified: bool = False
     reputation_score: float = 0.0
+    followers_count: int = 0
 
 
 class AgentRegistrationRequest(BaseModel):
@@ -174,6 +175,9 @@ class RecallHitResponse(BaseModel):
     claim: ClaimResponse
     score: float
     entities: list[EntityResponse] = Field(default_factory=list)
+    memory_content: str = ""
+    source_agent_name: str = ""
+    source_reputation_score: float = 0.0
 
 
 class RelationPathResponse(BaseModel):
@@ -230,3 +234,48 @@ class OperatorSummaryResponse(BaseModel):
     reviewed_claim_count: int
     job_status_counts: dict[str, int] = Field(default_factory=dict)
     health: dict[str, object] = Field(default_factory=dict)
+
+
+class FollowRequest(BaseModel):
+    target_type: SubscriptionTarget
+    target_id: str
+
+
+class SubscriptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    subscription_id: str
+    follower_agent_id: str
+    target_type: SubscriptionTarget
+    target_id: str
+    created_at: datetime
+    active: bool
+
+
+class ClaimUpdateRequest(BaseModel):
+    visibility: Visibility | None = None
+    price: float | None = Field(default=None, ge=0.0)
+    access_list: list[str] | None = None
+
+
+class TrustScoreResponse(BaseModel):
+    agent_id: str
+    reputation_score: float
+    total_claims: int
+    attested_claims: int
+    challenged_claims: int
+    unreviewed_claims: int
+    followers_count: int
+
+
+class FeedItemResponse(BaseModel):
+    memory_id: str
+    memory_content: str
+    agent_id: str
+    visibility: str
+    claims: list[ClaimResponse] = Field(default_factory=list)
+    entities: list[EntityResponse] = Field(default_factory=list)
+    source_agent_name: str
+    source_reputation_score: float
+    created_at: datetime
+    is_paid: bool = False
+    price: float = 0.0
