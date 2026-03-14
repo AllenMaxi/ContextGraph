@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Protocol
 
 from .models import Agent, AuditEntry, Claim, Entity, Memory, Notification, ReviewTask, StandingQuery

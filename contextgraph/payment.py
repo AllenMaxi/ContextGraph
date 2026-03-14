@@ -8,6 +8,7 @@ from .errors import PaymentRequiredError
 @dataclass(slots=True)
 class PaymentReceipt:
     """Proof of payment for a knowledge access."""
+
     token: str
     amount: float
     currency: str
@@ -18,6 +19,7 @@ class PaymentReceipt:
 @dataclass(slots=True)
 class PaymentPolicy:
     """Pricing policy for an agent's knowledge."""
+
     default_price: float = 0.0
     currency: str = "USDC"
 
@@ -34,6 +36,7 @@ class PaymentGate:
 
     Supports any currency (USDC, ETH, BTC, etc.) via the currency parameter.
     """
+
     enabled: bool = False
     currency: str = "USDC"
 
@@ -60,8 +63,7 @@ class PaymentGate:
         # Priced claim requires token
         if not payment_token:
             raise PaymentRequiredError(
-                f"Payment required: {claim_price} {self.currency}. "
-                f"Send x402 payment token in X-Payment-Token header."
+                f"Payment required: {claim_price} {self.currency}. Send x402 payment token in X-Payment-Token header."
             )
 
         # In production, verify token against x402 settlement network.

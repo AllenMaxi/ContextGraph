@@ -4,7 +4,7 @@ from typing import Any
 
 from ..errors import AuthenticationError
 from ..service import ContextGraphService
-from ._compat import HTTPException, Header
+from ._compat import Header, HTTPException
 
 
 def build_authenticated_agent_dependency(graph: ContextGraphService):

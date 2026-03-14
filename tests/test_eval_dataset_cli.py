@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from io import StringIO
 import json
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,7 +17,10 @@ class ContextGraphEvalDatasetCliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "draft_cases.json"
-            with patch("sys.argv", ["contextgraph-eval-dataset", str(source), str(output)]), patch("sys.stdout", stdout):
+            with (
+                patch("sys.argv", ["contextgraph-eval-dataset", str(source), str(output)]),
+                patch("sys.stdout", stdout),
+            ):
                 exit_code = eval_dataset_cli.run()
 
             payload = json.loads(output.read_text(encoding="utf-8"))

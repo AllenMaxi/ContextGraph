@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Protocol
 
 from .utils import normalize_alias
-
 
 SENTENCE_PATTERN = re.compile(r"[^.!?]+")
 ENTITY_PATTERN = re.compile(r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b")

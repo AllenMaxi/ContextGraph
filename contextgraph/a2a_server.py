@@ -6,14 +6,13 @@ Implements the A2A protocol specification for ContextGraph, enabling:
 - Cross-agent task delegation
 - Federated claim exchange
 """
+
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .models import Agent
 from .utils import to_jsonable, utcnow
 
 logger = logging.getLogger(__name__)
@@ -260,9 +259,9 @@ class A2AServer:
         # List all claims visible to federation
         all_claims = self.service.repository.list_claims()
         published = [
-            to_jsonable(c) for c in all_claims
-            if c.visibility.value == "published"
-            and (since is None or c.created_at.isoformat() > since)
+            to_jsonable(c)
+            for c in all_claims
+            if c.visibility.value == "published" and (since is None or c.created_at.isoformat() > since)
         ]
         return published
 

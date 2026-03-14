@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from typing import Any, Protocol
 from urllib import error, request
 from urllib.parse import urlencode
-import json
-from typing import Any, Protocol
 
 from contextgraph.service import ContextGraphService
 from contextgraph.utils import to_jsonable
@@ -208,17 +208,15 @@ class ContextGraph:
         self.transport = transport
 
     @classmethod
-    def local(cls, service: ContextGraphService | None = None) -> "ContextGraph":
+    def local(cls, service: ContextGraphService | None = None) -> ContextGraph:
         return cls(LocalTransport(service or ContextGraphService()))
 
     @classmethod
-    def http(cls, base_url: str, api_key: str | None = None) -> "ContextGraph":
+    def http(cls, base_url: str, api_key: str | None = None) -> ContextGraph:
         return cls(HttpTransport(base_url=base_url, api_key=api_key))
 
     def register_agent(self, name: str, org_id: str, capabilities: list[str] | None = None) -> dict[str, Any]:
-        return self.transport.register_agent(
-            {"name": name, "org_id": org_id, "capabilities": capabilities or []}
-        )
+        return self.transport.register_agent({"name": name, "org_id": org_id, "capabilities": capabilities or []})
 
     def store(
         self,

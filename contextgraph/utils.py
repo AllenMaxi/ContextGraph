@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from datetime import UTC, datetime
 import re
 import secrets
-from typing import Any
 import uuid
-
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from typing import Any
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
@@ -68,4 +67,3 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, tuple):
         return [to_jsonable(item) for item in value]
     return value
-

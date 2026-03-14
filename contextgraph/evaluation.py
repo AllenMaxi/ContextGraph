@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -143,12 +143,8 @@ def report_to_dict(report: EvaluationReport) -> dict[str, Any]:
 def _evaluate_case(extractor: Extractor, case: EvaluationCase) -> EvaluationCaseResult:
     extracted = extractor.extract(case.content)
 
-    expected_statement_map = {
-        canonicalize_statement(item.statement).lower(): item for item in case.expected_claims
-    }
-    extracted_statement_map = {
-        canonicalize_statement(item.statement).lower(): item for item in extracted
-    }
+    expected_statement_map = {canonicalize_statement(item.statement).lower(): item for item in case.expected_claims}
+    extracted_statement_map = {canonicalize_statement(item.statement).lower(): item for item in extracted}
 
     expected_statements = set(expected_statement_map)
     extracted_statements = set(extracted_statement_map)

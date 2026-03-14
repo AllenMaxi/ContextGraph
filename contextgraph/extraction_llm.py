@@ -155,7 +155,7 @@ class LLMExtractor:
             first_newline = cleaned.index("\n")
             cleaned = cleaned[first_newline + 1 :]
         if cleaned.endswith("```"):
-            cleaned = cleaned[: -3]
+            cleaned = cleaned[:-3]
         return json.loads(cleaned.strip())
 
     # ---- mapping to internal dataclasses ----

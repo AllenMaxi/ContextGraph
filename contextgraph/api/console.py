@@ -140,8 +140,13 @@ def _render_console(
     ]
     review_html = "".join(_render_review_item(item) for item in review_queue) or "<p>No open review tasks.</p>"
     job_rows = "".join(_render_job_row(job) for job in jobs) or "<tr><td colspan='6'>No jobs yet.</td></tr>"
-    audit_rows = "".join(_render_audit_row(entry) for entry in audits) or "<tr><td colspan='4'>No audit entries yet.</td></tr>"
-    notification_rows = "".join(_render_notification_row(item) for item in notifications) or "<tr><td colspan='4'>No notifications yet.</td></tr>"
+    audit_rows = (
+        "".join(_render_audit_row(entry) for entry in audits) or "<tr><td colspan='4'>No audit entries yet.</td></tr>"
+    )
+    notification_rows = (
+        "".join(_render_notification_row(item) for item in notifications)
+        or "<tr><td colspan='4'>No notifications yet.</td></tr>"
+    )
     cards_html = "".join(
         f"<article class='metric'><h2>{escape(label)}</h2><p>{escape(value)}</p></article>" for label, value in cards
     )
@@ -211,7 +216,7 @@ def _render_review_item(item: ReviewQueueItem) -> str:
         <span class="badge">{escape(item.review.reason)}</span>
         <span>{escape(item.source_agent.name)}</span>
         <span>{escape(item.claim.validation_status.value)}</span>
-        <span>{escape(item.review.created_at.isoformat(timespec='seconds'))}</span>
+        <span>{escape(item.review.created_at.isoformat(timespec="seconds"))}</span>
       </div>
       <p class="statement">{escape(item.claim.statement)}</p>
       <p class="muted">Claim {escape(item.claim.claim_id)} from memory {escape(item.claim.memory_id)}</p>

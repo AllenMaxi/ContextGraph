@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from contextgraph.a2a_server import A2AServer, A2ATask
+from contextgraph.a2a_server import A2AServer
 from contextgraph.federation import FederationManager, FederationPeer, FederationResult
 from contextgraph.models import Claim, ValidationStatus, Visibility
 from contextgraph.utils import utcnow
@@ -44,7 +44,6 @@ class StubTransport:
 
 
 class FederationManagerTest(unittest.TestCase):
-
     def test_only_published_claims_are_federated(self):
         transport = StubTransport()
         mgr = FederationManager(
@@ -118,7 +117,6 @@ class FederationManagerTest(unittest.TestCase):
 
 
 class A2AServerTest(unittest.TestCase):
-
     def test_agent_card_includes_skills(self):
         server = A2AServer(node_id="node-1", base_url="https://example.com", enabled=True)
         card = server.agent_card()

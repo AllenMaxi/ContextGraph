@@ -62,6 +62,7 @@ ignore = [
   "E501",   # line too long (handled by formatter)
   "SIM108", # ternary operator (readability preference)
   "UP007",  # use X | Y for union types (already used, but ignore for compatibility)
+  "B008",   # Depends() in argument defaults (standard FastAPI pattern)
 ]
 
 [tool.hatch.build.targets.wheel]

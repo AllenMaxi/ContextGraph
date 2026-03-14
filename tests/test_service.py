@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
 import unittest
+from datetime import timedelta
 
 from contextgraph import ContextGraphService
 from contextgraph.config import Settings
@@ -406,14 +406,20 @@ class ContextGraphServiceTest(unittest.TestCase):
     def test_watch_webhook_rejects_private_ip(self) -> None:
         with self.assertRaises(ValueError):
             self.service.watch(
-                self.alpha.agent_id, "test", "w", "webhook",
+                self.alpha.agent_id,
+                "test",
+                "w",
+                "webhook",
                 filters={"webhook_url": "http://169.254.169.254/latest/meta-data/"},
             )
 
     def test_watch_webhook_rejects_localhost(self) -> None:
         with self.assertRaises(ValueError):
             self.service.watch(
-                self.alpha.agent_id, "test", "w", "webhook",
+                self.alpha.agent_id,
+                "test",
+                "w",
+                "webhook",
                 filters={"webhook_url": "http://127.0.0.1:8080/callback"},
             )
 

@@ -8,6 +8,7 @@ from .utils import utcnow
 @dataclass(slots=True)
 class AgentIdentity:
     """ERC-8004 agent identity with optional on-chain verification."""
+
     agent_id: str
     erc8004_address: str = ""
     display_name: str = ""
@@ -27,6 +28,7 @@ class IdentityVerifier:
     In production: queries the ERC-8004 registry contract on Base/Ethereum.
     In offline mode (enabled=False): trusts the provided address for development.
     """
+
     enabled: bool = False
     registry_url: str = ""
 

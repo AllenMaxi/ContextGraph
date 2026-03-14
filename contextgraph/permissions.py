@@ -27,12 +27,6 @@ def can_access_claim(
         return requester_org_id == claim.source_org_id
 
     if claim.visibility == Visibility.SHARED:
-        return (
-            requester_agent_id in claim.access_list
-            or requester_org_id in claim.access_list
-        )
+        return requester_agent_id in claim.access_list or requester_org_id in claim.access_list
 
-    if claim.visibility == Visibility.PUBLISHED:
-        return True
-
-    return False
+    return claim.visibility == Visibility.PUBLISHED

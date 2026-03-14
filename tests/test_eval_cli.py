@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from io import StringIO
 import json
 import unittest
+from io import StringIO
 from unittest.mock import patch
 
 from contextgraph import eval_cli

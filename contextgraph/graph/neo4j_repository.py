@@ -34,7 +34,7 @@ class Neo4jRepository:
 
     def __init__(self, uri: str, user: str, password: str) -> None:
         if GraphDatabase is None:  # pragma: no cover - optional dependency
-            raise RuntimeError("neo4j is not installed. Install with `pip install -e \".[server,neo4j]\"`.")
+            raise RuntimeError('neo4j is not installed. Install with `pip install -e ".[server,neo4j]"`.')
         self._driver = GraphDatabase.driver(uri, auth=(user, password))
         self._ensure_schema()
 

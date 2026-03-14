@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+import logging
 from collections import deque
 from datetime import timedelta
 from enum import StrEnum
-import logging
 from threading import RLock, Timer
 from time import monotonic, sleep
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 from .background import BackgroundWorker
 from .config import Settings, settings
@@ -16,8 +14,6 @@ from .delivery import DeliveryRequest, NotificationDispatcher, WebhookNotificati
 from .errors import AuthenticationError, NotFoundError, PermissionDeniedError
 from .extraction import Extractor, RuleBasedExtractor
 from .identity import AgentIdentity, IdentityVerifier
-from .payment import PaymentGate
-from .permissions import can_access_claim
 from .in_memory import InMemoryRepository
 from .models import (
     Agent,
@@ -32,17 +28,21 @@ from .models import (
     Notification,
     RecallHit,
     RelationPath,
+    ReviewQueueItem,
     ReviewStatus,
     ReviewTask,
-    ReviewQueueItem,
     StandingQuery,
     StoreResult,
     ValidationStatus,
     Visibility,
 )
+from .payment import PaymentGate
+from .permissions import can_access_claim
 from .repository import Repository
 from .scoring import BM25Scorer
 from .utils import jaccard_similarity, new_api_key, new_id, normalize_alias, pairwise, utcnow
+
+logger = logging.getLogger(__name__)
 
 
 class ReviewDecision(StrEnum):
@@ -96,11 +96,8 @@ class ContextGraphService:
         erc8004_address: str = "",
     ) -> Agent:
         configured_admin_key = self.settings.admin_key
-        if configured_admin_key:
-            if not admin_key or admin_key != configured_admin_key:
-                raise PermissionDeniedError(
-                    "Agent registration requires a valid admin key when CG_ADMIN_KEY is set."
-                )
+        if configured_admin_key and (not admin_key or admin_key != configured_admin_key):
+            raise PermissionDeniedError("Agent registration requires a valid admin key when CG_ADMIN_KEY is set.")
         now = utcnow()
         agent = Agent(
             agent_id=new_id("agt"),
@@ -235,11 +232,7 @@ class ContextGraphService:
         requester = self.get_agent(requester_agent_id)
         with self._job_lock:
             jobs = list(self._jobs.values())
-        visible = [
-            job
-            for job in jobs
-            if job.org_id == requester.org_id or job.agent_id == requester.agent_id
-        ]
+        visible = [job for job in jobs if job.org_id == requester.org_id or job.agent_id == requester.agent_id]
         return sorted(visible, key=lambda item: item.created_at, reverse=True)
 
     def wait_for_job(self, job_id: str, requester_agent_id: str, timeout_seconds: float = 5.0) -> BackgroundJob:
@@ -363,7 +356,11 @@ class ContextGraphService:
                 self._bm25_indexed_claims.add(claim.claim_id)
 
     def recall(
-        self, agent_id: str, query: str, limit: int = 10, payment_token: str | None = None,
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 10,
+        payment_token: str | None = None,
     ) -> list[RecallHit]:
         requester = self.get_agent(agent_id)
         payment_gate = PaymentGate(enabled=self.settings.enable_payments, currency=self.settings.payment_currency)
@@ -404,11 +401,7 @@ class ContextGraphService:
         if left is None or right is None:
             return []
 
-        accessible_claims = [
-            claim
-            for claim in self.repository.list_claims()
-            if self._can_access(requester, claim)
-        ]
+        accessible_claims = [claim for claim in self.repository.list_claims() if self._can_access(requester, claim)]
 
         direct_paths = [
             RelationPath(
@@ -438,7 +431,11 @@ class ContextGraphService:
             if len(path) - 1 > max_depth:
                 continue
             if current == right.entity_id and claim_chain:
-                names = [self.repository.get_entity(entity_id).name for entity_id in path if self.repository.get_entity(entity_id)]
+                names = [
+                    self.repository.get_entity(entity_id).name
+                    for entity_id in path
+                    if self.repository.get_entity(entity_id)
+                ]
                 found.append(
                     RelationPath(
                         entities=names,
@@ -629,11 +626,11 @@ class ContextGraphService:
         limit: int = 100,
     ) -> list[Claim]:
         requester = self.get_agent(requester_agent_id)
-        open_review_claim_ids = {
-            review.claim_id
-            for review in self.repository.list_review_tasks()
-            if review.status == ReviewStatus.OPEN
-        } if only_needing_review else None
+        open_review_claim_ids = (
+            {review.claim_id for review in self.repository.list_review_tasks() if review.status == ReviewStatus.OPEN}
+            if only_needing_review
+            else None
+        )
         status_filter = ValidationStatus(validation_status) if validation_status is not None else None
         claims: list[Claim] = []
         for claim in self.repository.list_claims():
@@ -663,9 +660,7 @@ class ContextGraphService:
             "org_id": requester.org_id,
             "pending_review_count": len(review_queue),
             "claim_count": len(claims),
-            "expired_claim_count": sum(
-                1 for claim in claims if claim.validation_status == ValidationStatus.EXPIRED
-            ),
+            "expired_claim_count": sum(1 for claim in claims if claim.validation_status == ValidationStatus.EXPIRED),
             "reviewed_claim_count": sum(
                 1
                 for claim in claims
@@ -699,9 +694,7 @@ class ContextGraphService:
             jobs_by_status[job.status.value] = jobs_by_status.get(job.status.value, 0) + 1
             jobs_by_type[job.job_type.value] = jobs_by_type.get(job.job_type.value, 0) + 1
         expired_claims = sum(
-            1
-            for claim in self.repository.list_claims()
-            if claim.validation_status == ValidationStatus.EXPIRED
+            1 for claim in self.repository.list_claims() if claim.validation_status == ValidationStatus.EXPIRED
         )
         return {
             "status": "ok",
@@ -823,7 +816,9 @@ class ContextGraphService:
                 )
                 self.repository.save_notification(notification)
                 if query.delivery_mode == DeliveryMode.WEBHOOK:
-                    self._enqueue_notification_delivery(owner=owner, query=query, claim=claim, notification=notification)
+                    self._enqueue_notification_delivery(
+                        owner=owner, query=query, claim=claim, notification=notification
+                    )
 
     def _matches_standing_query(self, owner: Agent, query: StandingQuery, claim: Claim) -> bool:
         if not self._can_access(owner, claim):
@@ -844,10 +839,7 @@ class ContextGraphService:
         entity_filter = filters.get("entity")
         if entity_filter:
             entity_alias = normalize_alias(entity_filter)
-            claim_entities = [
-                self.repository.get_entity(entity_id)
-                for entity_id in claim.entity_ids
-            ]
+            claim_entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
             if all(entity is None or entity.alias_key != entity_alias for entity in claim_entities):
                 return False
         if query.query.strip():
@@ -909,7 +901,11 @@ class ContextGraphService:
                 )
                 self._submit_job(job_id, delay_seconds=retry_delay)
                 return
-            if job is not None and job.job_type == JobType.DELIVER_NOTIFICATION and job.status == JobStatus.DEAD_LETTERED:
+            if (
+                job is not None
+                and job.job_type == JobType.DELIVER_NOTIFICATION
+                and job.status == JobStatus.DEAD_LETTERED
+            ):
                 self._delivery_dead_letter_total += 1
                 self._audit(
                     "deliver_notification_dead_letter",

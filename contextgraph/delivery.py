@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import ipaddress
 import json
+from dataclasses import dataclass
 from typing import Protocol
 from urllib import request
 from urllib.parse import urlparse

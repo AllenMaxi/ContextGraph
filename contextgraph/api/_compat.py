@@ -27,6 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
     def Field(default: Any = None, **_: Any) -> Any:  # pragma: no cover - optional dependency
         return default
 
+
 __all__ = [
     "BaseModel",
     "ConfigDict",

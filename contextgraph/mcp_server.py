@@ -12,6 +12,7 @@ Environment variables:
     CG_AGENT_NAME  – display name when auto-registering (default: "mcp-agent")
     CG_AGENT_ORG   – org id when auto-registering   (default: "default")
 """
+
 from __future__ import annotations
 
 import json
@@ -23,7 +24,7 @@ from datetime import datetime
 from typing import Any
 
 from .bootstrap import create_service
-from .errors import ContextGraphError, NotFoundError, PermissionDeniedError
+from .errors import ContextGraphError, NotFoundError
 from .service import ContextGraphService
 
 logger = logging.getLogger(__name__)
@@ -129,8 +130,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "contextgraph_watch",
         "description": (
-            "Create a standing query (subscription) that triggers "
-            "notifications when new claims match the query."
+            "Create a standing query (subscription) that triggers notifications when new claims match the query."
         ),
         "inputSchema": {
             "type": "object",
@@ -162,8 +162,7 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "contextgraph_notifications",
         "description": (
-            "Get pending notifications for the current agent. "
-            "Returns undelivered notifications from standing queries."
+            "Get pending notifications for the current agent. Returns undelivered notifications from standing queries."
         ),
         "inputSchema": {
             "type": "object",
@@ -204,6 +203,7 @@ TOOLS: list[dict[str, Any]] = [
 # Dataclass serialization helper
 # ---------------------------------------------------------------------------
 
+
 def _serialize(obj: Any) -> Any:
     """Recursively convert dataclass trees to JSON-safe dicts."""
     if isinstance(obj, datetime):
@@ -220,6 +220,7 @@ def _serialize(obj: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Tool dispatch
 # ---------------------------------------------------------------------------
+
 
 def _dispatch_tool(
     service: ContextGraphService,
@@ -249,13 +250,9 @@ def _dispatch_tool(
                 }
                 for c in result.claims
             ],
-            "entities": [
-                {"entity_id": e.entity_id, "name": e.name, "type": e.entity_type}
-                for e in result.entities
-            ],
+            "entities": [{"entity_id": e.entity_id, "name": e.name, "type": e.entity_type} for e in result.entities],
             "review_tasks": [
-                {"task_id": rt.task_id, "claim_id": rt.claim_id, "reason": rt.reason}
-                for rt in result.review_tasks
+                {"task_id": rt.task_id, "claim_id": rt.claim_id, "reason": rt.reason} for rt in result.review_tasks
             ],
         }
 
@@ -272,10 +269,7 @@ def _dispatch_tool(
                 "confidence": h.claim.confidence,
                 "score": h.score,
                 "validation_status": h.claim.validation_status,
-                "entities": [
-                    {"entity_id": e.entity_id, "name": e.name, "type": e.entity_type}
-                    for e in h.entities
-                ],
+                "entities": [{"entity_id": e.entity_id, "name": e.name, "type": e.entity_type} for e in h.entities],
             }
             for h in hits
         ]
@@ -322,6 +316,7 @@ def _dispatch_tool(
 # Ensure agent exists (auto-register if needed)
 # ---------------------------------------------------------------------------
 
+
 def _ensure_agent(service: ContextGraphService, agent_id: str) -> str:
     """Return *agent_id*, creating the agent if it doesn't already exist."""
     try:
@@ -338,6 +333,7 @@ def _ensure_agent(service: ContextGraphService, agent_id: str) -> str:
 # MCP SDK server (preferred when the `mcp` package is available)
 # ---------------------------------------------------------------------------
 
+
 def _try_run_mcp_sdk(service: ContextGraphService, agent_id: str) -> bool:
     """Attempt to start the server via the ``mcp`` PyPI package.
 
@@ -345,9 +341,9 @@ def _try_run_mcp_sdk(service: ContextGraphService, agent_id: str) -> bool:
     is not importable so the caller should fall back.
     """
     try:
+        import mcp.types as mcp_types  # type: ignore[import-untyped]
         from mcp.server import Server  # type: ignore[import-untyped]
         from mcp.server.stdio import stdio_server  # type: ignore[import-untyped]
-        import mcp.types as mcp_types  # type: ignore[import-untyped]
     except ImportError:
         return False
 
@@ -367,9 +363,7 @@ def _try_run_mcp_sdk(service: ContextGraphService, agent_id: str) -> bool:
         ]
 
     @server.call_tool()
-    async def _call_tool(
-        name: str, arguments: dict[str, Any]
-    ) -> list[mcp_types.TextContent]:
+    async def _call_tool(name: str, arguments: dict[str, Any]) -> list[mcp_types.TextContent]:
         try:
             result = _dispatch_tool(service, agent_id, name, arguments or {})
             text = json.dumps(result, indent=2, default=str)
@@ -391,6 +385,7 @@ def _try_run_mcp_sdk(service: ContextGraphService, agent_id: str) -> bool:
 # ---------------------------------------------------------------------------
 # Fallback: standalone JSON-RPC 2.0 stdio server (no dependencies)
 # ---------------------------------------------------------------------------
+
 
 class _JsonRpcServer:
     """Minimal JSON-RPC 2.0 server over stdin/stdout implementing the
@@ -501,11 +496,13 @@ class _JsonRpcServer:
         self._write({"jsonrpc": "2.0", "id": req_id, "result": result})
 
     def _write_error(self, req_id: Any, code: int, message: str) -> None:
-        self._write({
-            "jsonrpc": "2.0",
-            "id": req_id,
-            "error": {"code": code, "message": message},
-        })
+        self._write(
+            {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": code, "message": message},
+            }
+        )
 
     def _write(self, msg: dict[str, Any]) -> None:
         line = json.dumps(msg)
@@ -516,6 +513,7 @@ class _JsonRpcServer:
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
 
 def main(agent_id: str | None = None) -> None:
     """Start the ContextGraph MCP server.

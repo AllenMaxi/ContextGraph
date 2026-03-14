@@ -29,7 +29,6 @@ class ContextGraphExtractionTest(unittest.TestCase):
 
     def test_unicode_entities_are_extracted(self) -> None:
         claims = self.extractor.extract("José from Münchner GmbH reported an issue.")
-        entity_names = {entity.name for claim in claims for entity in claim.entities}
         # At minimum, the text should be processed without errors
         self.assertIsInstance(claims, list)
 

@@ -15,7 +15,7 @@ from .service import ContextGraphService
 
 def create_app(service: ContextGraphService | None = None) -> Any:
     if FastAPI is None:  # pragma: no cover - optional dependency
-        raise RuntimeError("FastAPI is not installed. Install with `pip install -e \".[server]\"`.")
+        raise RuntimeError('FastAPI is not installed. Install with `pip install -e ".[server]"`.')
 
     graph = service or create_service()
     app = FastAPI(title="ContextGraph", version="0.2.0")

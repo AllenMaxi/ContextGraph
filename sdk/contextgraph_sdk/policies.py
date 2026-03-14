@@ -8,7 +8,6 @@ from contextgraph.utils import jaccard_similarity
 
 from .client import ContextGraph
 
-
 IMPORTANT_KEYWORDS = {
     "deadline",
     "delayed",

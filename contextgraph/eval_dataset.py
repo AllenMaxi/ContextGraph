@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +22,7 @@ class AgentTraceRecord:
 def load_agent_trace_records(path: str | Path) -> list[AgentTraceRecord]:
     source = Path(path)
     if source.suffix == ".jsonl":
-        payload = [
-            json.loads(line)
-            for line in source.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        payload = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
     else:
         payload = json.loads(source.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
@@ -74,18 +70,8 @@ def write_evaluation_cases(path: str | Path, cases: list[dict[str, Any]]) -> Pat
 def _parse_trace_record(payload: Any, *, index: int) -> AgentTraceRecord:
     if not isinstance(payload, dict):
         raise ValueError("Each agent trace record must be an object.")
-    case_id = str(
-        payload.get("case_id")
-        or payload.get("trace_id")
-        or payload.get("id")
-        or f"trace-{index}"
-    )
-    name = str(
-        payload.get("name")
-        or payload.get("title")
-        or payload.get("summary")
-        or case_id
-    )
+    case_id = str(payload.get("case_id") or payload.get("trace_id") or payload.get("id") or f"trace-{index}")
+    name = str(payload.get("name") or payload.get("title") or payload.get("summary") or case_id)
     content = payload.get("content") or payload.get("text") or payload.get("memory") or payload.get("message")
     if not content:
         raise ValueError(f"Trace record '{case_id}' is missing content/text/memory/message.")
@@ -105,7 +91,21 @@ def _parse_trace_record(payload: Any, *, index: int) -> AgentTraceRecord:
     metadata = {
         key: str(value)
         for key, value in payload.items()
-        if key not in {"case_id", "trace_id", "id", "name", "title", "summary", "content", "text", "memory", "message", "expected_claims", "tags"}
+        if key
+        not in {
+            "case_id",
+            "trace_id",
+            "id",
+            "name",
+            "title",
+            "summary",
+            "content",
+            "text",
+            "memory",
+            "message",
+            "expected_claims",
+            "tags",
+        }
         and value is not None
     }
     return AgentTraceRecord(

@@ -1,4 +1,5 @@
 """Federation layer for cross-node claim sharing between ContextGraph instances."""
+
 from __future__ import annotations
 
 import json
@@ -152,9 +153,7 @@ class FederationManager:
             return False
         if claim.visibility != Visibility.PUBLISHED:
             return False
-        if claim.claim_id in self._federated_claim_ids:
-            return False
-        return True
+        return claim.claim_id not in self._federated_claim_ids
 
     def federate_claims(self, claims: list[Claim]) -> list[FederationResult]:
         """Send eligible claims to all active peers."""

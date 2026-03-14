@@ -23,4 +23,3 @@ def create_repository(app_settings: Settings | None = None):
 def create_service(app_settings: Settings | None = None) -> ContextGraphService:
     current = app_settings or settings
     return ContextGraphService(repository=create_repository(current), app_settings=current)
-

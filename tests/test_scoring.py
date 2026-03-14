@@ -47,10 +47,7 @@ class TestMultipleDocumentsRanking(unittest.TestCase):
         scorer.add_document("d2", "python programming language tutorial for beginners")
         scorer.add_document("d3", "cooking recipes for Italian pasta dishes")
 
-        scores = {
-            doc_id: scorer.score(doc_id, "python programming")
-            for doc_id in ("d1", "d2", "d3")
-        }
+        scores = {doc_id: scorer.score(doc_id, "python programming") for doc_id in ("d1", "d2", "d3")}
         # d2 should score highest since it matches the query best
         best = max(scores, key=scores.get)  # type: ignore[arg-type]
         self.assertEqual(best, "d2")

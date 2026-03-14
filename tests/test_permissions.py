@@ -36,7 +36,6 @@ def _make_claim(
 
 
 class PermissionsTest(unittest.TestCase):
-
     def test_private_only_source_agent(self):
         claim = _make_claim(Visibility.PRIVATE)
         self.assertTrue(can_access_claim("agent-a", "org-a", claim))
@@ -70,7 +69,6 @@ class PermissionsTest(unittest.TestCase):
 
 
 class PaymentTest(unittest.TestCase):
-
     def test_free_claims_need_no_payment(self):
         from contextgraph.payment import PaymentGate
 
@@ -89,9 +87,7 @@ class PaymentTest(unittest.TestCase):
         from contextgraph.payment import PaymentGate, PaymentReceipt
 
         gate = PaymentGate(enabled=True)
-        receipt = gate.check_access(
-            agent_id="a", claim_price=0.002, payment_token="x402_test_token"
-        )
+        receipt = gate.check_access(agent_id="a", claim_price=0.002, payment_token="x402_test_token")
         self.assertIsInstance(receipt, PaymentReceipt)
 
     def test_same_org_access_is_free(self):
@@ -100,14 +96,16 @@ class PaymentTest(unittest.TestCase):
         gate = PaymentGate(enabled=True)
         # Same-org agents don't pay each other
         result = gate.check_access(
-            agent_id="a", claim_price=0.002, payment_token=None,
-            requester_org="org-a", claim_org="org-a",
+            agent_id="a",
+            claim_price=0.002,
+            payment_token=None,
+            requester_org="org-a",
+            claim_org="org-a",
         )
         self.assertIsNone(result)
 
 
 class IdentityTest(unittest.TestCase):
-
     def test_create_identity_without_chain(self):
         from contextgraph.identity import AgentIdentity
 

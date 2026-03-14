@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 from contextgraph.evaluation import EvaluationCase, ExpectedClaim, evaluate_extractor, load_evaluation_cases
 from contextgraph.extraction import ExtractedClaim, ExtractedEntity, RuleBasedExtractor, canonicalize_statement

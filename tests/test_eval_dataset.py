@@ -8,7 +8,6 @@ from pathlib import Path
 from contextgraph import build_evaluation_cases_from_traces, load_agent_trace_records, write_evaluation_cases
 from contextgraph.extraction import RuleBasedExtractor
 
-
 FIXTURE_PATH = Path("tests/fixtures/agent_trace_records.jsonl")
 
 

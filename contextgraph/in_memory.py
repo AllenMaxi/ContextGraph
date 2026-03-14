@@ -117,11 +117,7 @@ class InMemoryRepository:
 
     def list_notifications_for_agent(self, agent_id: str) -> list[Notification]:
         with self._lock:
-            return [
-                notification
-                for notification in self._notifications.values()
-                if notification.agent_id == agent_id
-            ]
+            return [notification for notification in self._notifications.values() if notification.agent_id == agent_id]
 
     def mark_notification_delivered(self, notification_id: str) -> Notification | None:
         with self._lock:

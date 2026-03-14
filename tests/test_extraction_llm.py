@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import io
 import json
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from contextgraph.config import Settings
 from contextgraph.extraction import RuleBasedExtractor
@@ -73,11 +72,13 @@ class TestLLMExtractorParsesValidResponse(unittest.TestCase):
             ],
         }
 
-        api_response_body = json.dumps({
-            "content": [
-                {"type": "text", "text": json.dumps(llm_json)},
-            ],
-        }).encode()
+        api_response_body = json.dumps(
+            {
+                "content": [
+                    {"type": "text", "text": json.dumps(llm_json)},
+                ],
+            }
+        ).encode()
 
         mock_response = MagicMock()
         mock_response.read.return_value = api_response_body
