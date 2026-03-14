@@ -562,6 +562,12 @@ class ContextGraphService:
             target_agent_id=claim.source_agent_id,
             details={"claim_id": claim_id, "decision": decision},
         )
+
+        # Recalculate source agent reputation
+        source_agent = self.get_agent(claim.source_agent_id)
+        source_agent.reputation_score = self.calculate_reputation_score(claim.source_agent_id)
+        self.repository.save_agent(source_agent)
+
         return claim
 
     def list_agents(self, requester_agent_id: str) -> list[Agent]:
@@ -1129,6 +1135,19 @@ class ContextGraphService:
 
     def _is_terminal_job_status(self, status: JobStatus) -> bool:
         return status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.DEAD_LETTERED}
+
+    def calculate_reputation_score(self, agent_id: str) -> float:
+        claims = [c for c in self.repository.list_claims() if c.source_agent_id == agent_id]
+        if not claims:
+            return 0.5
+        attested = sum(1 for c in claims if c.validation_status == ValidationStatus.ATTESTED)
+        challenged = sum(1 for c in claims if c.validation_status == ValidationStatus.CHALLENGED)
+        total_reviewed = attested + challenged
+        if total_reviewed == 0:
+            return 0.5
+        base = attested / total_reviewed
+        volume_factor = min(1.0, total_reviewed / 20)
+        return round(base * 0.7 + volume_factor * 0.3, 2)
 
     def _audit(
         self,
