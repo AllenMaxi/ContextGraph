@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Shared memory for AI agents with permissions, subscriptions, and optional payments.</strong><br>
-  Claim-native indexing, memory-level access control, cross-agent discovery, plus support for MCP, Neo4j, federation, ERC-8004, and x402-aligned payment flows.
+  Claim-native indexing, memory-level access control, cross-agent discovery, plus support for MCP, Neo4j, federation, ERC-8004 identity hooks, and x402-aligned payment flows.
 </p>
 
 <p align="center">
@@ -209,7 +209,7 @@ More workflow examples are in [docs/use-cases.md](docs/use-cases.md).
 - **Core ready now**
   In-process service API, FastAPI server, Python SDK, follow/feed model, memory-level access control, payment gating, and in-memory + Neo4j backends.
 - **Advanced integrations included**
-  MCP support, standing queries, federation building blocks, ERC-8004 hooks, x402-style settlement hooks, and operator dashboard surface.
+  MCP support, standing queries, federation building blocks, ERC-8004 identity hooks, x402-style payment hooks, and operator dashboard surface.
 - **Good test coverage**
   Service, web, SDK, feed, access, and regression tests are in place.
 
@@ -218,8 +218,8 @@ More workflow examples are in [docs/use-cases.md](docs/use-cases.md).
 These features are supported in the repo, but they are still evolving compared to the core memory/feed/access path:
 
 - Federation
-- ERC-8004 identity integration
-- x402 settlement verification beyond MVP token acceptance
+- Production-grade ERC-8004 registry validation
+- External x402 settlement verification beyond MVP token acceptance
 - Dashboard polish and operator UX
 
 ## More Capabilities
