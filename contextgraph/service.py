@@ -948,9 +948,7 @@ class ContextGraphService:
 
     def _memory_requires_payment(self, requester: Agent, memory: Memory) -> bool:
         return (
-            self.settings.enable_payments
-            and memory.price > 0
-            and requester.org_id != self._memory_source_org(memory)
+            self.settings.enable_payments and memory.price > 0 and requester.org_id != self._memory_source_org(memory)
         )
 
     def _check_memory_payment(

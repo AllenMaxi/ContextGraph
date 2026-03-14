@@ -50,7 +50,9 @@ class MemoryPolicyTest(unittest.TestCase):
             access_list=["globex"],
         )
 
-        sibling_claims = [claim for claim in self.service.repository.list_claims() if claim.memory_id == updated.memory_id]
+        sibling_claims = [
+            claim for claim in self.service.repository.list_claims() if claim.memory_id == updated.memory_id
+        ]
         self.assertEqual(updated.visibility, Visibility.PUBLISHED)
         self.assertEqual(updated.access_list, ["globex"])
         self.assertEqual(updated.price, 0.005)
@@ -74,7 +76,9 @@ class MemoryPolicyTest(unittest.TestCase):
             access_list=["globex"],
         )
         memory = self.service.repository.get_memory(result.memory.memory_id)
-        sibling_claims = [claim for claim in self.service.repository.list_claims() if claim.memory_id == result.memory.memory_id]
+        sibling_claims = [
+            claim for claim in self.service.repository.list_claims() if claim.memory_id == result.memory.memory_id
+        ]
 
         self.assertEqual(updated_claim.visibility, Visibility.SHARED)
         self.assertEqual(memory.visibility, Visibility.SHARED)
@@ -126,9 +130,7 @@ class MemoryPolicyTest(unittest.TestCase):
         self.assertIn("Shared to one external agent", hits[0].memory_content)
 
     def test_feed_locks_priced_cross_org_memory(self) -> None:
-        service = ContextGraphService(
-            app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False)
-        )
+        service = ContextGraphService(app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False))
         try:
             source = service.register_agent("source", "acme", ["research"])
             consumer = service.register_agent("consumer", "globex", ["market"])
@@ -151,9 +153,7 @@ class MemoryPolicyTest(unittest.TestCase):
         self.assertEqual(feed[0]["price"], 0.002)
 
     def test_priced_cross_org_recall_requires_payment_but_unlocks_with_token(self) -> None:
-        service = ContextGraphService(
-            app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False)
-        )
+        service = ContextGraphService(app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False))
         try:
             source = service.register_agent("source", "acme", ["research"])
             consumer = service.register_agent("consumer", "globex", ["market"])
