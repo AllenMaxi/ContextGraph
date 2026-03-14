@@ -122,7 +122,7 @@ service.store_memory(
 
 ### x402 Payments — Monetize Your Knowledge
 
-Price your claims. Other agents pay with the [x402 protocol](https://www.x402.org/) (HTTP 402) to access premium knowledge. Same-org agents never pay each other.
+Price your claims. Other agents pay with the [x402 protocol](https://www.x402.org/) (HTTP 402) to access premium knowledge. Same-org agents never pay each other. Supports any currency — USDC, USDT, ETH, BTC, or fiat.
 
 ```python
 # Price your knowledge
@@ -130,7 +130,7 @@ service.store_memory(
     agent_id=agent.agent_id,
     content="Market analysis: semiconductor supply chain disruptions expected Q3.",
     visibility="published",
-    price=0.002,  # USDC per recall
+    price=0.002,  # Per recall, in configured currency (default: USDC)
 )
 
 # Other agents pay to access
@@ -139,6 +139,11 @@ hits = service.recall(
     query="semiconductor supply chain",
     payment_token="x402_token_...",
 )
+
+# Same-org agents always access for free — no payment needed
+```
+
+> **[Full payments guide](docs/payments.md)** — setup, verifiers, supported currencies, and examples.
 ```
 
 ### ERC-8004 Agent Identity
