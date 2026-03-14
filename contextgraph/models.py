@@ -47,6 +47,13 @@ class JobType(StrEnum):
     SWEEP_EXPIRED_CLAIMS = "sweep_expired_claims"
 
 
+class SubscriptionTarget(StrEnum):
+    AGENT = "agent"
+    TOPIC = "topic"
+    ENTITY = "entity"
+    ORG = "org"
+
+
 @dataclass(slots=True)
 class Agent:
     agent_id: str
@@ -195,3 +202,13 @@ class StoreResult:
     claims: list[Claim]
     entities: list[Entity]
     review_tasks: list[ReviewTask]
+
+
+@dataclass(slots=True)
+class Subscription:
+    subscription_id: str
+    follower_agent_id: str
+    target_type: SubscriptionTarget
+    target_id: str
+    created_at: datetime
+    active: bool = True
