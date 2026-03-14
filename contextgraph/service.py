@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import deque
 from datetime import timedelta
 from enum import StrEnum
@@ -1237,6 +1238,92 @@ class ContextGraphService:
     def list_followers(self, agent_id: str) -> list[Subscription]:
         self.get_agent(agent_id)
         return self.repository.get_followers_of_agent(agent_id)
+
+    def get_feed(self, agent_id: str, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
+        requester = self.get_agent(agent_id)
+        subscriptions = self.repository.get_subscriptions_by_follower(agent_id)
+        if not subscriptions:
+            return []
+
+        all_claims = self.repository.list_claims()
+        self._sync_bm25_index(all_claims)
+
+        # Group claims by memory_id
+        claims_by_memory: dict[str, list[Claim]] = {}
+        for claim in all_claims:
+            claims_by_memory.setdefault(claim.memory_id, []).append(claim)
+
+        # Collect matching memory_ids from subscriptions
+        matched_memory_ids: set[str] = set()
+        for sub in subscriptions:
+            for memory_id, mem_claims in claims_by_memory.items():
+                for claim in mem_claims:
+                    if not self._can_access(requester, claim):
+                        continue
+                    if self._matches_subscription(sub, claim):
+                        matched_memory_ids.add(memory_id)
+                        break
+
+        # Build feed items
+        now = utcnow()
+        feed_items: list[dict[str, Any]] = []
+        for memory_id in matched_memory_ids:
+            memory = self.repository.get_memory(memory_id)
+            if memory is None:
+                continue
+            mem_claims = claims_by_memory.get(memory_id, [])
+            if not mem_claims:
+                continue
+            source_agent = self.repository.get_agent(mem_claims[0].source_agent_id)
+            if source_agent is None:
+                continue
+
+            entities: list[Entity] = []
+            for claim in mem_claims:
+                for eid in claim.entity_ids:
+                    entity = self.repository.get_entity(eid)
+                    if entity and entity not in entities:
+                        entities.append(entity)
+
+            age_hours = (now - memory.created_at).total_seconds() / 3600
+            recency = math.exp(-age_hours / 168)
+            score = recency * 0.6 + source_agent.reputation_score * 0.4
+
+            max_price = max((c.price for c in mem_claims), default=0.0)
+
+            feed_items.append({
+                "memory_id": memory.memory_id,
+                "memory_content": memory.content,
+                "agent_id": memory.agent_id,
+                "visibility": memory.visibility.value,
+                "claims": mem_claims,
+                "entities": entities,
+                "source_agent_name": source_agent.name,
+                "source_reputation_score": source_agent.reputation_score,
+                "created_at": memory.created_at,
+                "is_paid": max_price > 0,
+                "price": max_price,
+                "feed_score": round(score, 4),
+            })
+
+        feed_items.sort(key=lambda item: item["feed_score"], reverse=True)
+        return feed_items[offset : offset + limit]
+
+    def _matches_subscription(self, sub: Subscription, claim: Claim) -> bool:
+        if sub.target_type == SubscriptionTarget.AGENT:
+            return claim.source_agent_id == sub.target_id
+        if sub.target_type == SubscriptionTarget.ORG:
+            return claim.source_org_id == sub.target_id
+        if sub.target_type == SubscriptionTarget.ENTITY:
+            alias = normalize_alias(sub.target_id)
+            for eid in claim.entity_ids:
+                entity = self.repository.get_entity(eid)
+                if entity and entity.alias_key == alias:
+                    return True
+            return False
+        if sub.target_type == SubscriptionTarget.TOPIC:
+            return self._bm25.score(claim.claim_id, sub.target_id) > 0
+        return False
 
     def calculate_reputation_score(self, agent_id: str) -> float:
         claims = [c for c in self.repository.list_claims() if c.source_agent_id == agent_id]
