@@ -1,0 +1,36 @@
+services:
+  contextgraph:
+    build: .
+    ports:
+      - "8420:8420"
+    environment:
+      - CG_REPOSITORY_BACKEND=${CG_REPOSITORY_BACKEND:-memory}
+      - CG_NEO4J_URI=bolt://neo4j:7687
+      - CG_NEO4J_PASSWORD=contextgraph
+      - CG_ADMIN_KEY=${CG_ADMIN_KEY:-changeme}
+      - CG_ENABLE_BACKGROUND_WORKER=1
+      - CG_CORS_ORIGINS=*
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+
+  neo4j:
+    image: neo4j:5-community
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/contextgraph
+      - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p contextgraph 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:

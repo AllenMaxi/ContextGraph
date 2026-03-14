@@ -1,0 +1,2 @@
+{"trace_id":"trace-1","title":"Latency escalation","content":"Acme Corp reported API latency. Jane from Acme Corp needs a fix.","source_agent":"support-agent","tags":["support","draft"]}
+{"trace_id":"trace-2","title":"Provided labels","content":"Vendor X expanded into Germany.","expected_claims":[{"statement":"Vendor X expanded into Germany","entities":["Vendor X","Germany"],"relation_type":"association","claim_type":"fact"}],"source_agent":"research-agent","tags":["research","labeled"]}

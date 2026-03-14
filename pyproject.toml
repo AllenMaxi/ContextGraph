@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "contextgraph"
+version = "0.1.0"
+description = "Claim-native context and trust layer for multi-agent systems"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Maximiliano Allende" }
+]
+keywords = ["agents", "knowledge-graph", "memory", "ai", "mcp", "a2a", "x402", "erc8004"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/AllenMaxi/ContextGraph"
+Repository = "https://github.com/AllenMaxi/ContextGraph"
+Issues = "https://github.com/AllenMaxi/ContextGraph/issues"
+Documentation = "https://contextgraph.dev/docs"
+
+[project.scripts]
+contextgraph-eval = "contextgraph.eval_cli:run"
+contextgraph-eval-dataset = "contextgraph.eval_dataset_cli:run"
+contextgraph-server = "contextgraph.server:run"
+contextgraph-mcp = "contextgraph.mcp_server:main"
+
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.115.0",
+  "python-multipart>=0.0.9",
+  "uvicorn[standard]>=0.34.0",
+]
+neo4j = [
+  "neo4j>=5.28.0",
+]
+mcp = [
+  "mcp>=1.0.0",
+]
+dev = [
+  "pytest>=8.0.0",
+  "httpx>=0.27.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+  "E501",   # line too long (handled by formatter)
+  "SIM108", # ternary operator (readability preference)
+  "UP007",  # use X | Y for union types (already used, but ignore for compatibility)
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["contextgraph", "sdk/contextgraph_sdk"]

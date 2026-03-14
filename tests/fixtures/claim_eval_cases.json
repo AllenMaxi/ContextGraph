@@ -1,0 +1,75 @@
+[
+  {
+    "case_id": "support_incident_handoff",
+    "name": "Support incident handoff",
+    "tags": ["support", "handoff"],
+    "content": "Acme Corp reported API latency. Jane from Acme Corp needs a fix.",
+    "expected_claims": [
+      {
+        "statement": "Acme Corp reported API latency",
+        "entities": ["Acme Corp"],
+        "relation_type": "REPORTED",
+        "claim_type": "attribute"
+      },
+      {
+        "statement": "Jane from Acme Corp needs a fix",
+        "entities": ["Jane", "Acme Corp"],
+        "relation_type": "REQUESTED",
+        "claim_type": "relationship"
+      }
+    ]
+  },
+  {
+    "case_id": "customer_escalation",
+    "name": "Customer escalation",
+    "tags": ["support", "customer-success"],
+    "content": "Globex Inc opened a ticket. Maria from Globex Inc wants an update.",
+    "expected_claims": [
+      {
+        "statement": "Globex Inc opened a ticket",
+        "entities": ["Globex Inc"],
+        "claim_type": "attribute"
+      },
+      {
+        "statement": "Maria from Globex Inc wants an update",
+        "entities": ["Maria", "Globex Inc"],
+        "relation_type": "REQUESTED",
+        "claim_type": "relationship"
+      }
+    ]
+  },
+  {
+    "case_id": "research_brief",
+    "name": "Research brief",
+    "tags": ["research", "diligence"],
+    "content": "Jane works at Acme Corp. Acme Corp wants a security review.",
+    "expected_claims": [
+      {
+        "statement": "Jane works at Acme Corp",
+        "entities": ["Jane", "Acme Corp"],
+        "relation_type": "ASSOCIATED_WITH",
+        "claim_type": "relationship"
+      },
+      {
+        "statement": "Acme Corp wants a security review",
+        "entities": ["Acme Corp"],
+        "relation_type": "REQUESTED",
+        "claim_type": "attribute"
+      }
+    ]
+  },
+  {
+    "case_id": "lowercase_partner_note",
+    "name": "Lowercase partner note",
+    "tags": ["support", "quality-gap"],
+    "content": "acme corp requested an urgent review.",
+    "expected_claims": [
+      {
+        "statement": "acme corp requested an urgent review",
+        "entities": ["acme corp"],
+        "relation_type": "REQUESTED",
+        "claim_type": "attribute"
+      }
+    ]
+  }
+]

@@ -1,0 +1,23 @@
+.git
+.venv
+__pycache__
+*.pyc
+.env
+.env.*
+tests/
+docs/
+.github/
+.claude/
+
+# Ignore all markdown except README
+*.md
+!README.md
+
+# Build artifacts
+dist/
+build/
+*.egg-info
+
+# IDE
+.vscode/
+.idea/
