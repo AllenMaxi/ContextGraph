@@ -385,11 +385,16 @@ class ContextGraphService:
             if score <= 0:
                 continue
             entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
+            memory = self.repository.get_memory(claim.memory_id)
+            source_agent = self.repository.get_agent(claim.source_agent_id)
             hits.append(
                 RecallHit(
                     claim=claim,
                     score=round(score, 4),
                     entities=[entity for entity in entities if entity is not None],
+                    memory_content=memory.content if memory else "",
+                    source_agent_name=source_agent.name if source_agent else "",
+                    source_reputation_score=source_agent.reputation_score if source_agent else 0.0,
                 )
             )
         hits.sort(key=lambda item: item.score, reverse=True)
