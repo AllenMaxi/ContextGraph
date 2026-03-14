@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unittest
 
-from contextgraph.errors import NotFoundError, PermissionDeniedError
+from contextgraph.errors import PermissionDeniedError
 from contextgraph.service import ContextGraphService
 
 

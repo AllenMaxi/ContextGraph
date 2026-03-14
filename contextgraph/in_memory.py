@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from threading import RLock
 
-from .models import Agent, AuditEntry, Claim, Entity, Memory, Notification, ReviewTask, StandingQuery, Subscription, SubscriptionTarget
+from .models import (
+    Agent,
+    AuditEntry,
+    Claim,
+    Entity,
+    Memory,
+    Notification,
+    ReviewTask,
+    StandingQuery,
+    Subscription,
+    SubscriptionTarget,
+)
 
 
 class InMemoryRepository:
@@ -171,7 +182,8 @@ class InMemoryRepository:
     def get_followers_of_agent(self, agent_id: str) -> list[Subscription]:
         with self._lock:
             return [
-                s for s in self._subscriptions.values()
+                s
+                for s in self._subscriptions.values()
                 if s.target_type == SubscriptionTarget.AGENT and s.target_id == agent_id and s.active
             ]
 

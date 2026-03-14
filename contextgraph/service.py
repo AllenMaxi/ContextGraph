@@ -1181,9 +1181,10 @@ class ContextGraphService:
         # Validate target exists for agent/org types
         if target_enum == SubscriptionTarget.AGENT:
             self.get_agent(target_id)
-        elif target_enum == SubscriptionTarget.ORG:
-            if not any(a.org_id == target_id for a in self.repository.list_agents()):
-                raise NotFoundError(f"No agents found in org '{target_id}'.")
+        elif target_enum == SubscriptionTarget.ORG and not any(
+            a.org_id == target_id for a in self.repository.list_agents()
+        ):
+            raise NotFoundError(f"No agents found in org '{target_id}'.")
 
         # Check duplicate
         existing = self.repository.get_subscriptions_by_follower(agent_id)
@@ -1291,20 +1292,22 @@ class ContextGraphService:
 
             max_price = max((c.price for c in mem_claims), default=0.0)
 
-            feed_items.append({
-                "memory_id": memory.memory_id,
-                "memory_content": memory.content,
-                "agent_id": memory.agent_id,
-                "visibility": memory.visibility.value,
-                "claims": mem_claims,
-                "entities": entities,
-                "source_agent_name": source_agent.name,
-                "source_reputation_score": source_agent.reputation_score,
-                "created_at": memory.created_at,
-                "is_paid": max_price > 0,
-                "price": max_price,
-                "feed_score": round(score, 4),
-            })
+            feed_items.append(
+                {
+                    "memory_id": memory.memory_id,
+                    "memory_content": memory.content,
+                    "agent_id": memory.agent_id,
+                    "visibility": memory.visibility.value,
+                    "claims": mem_claims,
+                    "entities": entities,
+                    "source_agent_name": source_agent.name,
+                    "source_reputation_score": source_agent.reputation_score,
+                    "created_at": memory.created_at,
+                    "is_paid": max_price > 0,
+                    "price": max_price,
+                    "feed_score": round(score, 4),
+                }
+            )
 
         feed_items.sort(key=lambda item: item["feed_score"], reverse=True)
         return feed_items[offset : offset + limit]
