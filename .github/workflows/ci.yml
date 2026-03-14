@@ -21,7 +21,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[server,neo4j,dev]"
+        run: |
+          pip install ruff
+          pip install -e ".[server,neo4j,dev]"
 
       - name: Lint
         run: |

@@ -366,7 +366,7 @@ class ContextGraphService:
         self, agent_id: str, query: str, limit: int = 10, payment_token: str | None = None,
     ) -> list[RecallHit]:
         requester = self.get_agent(agent_id)
-        payment_gate = PaymentGate(enabled=self.settings.enable_payments)
+        payment_gate = PaymentGate(enabled=self.settings.enable_payments, currency=self.settings.payment_currency)
         all_claims = self.repository.list_claims()
         self._sync_bm25_index(all_claims)
         hits: list[RecallHit] = []

@@ -31,8 +31,11 @@ class PaymentGate:
 
     When enabled, cross-org access to priced claims requires an x402 payment
     token in the X-Payment-Token header. Same-org agents never pay each other.
+
+    Supports any currency (USDC, ETH, BTC, etc.) via the currency parameter.
     """
     enabled: bool = False
+    currency: str = "USDC"
 
     def check_access(
         self,
@@ -57,7 +60,7 @@ class PaymentGate:
         # Priced claim requires token
         if not payment_token:
             raise PaymentRequiredError(
-                f"Payment required: {claim_price} USDC. "
+                f"Payment required: {claim_price} {self.currency}. "
                 f"Send x402 payment token in X-Payment-Token header."
             )
 
@@ -66,7 +69,7 @@ class PaymentGate:
         return PaymentReceipt(
             token=payment_token,
             amount=claim_price,
-            currency="USDC",
+            currency=self.currency,
             payer_agent_id=agent_id,
             status="verified",
         )

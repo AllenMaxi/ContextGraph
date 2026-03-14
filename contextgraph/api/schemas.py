@@ -40,7 +40,7 @@ class MemoryStoreRequest(BaseModel):
     license: str = "internal"
     metadata: dict[str, str] = Field(default_factory=dict)
     access_list: list[str] = Field(default_factory=list, description="Agent/org IDs allowed access (for 'shared' visibility)")
-    price: float = Field(default=0.0, ge=0.0, description="Price per recall in USDC (0 = free)")
+    price: float = Field(default=0.0, ge=0.0, description="Price per recall (0 = free). Currency set via CG_PAYMENT_CURRENCY.")
 
 
 class RecallRequest(BaseModel):
