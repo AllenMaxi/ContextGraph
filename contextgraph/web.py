@@ -9,8 +9,8 @@ from .api._compat import FastAPI, JSONResponse
 from .api.console import register_console_routes
 from .api.routes import register_routes
 from .bootstrap import create_service
-from .config import settings
 from .errors import AuthenticationError, ContextGraphError, NotFoundError, PaymentRequiredError, PermissionDeniedError
+from .mcp_remote import register_remote_mcp_routes
 from .service import ContextGraphService
 
 
@@ -19,6 +19,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
         raise RuntimeError('FastAPI is not installed. Install with `pip install -e ".[server]"`.')
 
     graph = service or create_service()
+    app_settings = graph.settings
 
     @asynccontextmanager
     async def lifespan(_: Any):
@@ -33,7 +34,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
     try:
         from starlette.middleware.cors import CORSMiddleware
 
-        origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+        origins = [o.strip() for o in app_settings.cors_origins.split(",") if o.strip()]
         app.add_middleware(
             CORSMiddleware,
             allow_origins=origins,
@@ -46,7 +47,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
     # --- Simple rate limiting middleware ---
     _rate_buckets: dict[str, list[float]] = defaultdict(list)
-    _rate_limit = settings.rate_limit_per_minute
+    _rate_limit = app_settings.rate_limit_per_minute
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Any, call_next: Any) -> Any:
@@ -77,6 +78,8 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
     register_routes(app, graph)
     register_console_routes(app, graph)
+    if app_settings.enable_remote_mcp:
+        register_remote_mcp_routes(app, graph, path=app_settings.remote_mcp_path)
 
     @app.exception_handler(ContextGraphError)
     async def handle_contextgraph_error(_, exc: ContextGraphError) -> Any:

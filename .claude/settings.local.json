@@ -39,7 +39,20 @@
       "Bash(git add:*)",
       "Bash(pip install:*)",
       "Bash(pip3 install:*)",
-      "Bash(python3 -m pip install ruff --user 2>&1 | tail -3)"
+      "Bash(python3 -m pip install ruff --user 2>&1 | tail -3)",
+      "Bash(/Users/maximilianoallende/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.2/skills/brainstorming/scripts/start-server.sh --project-dir /Users/maximilianoallende/Documents/promptUltra 2>&1)",
+      "Bash(mkdir -p .worktrees && git check-ignore -q .worktrees 2>/dev/null; echo \"exit: $?\")",
+      "Bash(git worktree:*)",
+      "Bash(python -m pytest tests/ -q 2>&1 | tail -5)",
+      "Bash(python3 -m pytest tests/ -q 2>&1 | tail -10)",
+      "Bash(python3 -m pytest tests/test_models.py -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/test_models.py::RecallHitModelTest -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/ -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/test_subscription_repo.py -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/test_reputation.py -v --tb=short 2>&1 | tail -20)",
+      "Bash(python3 -m pytest tests/test_reputation.py -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/test_follow.py -v --tb=short 2>&1)",
+      "Bash(python3 -m pytest tests/ -q 2>&1 | tail -3)"
     ]
   }
 }

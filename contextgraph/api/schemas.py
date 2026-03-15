@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from ..models import DeliveryMode, JobStatus, JobType, SubscriptionTarget, ValidationStatus, Visibility
+from ..models import (
+    DeliveryMode,
+    JobStatus,
+    JobType,
+    MemoryCurationStatus,
+    SubscriptionTarget,
+    ValidationStatus,
+    Visibility,
+)
 from ..service import ReviewDecision
 from ._compat import BaseModel, ConfigDict, Field
 
@@ -145,6 +153,9 @@ class MemoryResponse(BaseModel):
     citations: list[str] = Field(default_factory=list)
     validated_at: datetime | None = None
     expires_at: datetime | None = None
+    curation_status: MemoryCurationStatus = MemoryCurationStatus.ACTIVE
+    curation_reason: str = ""
+    curated_at: datetime | None = None
 
 
 class ReviewTaskResponse(BaseModel):
@@ -284,6 +295,11 @@ class MemoryAccessUpdateRequest(BaseModel):
     visibility: Visibility | None = None
     price: float | None = Field(default=None, ge=0.0)
     access_list: list[str] | None = None
+
+
+class MemoryCurationUpdateRequest(BaseModel):
+    curation_status: MemoryCurationStatus
+    reason: str = ""
 
 
 class AgentDefaultsUpdateRequest(BaseModel):

@@ -242,3 +242,39 @@ class MemoryPolicyTest(unittest.TestCase):
 
         self.assertEqual(len(hits), 1)
         self.assertIn("wafer prices increased", hits[0].memory_content)
+
+    def test_hidden_memory_is_removed_from_recall_and_feed_until_restored(self) -> None:
+        result = self.service.store_memory(
+            self.alice.agent_id,
+            "Acme supplier note. Acme sourcing note.",
+            visibility="org",
+        )
+        self.service.follow(self.acme_peer.agent_id, "agent", self.alice.agent_id)
+
+        visible_hits = self.service.recall(self.acme_peer.agent_id, "supplier note")
+        visible_feed = self.service.get_feed(self.acme_peer.agent_id)
+
+        hidden = self.service.update_memory_curation(
+            requester_agent_id=self.acme_peer.agent_id,
+            memory_id=result.memory.memory_id,
+            curation_status="hidden",
+            reason="temporarily suppress stale memory",
+        )
+        hidden_hits = self.service.recall(self.acme_peer.agent_id, "supplier note")
+        hidden_feed = self.service.get_feed(self.acme_peer.agent_id)
+
+        restored = self.service.update_memory_curation(
+            requester_agent_id=self.alice.agent_id,
+            memory_id=result.memory.memory_id,
+            curation_status="active",
+            reason="restored after review",
+        )
+        restored_hits = self.service.recall(self.acme_peer.agent_id, "supplier note")
+
+        self.assertGreaterEqual(len(visible_hits), 1)
+        self.assertEqual(len(visible_feed), 1)
+        self.assertEqual(hidden.curation_status.value, "hidden")
+        self.assertEqual(hidden_hits, [])
+        self.assertEqual(hidden_feed, [])
+        self.assertEqual(restored.curation_status.value, "active")
+        self.assertGreaterEqual(len(restored_hits), 1)

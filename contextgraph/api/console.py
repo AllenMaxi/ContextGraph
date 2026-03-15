@@ -985,6 +985,21 @@ def _dashboard_js() -> str:
       if (item.memory_content) return item.memory_content.substring(0, 200);
       return 'Memory available in feed metadata.';
     }
+    function memoryPreview(memory) {
+      if (!memory) return 'Unknown memory';
+      return (memory.content || '').substring(0, 90) || memory.memory_id;
+    }
+    function memoryCurationBadges(memory) {
+      if (!memory || !memory.curation_status || memory.curation_status === 'active') return '';
+      if (memory.curation_status === 'hidden') return statusBadge('hidden', 'review');
+      if (memory.curation_status === 'archived') return statusBadge('archived', 'stale');
+      return '';
+    }
+    function matchesMemoryCuration(memory, filter) {
+      if (filter === 'all') return true;
+      if (!memory) return false;
+      return memory.curation_status === filter;
+    }
     function formatFollowTarget(sub, agentNames) {
       if (sub.target_type === 'agent') {
         return agentNames[sub.target_id] || sub.target_id;
@@ -1511,17 +1526,37 @@ def _dashboard_js() -> str:
     // CLAIMS PAGE
     // ========================================================
     var _claimsData = [];
+    var _memoriesData = [];
+    var _memoryIndex = {};
+    var _reviewTasks = [];
+    var _auditEntries = [];
     var _claimsVisibilityFilter = 'all';
     var _claimsHealthFilter = 'all';
+    var _claimsMemoryFilter = 'all';
+    var _claimsCurationFilter = 'all';
 
     function loadClaims() {
       var content = document.getElementById('content');
       content.innerHTML =
         '<div class="loading">Loading claims...</div>';
-      fetchJSON('/v1/claims').then(function(claims) {
-        _claimsData = claims;
+      Promise.all([
+        fetchJSON('/v1/claims?include_inactive=true'),
+        fetchJSON('/v1/memories?include_inactive=true'),
+        fetchJSON('/v1/reviews'),
+        fetchJSON('/v1/audit')
+      ]).then(function(results) {
+        _claimsData = results[0];
+        _memoriesData = results[1];
+        _reviewTasks = results[2];
+        _auditEntries = results[3];
+        _memoryIndex = {};
+        _memoriesData.forEach(function(memory) {
+          _memoryIndex[memory.memory_id] = memory;
+        });
         _claimsVisibilityFilter = 'all';
         _claimsHealthFilter = 'all';
+        _claimsMemoryFilter = 'all';
+        _claimsCurationFilter = 'all';
         renderClaims();
       }).catch(function(err) {
         content.innerHTML =
@@ -1534,6 +1569,7 @@ def _dashboard_js() -> str:
       var content = document.getElementById('content');
       var visibilityFilters = ['all', 'PUBLISHED', 'PRIVATE', 'ORG', 'SHARED'];
       var healthFilters = ['all', 'review', 'verified', 'challenged', 'stale', 'expiring'];
+      var curationFilters = ['all', 'active', 'hidden', 'archived'];
       var summary = {
         total: _claimsData.length,
         review: _claimsData.filter(function(c) { return matchesClaimHealth(c, 'review'); }).length,
@@ -1578,13 +1614,42 @@ def _dashboard_js() -> str:
       });
       html += '</div></div>';
 
+      html += '<div class="filter-block"><span class="filter-label">Memory Parent</span>';
+      html += '<div class="form-group"><select onchange="filterClaimsMemory(this.value)">';
+      html += '<option value="all"' + (_claimsMemoryFilter === 'all' ? ' selected' : '') + '>All memories</option>';
+      _memoriesData.forEach(function(memory) {
+        var label = memory.memory_id.substring(0, 10) + ' - ' + memoryPreview(memory);
+        html += '<option value="' + esc(memory.memory_id) + '"'
+          + (memory.memory_id === _claimsMemoryFilter ? ' selected' : '')
+          + '>' + esc(label) + '</option>';
+      });
+      html += '</select></div></div>';
+
+      html += '<div class="filter-block"><span class="filter-label">Memory Curation</span><div class="tabs">';
+      curationFilters.forEach(function(f) {
+        var label = {
+          all: 'All',
+          active: 'Active',
+          hidden: 'Hidden',
+          archived: 'Archived'
+        }[f];
+        html += '<button class="tab'
+          + (f === _claimsCurationFilter ? ' active' : '')
+          + '" onclick="filterClaimsCuration(\'' + f + '\')">'
+          + label + '</button>';
+      });
+      html += '</div></div>';
+
       html += '<div class="inline-actions" style="margin-bottom:18px">';
       html += '<button class="btn btn-secondary btn-sm" onclick="runExpirySweep()">Run Expiry Sweep</button>';
       html += '</div>';
 
       var filtered = _claimsData.filter(function(c) {
+        var memory = _memoryIndex[c.memory_id];
         var visibilityMatch = _claimsVisibilityFilter === 'all' || c.visibility === _claimsVisibilityFilter;
-        return visibilityMatch && matchesClaimHealth(c, _claimsHealthFilter);
+        var memoryMatch = _claimsMemoryFilter === 'all' || c.memory_id === _claimsMemoryFilter;
+        var curationMatch = matchesMemoryCuration(memory, _claimsCurationFilter);
+        return visibilityMatch && memoryMatch && curationMatch && matchesClaimHealth(c, _claimsHealthFilter);
       });
 
       if (!filtered.length) {
@@ -1594,10 +1659,12 @@ def _dashboard_js() -> str:
         html += '<div class="card-grid">';
         filtered.forEach(function(c) {
           var origIdx = _claimsData.indexOf(c);
+          var memory = _memoryIndex[c.memory_id];
           html += '<div class="card" onclick="openClaim('
             + origIdx + ')">';
           html += '<div class="badge-row" style="margin-bottom:10px">'
             + visibilityBadge(c.visibility)
+            + memoryCurationBadges(memory)
             + claimHealthBadges([c]) + '</div>';
           html += '<div class="card-statement">'
             + esc(c.statement) + '</div>';
@@ -1611,6 +1678,9 @@ def _dashboard_js() -> str:
           }
           if (c.expires_at) {
             html += '<span>Expires ' + esc(formatDateShort(c.expires_at)) + '</span>';
+          }
+          if (memory) {
+            html += '<span>Memory ' + esc(memory.memory_id.substring(0, 10)) + '</span>';
           }
           if (c.price > 0) {
             html += '<span style="color:var(--amber)">$'
@@ -1633,9 +1703,27 @@ def _dashboard_js() -> str:
       renderClaims();
     };
 
+    window.filterClaimsMemory = function(memoryId) {
+      _claimsMemoryFilter = memoryId;
+      renderClaims();
+    };
+
+    window.filterClaimsCuration = function(status) {
+      _claimsCurationFilter = status;
+      renderClaims();
+    };
+
     window.openClaim = function(idx) {
       var c = _claimsData[idx];
       if (!c) return;
+      var memory = _memoryIndex[c.memory_id];
+      var reviewHistory = _reviewTasks.filter(function(task) {
+        return task.claim_id === c.claim_id;
+      });
+      var auditHistory = _auditEntries.filter(function(entry) {
+        var details = entry.details || {};
+        return details.claim_id === c.claim_id || details.memory_id === c.memory_id;
+      }).slice(0, 10);
 
       var html = '<div class="detail-section"><h4>Statement</h4>';
       html += '<p>' + esc(c.statement) + '</p></div>';
@@ -1643,6 +1731,7 @@ def _dashboard_js() -> str:
       html += '<div class="detail-section"><h4>Health</h4>';
       html += '<div class="badge-row">'
         + visibilityBadge(c.visibility)
+        + memoryCurationBadges(memory)
         + claimHealthBadges([c]) + '</div></div>';
 
       html += '<div class="detail-section"><h4>Details</h4>';
@@ -1657,6 +1746,24 @@ def _dashboard_js() -> str:
       html += 'Expires At: ' + esc(c.expires_at ? formatDateShort(c.expires_at) : 'No expiry') + '<br>';
       html += 'Source: ' + esc(c.source_agent_id) + '<br>';
       html += '</p></div>';
+
+      if (memory) {
+        html += '<div class="detail-section"><h4>Parent Memory</h4>';
+        html += '<div class="badge-row">'
+          + visibilityBadge(memory.visibility)
+          + memoryCurationBadges(memory)
+          + claimHealthBadges(_claimsData.filter(function(item) { return item.memory_id === memory.memory_id; }))
+          + '</div>';
+        html += '<div class="muted-copy" style="margin-top:10px">Memory ID: '
+          + esc(memory.memory_id) + '</div>';
+        html += '<pre style="margin-top:10px">' + esc(memory.content) + '</pre>';
+        if (memory.curation_reason) {
+          html += '<p class="muted-copy" style="margin-top:8px">Curation note: '
+            + esc(memory.curation_reason) + '</p>';
+        }
+        html += '<p class="muted-copy" style="margin-top:6px">Updated '
+          + esc(formatDateShort(memory.updated_at)) + '</p></div>';
+      }
 
       html += '<div class="detail-section"><h4>Provenance</h4>';
       if ((c.evidence && c.evidence.length) || (c.citations && c.citations.length)) {
@@ -1682,8 +1789,47 @@ def _dashboard_js() -> str:
       html += '<button class="btn btn-primary" onclick="reviewClaimDecision(\'' + esc(c.claim_id) + '\', \'attested\')">Mark Verified</button>';
       html += '<button class="btn btn-secondary" onclick="reviewClaimDecision(\'' + esc(c.claim_id) + '\', \'challenged\')">Mark Challenged</button>';
       html += '<button class="btn btn-secondary" onclick="runExpirySweep()">Run Expiry Sweep</button>';
+      if (memory) {
+        html += '<button class="btn btn-secondary" onclick="updateMemoryCuration(\'' + esc(memory.memory_id) + '\', \'hidden\')">Hide Memory</button>';
+        html += '<button class="btn btn-secondary" onclick="updateMemoryCuration(\'' + esc(memory.memory_id) + '\', \'archived\')">Archive Memory</button>';
+        html += '<button class="btn btn-secondary" onclick="updateMemoryCuration(\'' + esc(memory.memory_id) + '\', \'active\')">Restore Memory</button>';
+      }
       html += '</div>';
       html += '<p class="muted-copy" style="margin-top:10px">Validation actions update the trust state. Expiry sweep refreshes stale claims from their expiry timestamps.</p></div>';
+
+      html += '<div class="detail-section"><h4>Review History</h4>';
+      if (reviewHistory.length) {
+        html += '<div class="detail-list">';
+        reviewHistory.forEach(function(task) {
+          html += '<div class="detail-list-item"><strong>' + esc(task.status) + '</strong><br>'
+            + 'Reason: ' + esc(task.reason) + '<br>'
+            + 'Created: ' + esc(formatDateShort(task.created_at))
+            + (task.resolved_at ? '<br>Resolved: ' + esc(formatDateShort(task.resolved_at)) : '')
+            + '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<p class="muted-copy">No review tasks recorded for this claim yet.</p>';
+      }
+      html += '</div>';
+
+      html += '<div class="detail-section"><h4>Audit Trail</h4>';
+      if (auditHistory.length) {
+        html += '<div class="detail-list">';
+        auditHistory.forEach(function(entry) {
+          html += '<div class="detail-list-item"><strong>' + esc(entry.action) + '</strong><br>'
+            + 'Actor: ' + esc(entry.actor_agent_id) + '<br>'
+            + 'When: ' + esc(formatDateShort(entry.timestamp));
+          if (entry.details && Object.keys(entry.details).length) {
+            html += '<br>Details: ' + esc(JSON.stringify(entry.details));
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<p class="muted-copy">No audit entries recorded for this claim or memory yet.</p>';
+      }
+      html += '</div>';
 
       html += '<div class="detail-section"><h4>Edit</h4>';
       html += '<div class="form-group"><label>Visibility</label>';
@@ -1741,6 +1887,23 @@ def _dashboard_js() -> str:
         loadClaims();
       }).catch(function(err) {
         window.alert('Error reviewing claim: ' + err.message);
+      });
+    };
+
+    window.updateMemoryCuration = function(memoryId, status) {
+      var reason = document.getElementById('review-reason').value || '';
+      patchJSON('/v1/memories/' + memoryId + '/curation', {
+        curation_status: status,
+        reason: reason
+      }).then(function() {
+        closePanel();
+        loadClaims();
+        loadOverview();
+        if ((location.hash || '#overview').slice(1) === 'feed') {
+          loadFeed();
+        }
+      }).catch(function(err) {
+        window.alert('Error updating memory curation: ' + err.message);
       });
     };
 

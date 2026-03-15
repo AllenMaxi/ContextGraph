@@ -145,6 +145,9 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertIn("Validation and Expiry", console.text)
         self.assertIn("Needs Review", console.text)
         self.assertIn("reviewClaimDecision", console.text)
+        self.assertIn("updateMemoryCuration", console.text)
+        self.assertIn("Review History", console.text)
+        self.assertIn("Audit Trail", console.text)
 
     def test_update_memory_access_endpoint_updates_memory_policy(self) -> None:
         alpha = self.client.post(
@@ -239,6 +242,34 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertIsNotNone(body["memory"]["expires_at"])
         self.assertIn("meeting:weekly-ops", body["claims"][0]["evidence"])
         self.assertIn("ticket:SUP-42", body["claims"][0]["citations"])
+
+    def test_memory_curation_endpoint_hides_memory_from_active_list(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        stored = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme partner note.", "visibility": "org"},
+        ).json()
+
+        curated = self.client.patch(
+            f"/v1/memories/{stored['memory']['memory_id']}/curation",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"curation_status": "archived", "reason": "outdated guidance"},
+        )
+        all_memories = self.client.get("/v1/memories?include_inactive=true", headers={"X-Agent-Key": alpha["api_key"]})
+        active_memories = self.client.get("/v1/memories", headers={"X-Agent-Key": alpha["api_key"]})
+
+        self.assertEqual(curated.status_code, 200)
+        self.assertEqual(curated.json()["curation_status"], "archived")
+        self.assertEqual(curated.json()["curation_reason"], "outdated guidance")
+        self.assertEqual(all_memories.status_code, 200)
+        self.assertEqual(len(all_memories.json()), 1)
+        self.assertEqual(active_memories.status_code, 200)
+        self.assertEqual(active_memories.json(), [])
 
     def test_patch_agent_defaults_requires_same_agent(self) -> None:
         alpha = self.client.post(

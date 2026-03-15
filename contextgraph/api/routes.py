@@ -18,6 +18,7 @@ from .schemas import (
     FeedItemResponse,
     FollowRequest,
     MemoryAccessUpdateRequest,
+    MemoryCurationUpdateRequest,
     MemoryResponse,
     MemoryStoreRequest,
     NotificationResponse,
@@ -229,6 +230,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/claims", response_model=list[ClaimResponse])
     def list_claims(
         validation_status: str | None = None,
+        include_inactive: bool = False,
         only_needing_review: bool = False,
         limit: int = 100,
         authenticated: Any = Depends(authenticated_agent),
@@ -237,6 +239,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
             graph.list_claims(
                 requester_agent_id=authenticated.agent_id,
                 validation_status=validation_status,
+                include_inactive=include_inactive,
                 only_needing_review=only_needing_review,
                 limit=limit,
             )
@@ -359,5 +362,42 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 visibility=payload.visibility.value if payload.visibility else None,
                 price=payload.price,
                 access_list=payload.access_list,
+            )
+        )
+
+    @app.get("/v1/memories", response_model=list[MemoryResponse])
+    def list_memories(
+        include_inactive: bool = False,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        return to_jsonable(
+            graph.list_memories(
+                requester_agent_id=authenticated.agent_id,
+                include_private_same_org=True,
+                include_inactive=include_inactive,
+            )
+        )
+
+    @app.get("/v1/memories/{memory_id}", response_model=MemoryResponse)
+    def get_memory(memory_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(
+            graph.get_memory_for_agent(
+                requester_agent_id=authenticated.agent_id,
+                memory_id=memory_id,
+                include_private_same_org=True,
+                include_inactive=True,
+            )
+        )
+
+    @app.patch("/v1/memories/{memory_id}/curation", response_model=MemoryResponse)
+    def update_memory_curation(
+        memory_id: str, payload: MemoryCurationUpdateRequest, authenticated: Any = Depends(authenticated_agent)
+    ) -> Any:
+        return to_jsonable(
+            graph.update_memory_curation(
+                requester_agent_id=authenticated.agent_id,
+                memory_id=memory_id,
+                curation_status=payload.curation_status.value,
+                reason=payload.reason,
             )
         )

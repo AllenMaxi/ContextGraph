@@ -61,6 +61,9 @@ class Settings:
     federation_key: str = os.getenv("CG_FEDERATION_KEY", "")
     enable_a2a: bool = _read_bool("CG_ENABLE_A2A", False)
     a2a_base_url: str = os.getenv("CG_A2A_BASE_URL", "")
+    enable_remote_mcp: bool = _read_bool("CG_ENABLE_REMOTE_MCP", False)
+    remote_mcp_path: str = os.getenv("CG_REMOTE_MCP_PATH", "/mcp")
+    public_base_url: str = os.getenv("CG_PUBLIC_BASE_URL", "")
     # LLM Extraction
     llm_api_key: str = os.getenv("CG_LLM_API_KEY", "")
     llm_model: str = os.getenv("CG_LLM_MODEL", "claude-sonnet-4-6")

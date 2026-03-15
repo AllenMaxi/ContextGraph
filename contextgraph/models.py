@@ -20,6 +20,12 @@ class ValidationStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class MemoryCurationStatus(StrEnum):
+    ACTIVE = "active"
+    HIDDEN = "hidden"
+    ARCHIVED = "archived"
+
+
 class ReviewStatus(StrEnum):
     OPEN = "open"
     RESOLVED = "resolved"
@@ -90,6 +96,9 @@ class Memory:
     citations: list[str] = field(default_factory=list)
     validated_at: datetime | None = None
     expires_at: datetime | None = None
+    curation_status: MemoryCurationStatus = MemoryCurationStatus.ACTIVE
+    curation_reason: str = ""
+    curated_at: datetime | None = None
 
 
 @dataclass(slots=True)

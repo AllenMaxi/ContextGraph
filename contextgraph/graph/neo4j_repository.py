@@ -11,6 +11,7 @@ from ..models import (
     DeliveryMode,
     Entity,
     Memory,
+    MemoryCurationStatus,
     Notification,
     ReviewStatus,
     ReviewTask,
@@ -438,6 +439,9 @@ class Neo4jRepository:
             citations=list(props.get("citations", [])),
             validated_at=self._parse_dt(props.get("validated_at")),
             expires_at=self._parse_dt(props.get("expires_at")),
+            curation_status=MemoryCurationStatus(props.get("curation_status", MemoryCurationStatus.ACTIVE.value)),
+            curation_reason=props.get("curation_reason", ""),
+            curated_at=self._parse_dt(props.get("curated_at")),
         )
 
     def _entity_from_node(self, node: Any) -> Entity:

@@ -64,6 +64,18 @@ TOOLS: list[dict[str, Any]] = [
                     "description": "Arbitrary key/value metadata attached to the memory.",
                     "default": {},
                 },
+                "evidence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Human-readable provenance notes for this memory.",
+                    "default": [],
+                },
+                "citations": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Source pointers such as URLs, docs, or ticket IDs.",
+                    "default": [],
+                },
                 "access_list": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -74,6 +86,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "number",
                     "description": "Price in credits for cross-org access.",
                     "default": 0.0,
+                },
+                "expires_in_days": {
+                    "type": "integer",
+                    "description": "Optional number of days before the memory expires.",
+                    "minimum": 0,
                 },
             },
             "required": ["content"],
@@ -234,19 +251,26 @@ def _dispatch_tool(
         result = service.store_memory(
             agent_id=agent_id,
             content=arguments["content"],
-            visibility=arguments.get("visibility", "private"),
+            visibility=arguments.get("visibility"),
             license=arguments.get("license", "internal"),
             metadata=arguments.get("metadata"),
+            evidence=arguments.get("evidence"),
+            citations=arguments.get("citations"),
             access_list=arguments.get("access_list"),
-            price=arguments.get("price", 0.0),
+            price=arguments.get("price"),
+            expires_in_days=arguments.get("expires_in_days"),
         )
         return {
             "memory_id": result.memory.memory_id,
+            "validation_status": result.memory.validation_status.value,
+            "evidence": result.memory.evidence,
+            "citations": result.memory.citations,
             "claims": [
                 {
                     "claim_id": c.claim_id,
                     "statement": c.statement,
                     "confidence": c.confidence,
+                    "validation_status": c.validation_status.value,
                 }
                 for c in result.claims
             ],
@@ -393,9 +417,9 @@ class _JsonRpcServer:
 
     SERVER_INFO = {
         "name": "contextgraph",
-        "version": "0.1.0",
+        "version": "0.2.1",
     }
-    PROTOCOL_VERSION = "2024-11-05"
+    PROTOCOL_VERSION = "2025-06-18"
 
     def __init__(self, service: ContextGraphService, agent_id: str) -> None:
         self._service = service

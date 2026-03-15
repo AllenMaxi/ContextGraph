@@ -26,6 +26,7 @@ from .models import (
     JobStatus,
     JobType,
     Memory,
+    MemoryCurationStatus,
     Notification,
     RecallHit,
     RelationPath,
@@ -257,6 +258,15 @@ class ContextGraphService:
             return None
         return now + timedelta(days=ttl_days)
 
+    def _memory_is_active(self, memory: Memory) -> bool:
+        return memory.curation_status == MemoryCurationStatus.ACTIVE
+
+    def _can_curate_memory(self, requester: Agent, memory: Memory) -> bool:
+        source_agent = self.repository.get_agent(memory.agent_id)
+        if requester.agent_id == memory.agent_id:
+            return True
+        return source_agent is not None and source_agent.org_id == requester.org_id
+
     def _sync_memory_validation(self, memory_id: str, claims: list[Claim] | None = None) -> Memory | None:
         memory = self.repository.get_memory(memory_id)
         if memory is None:
@@ -479,6 +489,9 @@ class ContextGraphService:
             citations=citation_items,
             validated_at=None,
             expires_at=expires_at,
+            curation_status=MemoryCurationStatus.ACTIVE,
+            curation_reason="",
+            curated_at=None,
         )
         self.repository.save_memory(memory)
 
@@ -574,7 +587,7 @@ class ContextGraphService:
         payment_blocked_error: PaymentRequiredError | None = None
         for claim in all_claims:
             memory = self.repository.get_memory(claim.memory_id)
-            if memory is None or not self._can_access(requester, claim):
+            if memory is None or not self._memory_is_active(memory) or not self._can_access(requester, claim):
                 continue
             score = self._score_claim(requester, query, claim)
             if score <= 0:
@@ -854,10 +867,94 @@ class ContextGraphService:
         self._normalized_memory_policies.add(memory.memory_id)
         return memory
 
+    def update_memory_curation(
+        self,
+        requester_agent_id: str,
+        memory_id: str,
+        curation_status: str,
+        reason: str = "",
+    ) -> Memory:
+        requester = self.get_agent(requester_agent_id)
+        memory = self.repository.get_memory(memory_id)
+        if memory is None:
+            raise NotFoundError(f"Memory '{memory_id}' not found.")
+        if not self._can_curate_memory(requester, memory):
+            raise PermissionDeniedError("Only the source agent or source org may curate this memory.")
+        memory.curation_status = MemoryCurationStatus(curation_status)
+        memory.curation_reason = reason.strip()
+        memory.curated_at = utcnow()
+        memory.updated_at = memory.curated_at
+        self.repository.update_memory(memory)
+        self._audit(
+            "update_memory_curation",
+            actor_agent_id=requester_agent_id,
+            details={
+                "memory_id": memory_id,
+                "curation_status": memory.curation_status.value,
+                "reason": memory.curation_reason,
+            },
+        )
+        return memory
+
     def list_agents(self, requester_agent_id: str) -> list[Agent]:
         agents = self.repository.list_agents()
         requester = self.get_agent(requester_agent_id)
         return [agent for agent in agents if agent.org_id == requester.org_id]
+
+    def get_memory_for_agent(
+        self,
+        requester_agent_id: str,
+        memory_id: str,
+        include_private_same_org: bool = False,
+        include_inactive: bool = False,
+    ) -> Memory:
+        requester = self.get_agent(requester_agent_id)
+        memory = self._get_memory_with_normalized_policy(memory_id)
+        if memory is None:
+            raise NotFoundError(f"Memory '{memory_id}' was not found.")
+        if not include_inactive and not self._memory_is_active(memory):
+            raise PermissionDeniedError("Requester cannot access this memory.")
+        if memory.agent_id == requester.agent_id:
+            return memory
+        source_org = self._memory_source_org(memory)
+        if include_private_same_org and source_org == requester.org_id:
+            return memory
+        representative_claim = next(
+            (claim for claim in self.repository.list_claims() if claim.memory_id == memory_id),
+            None,
+        )
+        if representative_claim is not None and self._can_access_claim(
+            requester,
+            representative_claim,
+            include_private_same_org=include_private_same_org,
+        ):
+            return memory
+        raise PermissionDeniedError("Requester cannot access this memory.")
+
+    def list_memories(
+        self,
+        requester_agent_id: str,
+        include_private_same_org: bool = False,
+        include_inactive: bool = False,
+        limit: int = 500,
+    ) -> list[Memory]:
+        requester = self.get_agent(requester_agent_id)
+        memories: list[Memory] = []
+        seen: set[str] = set()
+        for claim in self._list_claims_with_normalized_policies():
+            memory = self._get_memory_with_normalized_policy(claim.memory_id)
+            if memory is None:
+                continue
+            if not include_inactive and not self._memory_is_active(memory):
+                continue
+            if not self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org):
+                continue
+            if memory.memory_id in seen:
+                continue
+            seen.add(memory.memory_id)
+            memories.append(memory)
+        memories.sort(key=lambda item: item.updated_at, reverse=True)
+        return memories[:limit]
 
     def list_review_tasks(self, requester_agent_id: str) -> list[ReviewTask]:
         reviews = self.repository.list_review_tasks()
@@ -903,6 +1000,9 @@ class ContextGraphService:
         claim = self.repository.get_claim(claim_id)
         if claim is None:
             raise NotFoundError(f"Claim '{claim_id}' was not found.")
+        memory = self._get_memory_with_normalized_policy(claim.memory_id)
+        if memory is not None and not self._memory_is_active(memory) and not include_private_same_org:
+            raise PermissionDeniedError("Requester cannot access this claim.")
         if self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org):
             return self.repository.get_claim(claim_id) or claim
         raise PermissionDeniedError("Requester cannot access this claim.")
@@ -912,6 +1012,7 @@ class ContextGraphService:
         requester_agent_id: str,
         validation_status: str | None = None,
         include_private_same_org: bool = False,
+        include_inactive: bool = False,
         only_needing_review: bool = False,
         limit: int = 100,
     ) -> list[Claim]:
@@ -924,6 +1025,9 @@ class ContextGraphService:
         status_filter = ValidationStatus(validation_status) if validation_status is not None else None
         claims: list[Claim] = []
         for claim in self._list_claims_with_normalized_policies():
+            memory = self._get_memory_with_normalized_policy(claim.memory_id)
+            if memory is not None and not self._memory_is_active(memory) and not include_inactive:
+                continue
             if not self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org):
                 continue
             if status_filter is not None and claim.validation_status != status_filter:
@@ -1263,6 +1367,9 @@ class ContextGraphService:
                     )
 
     def _matches_standing_query(self, owner: Agent, query: StandingQuery, claim: Claim) -> bool:
+        memory = self._get_memory_with_normalized_policy(claim.memory_id)
+        if memory is not None and not self._memory_is_active(memory):
+            return False
         if not self._can_access(owner, claim):
             return False
         filters = query.filters
@@ -1674,7 +1781,7 @@ class ContextGraphService:
         feed_items: list[dict[str, Any]] = []
         for memory_id in matched_memory_ids:
             memory = self._get_memory_with_normalized_policy(memory_id)
-            if memory is None:
+            if memory is None or not self._memory_is_active(memory):
                 continue
             mem_claims = claims_by_memory.get(memory_id, [])
             if not mem_claims:
