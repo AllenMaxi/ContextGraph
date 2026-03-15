@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -46,6 +47,61 @@ TASK_TOPIC_DEFAULTS = {
     "research": ["pricing", "expansion", "regulation"],
     "security": ["risk", "security", "incident"],
     "support": ["latency", "fix", "escalation"],
+}
+
+GENERAL_KNOWLEDGE_PATTERNS = (
+    "what is",
+    "what are",
+    "explain",
+    "how does",
+    "how do",
+    "write",
+    "draft",
+    "summarize",
+    "translate",
+    "brainstorm",
+    "name ",
+    "give me ideas",
+)
+
+SHARED_MEMORY_PATTERNS = (
+    re.compile(r"\bdo we know\b"),
+    re.compile(r"\bwhat do we know\b"),
+    re.compile(r"\bwhat did\b"),
+    re.compile(r"\bwhat does\b"),
+    re.compile(r"\bwhat happened\b"),
+    re.compile(r"\bwhat changed\b"),
+    re.compile(r"\bwhat's the status\b"),
+    re.compile(r"\bwhat is the status\b"),
+    re.compile(r"\bdid [a-z0-9_-]+ decide\b"),
+)
+
+SHARED_MEMORY_HINTS = {
+    "account",
+    "customer",
+    "decision",
+    "deadline",
+    "delay",
+    "internal",
+    "latest",
+    "latency",
+    "outage",
+    "our",
+    "partner",
+    "pricing",
+    "procurement",
+    "recent",
+    "renewal",
+    "research",
+    "risk",
+    "security",
+    "status",
+    "supplier",
+    "support",
+    "team",
+    "update",
+    "vendor",
+    "we",
 }
 
 
@@ -105,6 +161,29 @@ class SubscriptionPlan:
     reason: str
     created: bool = False
     query_id: str | None = None
+
+
+@dataclass(slots=True)
+class SharedMemoryQueryContext:
+    task_type: str | None = None
+    entity_names: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+    source_agent_names: list[str] = field(default_factory=list)
+    force_consult: bool = False
+
+
+@dataclass(slots=True)
+class SharedMemoryDecision:
+    should_consult: bool
+    min_score: float
+    reasons: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SharedMemoryRecallOutcome:
+    decision: SharedMemoryDecision
+    hits: list[dict[str, Any]] = field(default_factory=list)
+    raw_hit_count: int = 0
 
 
 class MemoryPolicyHelper:
@@ -389,3 +468,145 @@ class SubscriptionPolicyManager:
                 continue
             return watch
         return None
+
+
+class SharedMemoryHelper:
+    def __init__(
+        self,
+        client: ContextGraph,
+        *,
+        default_min_score: float = 0.55,
+        default_limit: int = 3,
+    ) -> None:
+        self.client = client
+        self.extractor = RuleBasedExtractor()
+        self.default_min_score = default_min_score
+        self.default_limit = default_limit
+
+    def decide(
+        self,
+        user_query: str,
+        *,
+        context: SharedMemoryQueryContext | None = None,
+        min_score: float | None = None,
+    ) -> SharedMemoryDecision:
+        context = context or SharedMemoryQueryContext()
+        lowered = " ".join(user_query.lower().split())
+        reasons: list[str] = []
+        positive_signals = 0
+        negative_signals = 0
+
+        if context.force_consult:
+            reasons.append("forced_consult")
+            return SharedMemoryDecision(
+                should_consult=True,
+                min_score=min_score if min_score is not None else self.default_min_score,
+                reasons=reasons,
+            )
+
+        if context.task_type and context.task_type.lower() in TASK_TOPIC_DEFAULTS:
+            positive_signals += 2
+            reasons.append("workflow_context")
+        if context.entity_names:
+            positive_signals += 2
+            reasons.append("entity_context")
+        if context.topics:
+            positive_signals += 1
+            reasons.append("topic_context")
+        if context.source_agent_names:
+            positive_signals += 2
+            reasons.append("source_agent_context")
+
+        inferred_entities = self._infer_entities(user_query)
+        if inferred_entities:
+            positive_signals += 1
+            reasons.append("question_entities")
+
+        if any(pattern.search(lowered) for pattern in SHARED_MEMORY_PATTERNS):
+            positive_signals += 2
+            reasons.append("memory_question_pattern")
+
+        if any(hint in lowered.split() for hint in SHARED_MEMORY_HINTS):
+            positive_signals += 1
+            reasons.append("shared_memory_hint")
+
+        if any(lowered.startswith(pattern) for pattern in GENERAL_KNOWLEDGE_PATTERNS):
+            negative_signals += 2
+            reasons.append("general_knowledge_prompt")
+
+        should_consult = positive_signals >= 2 and positive_signals > negative_signals
+        if not should_consult and positive_signals == 0:
+            reasons.append("no_shared_memory_signal")
+
+        return SharedMemoryDecision(
+            should_consult=should_consult,
+            min_score=min_score if min_score is not None else self.default_min_score,
+            reasons=reasons,
+        )
+
+    def recall_if_needed(
+        self,
+        agent_id: str,
+        user_query: str,
+        *,
+        context: SharedMemoryQueryContext | None = None,
+        limit: int | None = None,
+        min_score: float | None = None,
+    ) -> SharedMemoryRecallOutcome:
+        decision = self.decide(user_query, context=context, min_score=min_score)
+        if not decision.should_consult:
+            return SharedMemoryRecallOutcome(decision=decision)
+
+        raw_hits = self.client.recall(
+            agent_id=agent_id,
+            query=user_query,
+            limit=limit if limit is not None else self.default_limit,
+        )
+        filtered_hits = [hit for hit in raw_hits if float(hit.get("score", 0.0)) >= decision.min_score]
+        return SharedMemoryRecallOutcome(
+            decision=decision,
+            hits=filtered_hits,
+            raw_hit_count=len(raw_hits),
+        )
+
+    def build_context(
+        self,
+        agent_id: str,
+        user_query: str,
+        *,
+        context: SharedMemoryQueryContext | None = None,
+        limit: int | None = None,
+        min_score: float | None = None,
+    ) -> str:
+        outcome = self.recall_if_needed(
+            agent_id=agent_id,
+            user_query=user_query,
+            context=context,
+            limit=limit,
+            min_score=min_score,
+        )
+        if not outcome.decision.should_consult:
+            return "Shared memory was not consulted for this question."
+        if not outcome.hits:
+            return "No shared memory hits met the relevance threshold."
+
+        sections: list[str] = []
+        for idx, hit in enumerate(outcome.hits, start=1):
+            claim = hit["claim"]["statement"]
+            memory = hit["memory_content"]
+            source = hit["source_agent_name"] or hit["claim"]["source_agent_id"]
+            score = float(hit.get("score", 0.0))
+            sections.append(f"[Hit {idx}] Source: {source}\nScore: {score:.4f}\nClaim: {claim}\nMemory: {memory}")
+        return "\n\n".join(sections)
+
+    def _infer_entities(self, user_query: str) -> list[str]:
+        entities: list[str] = []
+        seen: set[str] = set()
+        for claim in self.extractor.extract(user_query):
+            for entity in claim.entities:
+                lowered = entity.name.lower()
+                if lowered in seen:
+                    continue
+                seen.add(lowered)
+                entities.append(entity.name)
+        return entities

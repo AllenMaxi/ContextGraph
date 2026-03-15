@@ -1,24 +1,49 @@
 from __future__ import annotations
 
-from sdk.contextgraph_sdk import ContextGraph
+from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
 
 
-def build_shared_memory_context(client: ContextGraph, agent_id: str, user_query: str) -> str:
-    hits = client.recall(agent_id=agent_id, query=user_query, limit=3)
-    if not hits:
-        return "No shared memory hits."
+def answer_question(
+    client: ContextGraph,
+    helper: SharedMemoryHelper,
+    agent_id: str,
+    user_query: str,
+    *,
+    context: SharedMemoryQueryContext | None = None,
+) -> str:
+    outcome = helper.recall_if_needed(
+        agent_id=agent_id,
+        user_query=user_query,
+        context=context,
+        limit=3,
+    )
+    if not outcome.decision.should_consult:
+        return (
+            f"User question: {user_query}\n"
+            "Decision: answer directly without shared memory.\n"
+            "Reason: the question looks general enough that external memory is unnecessary."
+        )
+    if not outcome.hits:
+        return (
+            f"User question: {user_query}\n"
+            "Decision: shared memory was consulted, but no hit passed the relevance threshold.\n"
+            "Response policy: do not hallucinate; ask for clarification or say no reliable memory was found."
+        )
 
-    sections: list[str] = []
-    for idx, hit in enumerate(hits, start=1):
-        claim = hit["claim"]["statement"]
-        memory = hit["memory_content"]
-        source = hit["source_agent_name"] or hit["claim"]["source_agent_id"]
-        sections.append(f"[Hit {idx}] Source: {source}\nClaim: {claim}\nMemory: {memory}")
-    return "\n\n".join(sections)
+    top_hit = outcome.hits[0]
+    source = top_hit["source_agent_name"] or top_hit["claim"]["source_agent_id"]
+    return (
+        f"User question: {user_query}\n"
+        "Decision: use shared memory.\n"
+        f"Source: {source}\n"
+        f"Claim: {top_hit['claim']['statement']}\n"
+        f"Memory: {top_hit['memory_content']}"
+    )
 
 
 def main() -> None:
     client = ContextGraph.local()
+    helper = SharedMemoryHelper(client, default_min_score=0.55)
 
     research = client.register_agent(
         name="research-bot",
@@ -36,23 +61,30 @@ def main() -> None:
         agent_id=research["agent_id"],
         content="TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
     )
+    client.store(
+        agent_id=research["agent_id"],
+        content="Public industry note: semiconductor wafer prices increased this quarter.",
+        visibility="published",
+    )
 
-    user_query = "Should we adjust our semiconductor orders this quarter?"
-    memory_context = build_shared_memory_context(client, assistant["agent_id"], user_query)
+    general_question = "What is MCP?"
+    org_question = "Should we adjust our semiconductor orders this quarter?"
 
-    prompt = f"""You are assistant-bot.
-
-Answer the user using the shared memory context when it is relevant.
-If the memory context does not answer the question, say what is missing.
-
-User question:
-{user_query}
-
-Shared memory context:
-{memory_context}
-"""
-
-    print(prompt)
+    print(answer_question(client, helper, assistant["agent_id"], general_question))
+    print()
+    print(
+        answer_question(
+            client,
+            helper,
+            assistant["agent_id"],
+            org_question,
+            context=SharedMemoryQueryContext(
+                task_type="research",
+                entity_names=["TSMC", "Samsung"],
+                topics=["semiconductor", "supply"],
+            ),
+        )
+    )
 
 
 if __name__ == "__main__":

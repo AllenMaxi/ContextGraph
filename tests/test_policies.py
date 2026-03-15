@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
 
 from contextgraph import ContextGraphService
 from sdk.contextgraph_sdk import (
     ContextGraph,
     MemoryContext,
     MemoryPolicyHelper,
+    SharedMemoryHelper,
+    SharedMemoryQueryContext,
     SubscriptionContext,
     SubscriptionPolicyManager,
 )
@@ -134,6 +137,68 @@ class ContextGraphPoliciesTest(unittest.TestCase):
         self.assertGreaterEqual(len(deactivated), 1)
         self.assertEqual(active_watches, [])
         self.assertTrue(all(watch["status"] == "inactive" for watch in all_watches))
+
+    def test_shared_memory_helper_skips_general_questions(self) -> None:
+        client = Mock()
+        helper = SharedMemoryHelper(client)
+
+        outcome = helper.recall_if_needed("agt_assistant", "What is MCP?")
+
+        self.assertFalse(outcome.decision.should_consult)
+        self.assertEqual(outcome.hits, [])
+        client.recall.assert_not_called()
+
+    def test_shared_memory_helper_uses_context_for_org_specific_question(self) -> None:
+        research = self.client.register_agent("research-bot", "alpha", ["research"], default_visibility="org")
+        assistant = self.client.register_agent("assistant-bot", "alpha", ["assistant"])
+        self.client.store(
+            agent_id=research["agent_id"],
+            content="TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
+        )
+
+        helper = SharedMemoryHelper(self.client)
+        outcome = helper.recall_if_needed(
+            assistant["agent_id"],
+            "Should we adjust our semiconductor orders this quarter?",
+            context=SharedMemoryQueryContext(
+                task_type="research",
+                entity_names=["TSMC", "Samsung"],
+                topics=["semiconductor"],
+            ),
+        )
+
+        self.assertTrue(outcome.decision.should_consult)
+        self.assertGreaterEqual(len(outcome.hits), 1)
+        self.assertIn("Shift flexible orders to Samsung", outcome.hits[0]["memory_content"])
+
+    def test_shared_memory_helper_filters_hits_below_min_score(self) -> None:
+        client = Mock()
+        client.recall.return_value = [
+            {
+                "score": 0.49,
+                "claim": {"statement": "Weak hit", "source_agent_id": "agt_research"},
+                "memory_content": "Weak hit",
+                "source_agent_name": "research-bot",
+            },
+            {
+                "score": 0.72,
+                "claim": {"statement": "Strong hit", "source_agent_id": "agt_research"},
+                "memory_content": "Strong hit",
+                "source_agent_name": "research-bot",
+            },
+        ]
+        helper = SharedMemoryHelper(client, default_min_score=0.55)
+
+        outcome = helper.recall_if_needed(
+            "agt_assistant",
+            "What did research decide about the supplier?",
+            context=SharedMemoryQueryContext(source_agent_names=["research-bot"]),
+        )
+
+        self.assertTrue(outcome.decision.should_consult)
+        self.assertEqual(outcome.raw_hit_count, 2)
+        self.assertEqual(len(outcome.hits), 1)
+        self.assertEqual(outcome.hits[0]["memory_content"], "Strong hit")
 
 
 if __name__ == "__main__":

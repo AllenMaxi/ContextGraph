@@ -196,9 +196,10 @@ print(hits[0].memory_content)
 ContextGraph is designed to sit directly on the hot path of a chat agent:
 
 1. the user asks a question
-2. the agent calls `contextgraph_recall`
-3. ContextGraph returns authorized memory hits with source metadata
-4. the agent answers in the same turn
+2. the agent decides whether shared memory is actually needed
+3. if needed, the agent calls `contextgraph_recall`
+4. ContextGraph returns authorized memory hits with source metadata
+5. the agent answers in the same turn
 
 That is the core wedge: **shared memory for MCP-compatible agents**, not “copy everything into another vector DB”.
 
@@ -214,6 +215,7 @@ python -m contextgraph.mcp_server
 See:
 
 - [`docs/mcp-chat-agent.md`](docs/mcp-chat-agent.md)
+- [`docs/memory-gating.md`](docs/memory-gating.md)
 - [`examples/chat_agent_sdk.py`](examples/chat_agent_sdk.py)
 - [`sdk/README.md`](sdk/README.md)
 
@@ -367,6 +369,8 @@ Operational guidance:
 See:
 
 - [sdk/README.md](sdk/README.md)
+- [docs/memory-discipline-roadmap.md](docs/memory-discipline-roadmap.md)
+- [docs/articles/shared-memory-for-mcp-agents.md](docs/articles/shared-memory-for-mcp-agents.md)
 - [docs/payments.md](docs/payments.md)
 - [docs/github-launch-checklist.md](docs/github-launch-checklist.md)
 - [docs/mcp-registry-launch.md](docs/mcp-registry-launch.md)

@@ -54,16 +54,18 @@ hits = client.recall(agent_id=agent_id, query="Acme latency")
 The most common production pattern is:
 
 1. receive the user question
-2. call `recall(...)`
-3. pass the returned `memory_content` plus `claim` and `source_agent_name` into the LLM prompt
-4. answer in the same turn
+2. decide whether shared memory is actually needed
+3. if needed, call `recall(...)`
+4. pass the returned `memory_content` plus `claim` and `source_agent_name` into the LLM prompt
+5. answer in the same turn
 
 Minimal example:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph
+from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
 
 client = ContextGraph.local()
+memory = SharedMemoryHelper(client, default_min_score=0.55)
 
 research = client.register_agent(
     name="research-bot",
@@ -77,25 +79,32 @@ assistant = client.register_agent(
     capabilities=["assistant"],
 )
 
-client.follow(assistant["agent_id"], "agent", research["agent_id"])
 client.store(
     agent_id=research["agent_id"],
     content="TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
 )
 
-hits = client.recall(
+outcome = memory.recall_if_needed(
     agent_id=assistant["agent_id"],
-    query="Should we adjust our semiconductor orders this quarter?",
+    user_query="Should we adjust our semiconductor orders this quarter?",
+    context=SharedMemoryQueryContext(
+        task_type="research",
+        entity_names=["TSMC", "Samsung"],
+        topics=["semiconductor"],
+    ),
     limit=3,
 )
 
-for hit in hits:
+if outcome.decision.should_consult and outcome.hits:
+    hit = outcome.hits[0]
     print(hit["source_agent_name"])
     print(hit["claim"]["statement"])
     print(hit["memory_content"])
 ```
 
 Use this pattern instead of copying third-party memories into a separate vector database by default. It keeps access control, payment checks, and attribution authoritative at retrieval time.
+
+The helper also lets you skip retrieval entirely for generic questions, so your agent only reaches for shared memory when it is likely to prevent hallucination.
 
 ### HTTP Transport (Remote Server)
 
@@ -177,6 +186,20 @@ plans = subs.ensure_task_subscriptions(
         topics=["pricing"],
     ),
 )
+```
+
+### SharedMemoryHelper
+
+Use this helper to consult shared memory only when the question warrants it:
+
+```python
+from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper
+
+client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
+memory = SharedMemoryHelper(client, default_min_score=0.55)
+
+decision = memory.decide("What is MCP?")
+print(decision.should_consult)  # False
 ```
 
 ## API Reference
