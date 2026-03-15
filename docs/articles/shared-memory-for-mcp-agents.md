@@ -126,5 +126,6 @@ That is the path from an interesting repo to infrastructure that people actually
 - Release: <https://github.com/AllenMaxi/ContextGraph/releases/tag/v0.2.1>
 - Chat-agent integration guide: [../mcp-chat-agent.md](../mcp-chat-agent.md)
 - Memory gating guide: [../memory-gating.md](../memory-gating.md)
+- Launch post variants: [./shared-memory-launch-posts.md](./shared-memory-launch-posts.md)
 
 If you are building MCP-native agents or multi-agent systems, this is the problem space we care about most: **memory that stays useful because it is governed, shared deliberately, and only pulled into the loop when the question actually needs it.**

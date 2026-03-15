@@ -210,6 +210,33 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("access_list", response.json()["detail"])
 
+    def test_store_accepts_evidence_citations_and_expiry(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        response = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={
+                "content": "Acme partner note.",
+                "visibility": "org",
+                "evidence": ["meeting:weekly-ops"],
+                "citations": ["ticket:SUP-42"],
+                "expires_in_days": 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["memory"]["validation_status"], "unreviewed")
+        self.assertIn("meeting:weekly-ops", body["memory"]["evidence"])
+        self.assertIn("ticket:SUP-42", body["memory"]["citations"])
+        self.assertIsNotNone(body["memory"]["expires_at"])
+        self.assertIn("meeting:weekly-ops", body["claims"][0]["evidence"])
+        self.assertIn("ticket:SUP-42", body["claims"][0]["citations"])
+
     def test_patch_agent_defaults_requires_same_agent(self) -> None:
         alpha = self.client.post(
             "/v1/agents/register",

@@ -79,12 +79,17 @@ class Memory:
     agent_id: str
     content: str
     visibility: Visibility
+    validation_status: ValidationStatus
     license: str
     metadata: dict[str, str]
     created_at: datetime
     updated_at: datetime
     access_list: list[str] = field(default_factory=list)
     price: float = 0.0
+    evidence: list[str] = field(default_factory=list)
+    citations: list[str] = field(default_factory=list)
+    validated_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -118,6 +123,9 @@ class Claim:
     source_org_id: str = ""
     access_list: list[str] = field(default_factory=list)
     price: float = 0.0
+    evidence: list[str] = field(default_factory=list)
+    citations: list[str] = field(default_factory=list)
+    validated_at: datetime | None = None
 
 
 @dataclass(slots=True)

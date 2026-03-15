@@ -46,11 +46,18 @@ class MemoryStoreRequest(BaseModel):
     visibility: Visibility | None = None
     license: str = "internal"
     metadata: dict[str, str] = Field(default_factory=dict)
+    evidence: list[str] | None = Field(default=None, description="Human-readable provenance notes for this memory.")
+    citations: list[str] | None = Field(default=None, description="Source pointers such as URLs, paths, or ticket IDs.")
     access_list: list[str] | None = Field(
         default=None, description="Agent/org IDs allowed access (for 'shared' visibility)"
     )
     price: float | None = Field(
         default=None, ge=0.0, description="Price per recall (0 = free). Currency set via CG_PAYMENT_CURRENCY."
+    )
+    expires_in_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Days until this memory expires. Set to 0 to disable automatic expiry.",
     )
 
 
@@ -115,6 +122,9 @@ class ClaimResponse(BaseModel):
     source_org_id: str = ""
     access_list: list[str] = Field(default_factory=list)
     price: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
+    validated_at: datetime | None = None
 
 
 class MemoryResponse(BaseModel):
@@ -124,12 +134,17 @@ class MemoryResponse(BaseModel):
     agent_id: str
     content: str
     visibility: Visibility
+    validation_status: ValidationStatus
     license: str
     metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     access_list: list[str] = Field(default_factory=list)
     price: float = 0.0
+    evidence: list[str] = Field(default_factory=list)
+    citations: list[str] = Field(default_factory=list)
+    validated_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 class ReviewTaskResponse(BaseModel):

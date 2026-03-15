@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
 from threading import RLock, Timer
 from time import monotonic, sleep
@@ -224,6 +224,73 @@ class ContextGraphService:
     def _dedupe_access_list(self, access_list: list[str]) -> list[str]:
         return [item for item in dict.fromkeys(access_list) if item]
 
+    def _dedupe_strings(self, values: list[str] | None) -> list[str]:
+        return [item.strip() for item in dict.fromkeys(values or []) if item and item.strip()]
+
+    def _derive_provenance(
+        self,
+        agent: Agent,
+        metadata: dict[str, str] | None,
+        evidence: list[str] | None,
+        citations: list[str] | None,
+    ) -> tuple[list[str], list[str]]:
+        metadata = dict(metadata or {})
+        evidence_items = [f"source_agent:{agent.agent_id}", f"source_org:{agent.org_id}"]
+        citation_items: list[str] = []
+        for key, value in metadata.items():
+            if not value:
+                continue
+            label = f"{key}:{value}"
+            lower_key = key.lower()
+            if any(token in lower_key for token in ("url", "uri", "file", "path", "ref", "ticket", "doc", "commit")):
+                citation_items.append(label)
+                continue
+            if "source" in lower_key or "evidence" in lower_key:
+                evidence_items.append(label)
+        evidence_items.extend(evidence or [])
+        citation_items.extend(citations or [])
+        return self._dedupe_strings(evidence_items), self._dedupe_strings(citation_items)
+
+    def _resolve_expires_at(self, now: datetime, expires_in_days: int | None) -> datetime | None:
+        ttl_days = self.settings.default_claim_ttl_days if expires_in_days is None else expires_in_days
+        if ttl_days <= 0:
+            return None
+        return now + timedelta(days=ttl_days)
+
+    def _sync_memory_validation(self, memory_id: str, claims: list[Claim] | None = None) -> Memory | None:
+        memory = self.repository.get_memory(memory_id)
+        if memory is None:
+            return None
+        sibling_claims = (
+            claims
+            if claims is not None
+            else [claim for claim in self.repository.list_claims() if claim.memory_id == memory_id]
+        )
+        if not sibling_claims:
+            memory.validation_status = ValidationStatus.UNREVIEWED
+            memory.validated_at = None
+            memory.expires_at = None
+            memory.updated_at = utcnow()
+            self.repository.update_memory(memory)
+            return memory
+
+        if all(claim.validation_status == ValidationStatus.EXPIRED for claim in sibling_claims):
+            memory.validation_status = ValidationStatus.EXPIRED
+        elif any(claim.validation_status == ValidationStatus.CHALLENGED for claim in sibling_claims):
+            memory.validation_status = ValidationStatus.CHALLENGED
+        elif any(claim.validation_status == ValidationStatus.ATTESTED for claim in sibling_claims):
+            memory.validation_status = ValidationStatus.ATTESTED
+        else:
+            memory.validation_status = ValidationStatus.UNREVIEWED
+
+        validated_times = [claim.validated_at for claim in sibling_claims if claim.validated_at is not None]
+        expiries = [claim.expires_at for claim in sibling_claims if claim.expires_at is not None]
+        memory.validated_at = max(validated_times) if validated_times else None
+        memory.expires_at = max(expiries) if expiries else None
+        memory.updated_at = utcnow()
+        self.repository.update_memory(memory)
+        return memory
+
     def store_memory(
         self,
         agent_id: str,
@@ -231,8 +298,11 @@ class ContextGraphService:
         visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        evidence: list[str] | None = None,
+        citations: list[str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
+        expires_in_days: int | None = None,
     ) -> StoreResult:
         agent = self.get_agent(agent_id)
         resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
@@ -249,8 +319,11 @@ class ContextGraphService:
             visibility=resolved_visibility.value,
             license=license,
             metadata=metadata,
+            evidence=evidence,
+            citations=citations,
             access_list=resolved_access_list,
             price=resolved_price,
+            expires_in_days=expires_in_days,
         )
 
     def enqueue_memory_store(
@@ -260,8 +333,11 @@ class ContextGraphService:
         visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        evidence: list[str] | None = None,
+        citations: list[str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
+        expires_in_days: int | None = None,
     ) -> BackgroundJob:
         agent = self.get_agent(agent_id)
         resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
@@ -281,6 +357,9 @@ class ContextGraphService:
                 "visibility": resolved_visibility.value,
                 "license": license,
                 "price": f"{resolved_price:.4f}",
+                "expires_in_days": str(
+                    expires_in_days if expires_in_days is not None else self.settings.default_claim_ttl_days
+                ),
                 "content_preview": content.strip()[:120],
             },
             payload={
@@ -289,8 +368,11 @@ class ContextGraphService:
                 "visibility": resolved_visibility.value,
                 "license": license,
                 "metadata": dict(metadata or {}),
+                "evidence": list(evidence or []),
+                "citations": list(citations or []),
                 "access_list": resolved_access_list,
                 "price": resolved_price,
+                "expires_in_days": expires_in_days,
             },
             max_attempts=1,
             audit_action="enqueue_memory_store",
@@ -370,30 +452,39 @@ class ContextGraphService:
         visibility: str = "private",
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        evidence: list[str] | None = None,
+        citations: list[str] | None = None,
         access_list: list[str] | None = None,
         price: float = 0.0,
+        expires_in_days: int | None = None,
     ) -> StoreResult:
         agent = self.get_agent(agent_id)
         now = utcnow()
         visibility_enum = Visibility(visibility)
+        evidence_items, citation_items = self._derive_provenance(agent, metadata, evidence, citations)
+        expires_at = self._resolve_expires_at(now, expires_in_days)
         memory = Memory(
             memory_id=new_id("mem"),
             agent_id=agent.agent_id,
             content=content.strip(),
             visibility=visibility_enum,
+            validation_status=ValidationStatus.UNREVIEWED,
             license=license,
             metadata=dict(metadata or {}),
             created_at=now,
             updated_at=now,
             access_list=list(access_list or []),
             price=price,
+            evidence=evidence_items,
+            citations=citation_items,
+            validated_at=None,
+            expires_at=expires_at,
         )
         self.repository.save_memory(memory)
 
         created_entities: dict[str, Entity] = {}
         created_claims: list[Claim] = []
         review_tasks: list[ReviewTask] = []
-        expires_at = now + timedelta(days=self.settings.default_claim_ttl_days)
 
         for extracted in self.extractor.extract(content):
             entity_ids: list[str] = []
@@ -421,6 +512,9 @@ class ContextGraphService:
                 source_org_id=agent.org_id,
                 access_list=list(access_list or []),
                 price=price,
+                evidence=list(evidence_items),
+                citations=list(citation_items),
+                validated_at=None,
             )
             self.repository.save_claim(claim)
             created_claims.append(claim)
@@ -667,8 +761,10 @@ class ContextGraphService:
             raise ValueError(f"Unsupported review decision '{decision}'.")
         if reason:
             claim.review_reasons.append(reason)
-        claim.updated_at = utcnow()
+        claim.validated_at = utcnow()
+        claim.updated_at = claim.validated_at
         self.repository.update_claim(claim)
+        self._sync_memory_validation(claim.memory_id)
 
         for review in self.repository.list_review_tasks():
             if review.claim_id == claim.claim_id and review.status == ReviewStatus.OPEN:
@@ -1129,8 +1225,12 @@ class ContextGraphService:
         if claim.expires_at is None:
             return claim.freshness_score
         if claim.expires_at <= now:
-            claim.validation_status = ValidationStatus.EXPIRED
-            self.repository.update_claim(claim)
+            if claim.validation_status != ValidationStatus.EXPIRED:
+                claim.validation_status = ValidationStatus.EXPIRED
+                claim.freshness_score = 0.0
+                claim.updated_at = now
+                self.repository.update_claim(claim)
+                self._sync_memory_validation(claim.memory_id)
             return 0.0
         total = (claim.expires_at - claim.created_at).total_seconds()
         remaining = (claim.expires_at - now).total_seconds()
@@ -1399,6 +1499,7 @@ class ContextGraphService:
         now = utcnow()
         scanned_claims = 0
         expired_claims = 0
+        changed_memory_ids: set[str] = set()
         for claim in self.repository.list_claims():
             scanned_claims += 1
             if claim.expires_at is None or claim.validation_status == ValidationStatus.EXPIRED:
@@ -1409,6 +1510,9 @@ class ContextGraphService:
                 claim.updated_at = now
                 self.repository.update_claim(claim)
                 expired_claims += 1
+                changed_memory_ids.add(claim.memory_id)
+        for memory_id in changed_memory_ids:
+            self._sync_memory_validation(memory_id)
         result = {
             "scanned_claims": scanned_claims,
             "expired_claims": expired_claims,

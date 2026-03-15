@@ -4,7 +4,7 @@ import unittest
 
 from contextgraph.config import Settings
 from contextgraph.errors import PaymentRequiredError
-from contextgraph.models import Visibility
+from contextgraph.models import ValidationStatus, Visibility
 from contextgraph.service import ContextGraphService
 
 
@@ -34,6 +34,51 @@ class MemoryPolicyTest(unittest.TestCase):
             self.assertEqual(claim.visibility, Visibility.SHARED)
             self.assertEqual(claim.access_list, ["globex"])
             self.assertEqual(claim.price, 0.002)
+
+    def test_store_memory_persists_evidence_citations_and_expiry(self) -> None:
+        result = self.service.store_memory(
+            self.alice.agent_id,
+            "Acme supplier note. Acme sourcing note.",
+            visibility="org",
+            metadata={"source_url": "https://example.com/acme-note"},
+            evidence=["meeting:weekly-ops"],
+            citations=["ticket:SUP-42"],
+            expires_in_days=7,
+        )
+
+        memory = self.service.repository.get_memory(result.memory.memory_id)
+
+        self.assertIsNotNone(memory)
+        self.assertEqual(memory.validation_status, ValidationStatus.UNREVIEWED)
+        self.assertIn(f"source_agent:{self.alice.agent_id}", memory.evidence)
+        self.assertIn("meeting:weekly-ops", memory.evidence)
+        self.assertIn("source_url:https://example.com/acme-note", memory.citations)
+        self.assertIn("ticket:SUP-42", memory.citations)
+        self.assertIsNotNone(memory.expires_at)
+        for claim in result.claims:
+            self.assertEqual(claim.evidence, memory.evidence)
+            self.assertEqual(claim.citations, memory.citations)
+            self.assertEqual(claim.expires_at, memory.expires_at)
+            self.assertIsNone(claim.validated_at)
+
+    def test_review_claim_syncs_parent_memory_validation(self) -> None:
+        result = self.service.store_memory(
+            self.alice.agent_id,
+            "Acme supplier note. Acme sourcing note.",
+            visibility="org",
+        )
+
+        reviewed = self.service.review_claim(
+            reviewer_agent_id=self.acme_peer.agent_id,
+            claim_id=result.claims[0].claim_id,
+            decision="attested",
+            reason="confirmed by acme peer",
+        )
+        memory = self.service.repository.get_memory(result.memory.memory_id)
+
+        self.assertIsNotNone(reviewed.validated_at)
+        self.assertEqual(memory.validation_status, ValidationStatus.ATTESTED)
+        self.assertEqual(memory.validated_at, reviewed.validated_at)
 
     def test_update_memory_access_rewrites_all_sibling_claims(self) -> None:
         result = self.service.store_memory(

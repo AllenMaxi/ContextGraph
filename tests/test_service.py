@@ -274,6 +274,7 @@ class ContextGraphServiceTest(unittest.TestCase):
 
             completed = service.enqueue_claim_expiry_sweep(requester_agent_id=agent.agent_id)
             refreshed = service.repository.get_claim(claim.claim_id)
+            refreshed_memory = service.repository.get_memory(result.memory.memory_id)
             health = service.health()
         finally:
             service.close()
@@ -281,6 +282,8 @@ class ContextGraphServiceTest(unittest.TestCase):
         self.assertEqual(completed.status, JobStatus.SUCCEEDED)
         self.assertIsNotNone(refreshed)
         self.assertEqual(refreshed.validation_status, ValidationStatus.EXPIRED)
+        self.assertIsNotNone(refreshed_memory)
+        self.assertEqual(refreshed_memory.validation_status, ValidationStatus.EXPIRED)
         self.assertEqual(completed.result_summary["expired_claims"], 1)
         self.assertEqual(health["expired_claims"], 1)
         self.assertIsNotNone(health["last_claim_expiry_sweep_at"])
@@ -301,7 +304,10 @@ class ContextGraphServiceTest(unittest.TestCase):
             decision="attested",
             reason="confirmed by reviewer",
         )
+        memory = self.service.repository.get_memory(result.memory.memory_id)
         self.assertEqual(reviewed.validation_status, ValidationStatus.ATTESTED)
+        self.assertIsNotNone(reviewed.validated_at)
+        self.assertEqual(memory.validation_status, ValidationStatus.ATTESTED)
         tasks = self.service.list_review_tasks(requester_agent_id=self.alpha.agent_id)
         self.assertEqual(tasks[0].status, ReviewStatus.RESOLVED)
 

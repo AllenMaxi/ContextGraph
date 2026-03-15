@@ -22,10 +22,15 @@ Goal:
 
 - make memories safer to trust and easier to audit
 
-Planned:
+Implemented so far:
 
-- `evidence` / `citations` on memories or claims
-- `validated_at`
+- `evidence` and `citations` on `Memory` and `Claim`
+- `validated_at` on reviewed claims
+- memory-level `validation_status` synchronized from sibling claims
+- provenance flowing through service, HTTP API, and SDK
+
+Next:
+
 - richer `validation_status`
 - stronger UI for stale / verified / challenged memory
 
@@ -35,9 +40,14 @@ Goal:
 
 - prevent stale memory from quietly polluting prompts
 
-Planned:
+Implemented so far:
 
-- configurable expiry windows
+- configurable expiry windows at store time
+- memory-level expiry derived from claim expiry
+- expiry sweeps synchronizing the parent memory state
+
+Next:
+
 - manual curation in the operator console
 - downgrade or suppression of stale memories during recall
 

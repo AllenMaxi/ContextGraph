@@ -101,8 +101,11 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 visibility=payload.visibility.value if payload.visibility else None,
                 license=payload.license,
                 metadata=payload.metadata,
+                evidence=payload.evidence,
+                citations=payload.citations,
                 access_list=payload.access_list,
                 price=payload.price,
+                expires_in_days=payload.expires_in_days,
             )
         )
 
@@ -120,8 +123,11 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 visibility=payload.visibility.value if payload.visibility else None,
                 license=payload.license,
                 metadata=payload.metadata,
+                evidence=payload.evidence,
+                citations=payload.citations,
                 access_list=payload.access_list,
                 price=payload.price,
+                expires_in_days=payload.expires_in_days,
             )
         )
 

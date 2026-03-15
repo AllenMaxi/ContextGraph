@@ -286,8 +286,11 @@ class ContextGraph:
         visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        evidence: list[str] | None = None,
+        citations: list[str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
+        expires_in_days: int | None = None,
     ) -> dict[str, Any]:
         return self.transport.store(
             {
@@ -296,8 +299,11 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
+                "evidence": evidence,
+                "citations": citations,
                 "access_list": access_list,
                 "price": price,
+                "expires_in_days": expires_in_days,
             }
         )
 
@@ -308,8 +314,11 @@ class ContextGraph:
         visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
+        evidence: list[str] | None = None,
+        citations: list[str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
+        expires_in_days: int | None = None,
     ) -> dict[str, Any]:
         return self.transport.store_async(
             {
@@ -318,8 +327,11 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
+                "evidence": evidence,
+                "citations": citations,
                 "access_list": access_list,
                 "price": price,
+                "expires_in_days": expires_in_days,
             }
         )
 

@@ -427,12 +427,17 @@ class Neo4jRepository:
             agent_id=props["agent_id"],
             content=props["content"],
             visibility=Visibility(props["visibility"]),
+            validation_status=ValidationStatus(props.get("validation_status", ValidationStatus.UNREVIEWED.value)),
             license=props["license"],
             metadata=dict(props.get("metadata", {})),
             created_at=self._parse_dt(props["created_at"]),
             updated_at=self._parse_dt(props["updated_at"]),
             access_list=list(props.get("access_list", [])),
             price=float(props.get("price", 0.0)),
+            evidence=list(props.get("evidence", [])),
+            citations=list(props.get("citations", [])),
+            validated_at=self._parse_dt(props.get("validated_at")),
+            expires_at=self._parse_dt(props.get("expires_at")),
         )
 
     def _entity_from_node(self, node: Any) -> Entity:
@@ -469,6 +474,9 @@ class Neo4jRepository:
             source_org_id=props.get("source_org_id", ""),
             access_list=list(props.get("access_list", [])),
             price=float(props.get("price", 0.0)),
+            evidence=list(props.get("evidence", [])),
+            citations=list(props.get("citations", [])),
+            validated_at=self._parse_dt(props.get("validated_at")),
         )
 
     def _query_from_node(self, node: Any) -> StandingQuery:

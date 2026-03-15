@@ -125,6 +125,42 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertIn('"default_access_list": ["globex"]', captured["body"])
         self.assertIn('"default_price": 0.002', captured["body"])
 
+    def test_http_transport_store_includes_provenance_fields(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = req.data.decode("utf-8")
+            return FakeResponse()
+
+        with patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.store(
+                "agt_test",
+                "Acme Corp reported API latency.",
+                evidence=["meeting:incident-review"],
+                citations=["ticket:INC-42"],
+                expires_in_days=14,
+            )
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/memory/store")
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn('"evidence": ["meeting:incident-review"]', captured["body"])
+        self.assertIn('"citations": ["ticket:INC-42"]', captured["body"])
+        self.assertIn('"expires_in_days": 14', captured["body"])
+
 
 if __name__ == "__main__":
     unittest.main()

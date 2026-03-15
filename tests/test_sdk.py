@@ -24,6 +24,9 @@ class ContextGraphSDKTest(unittest.TestCase):
         client.store(
             agent_id=agent["agent_id"],
             content="Acme Corp reported API latency. Jane from Acme Corp needs a fix.",
+            evidence=["meeting:incident-review"],
+            citations=["ticket:INC-42"],
+            expires_in_days=14,
         )
 
         hits = client.recall(agent["agent_id"], "Acme latency")
@@ -33,6 +36,8 @@ class ContextGraphSDKTest(unittest.TestCase):
         self.assertGreaterEqual(len(notifications), 1)
         self.assertEqual(agent["default_visibility"], "org")
         self.assertEqual(agent["default_price"], 0.001)
+        self.assertIn("meeting:incident-review", hits[0]["claim"]["evidence"])
+        self.assertIn("ticket:INC-42", hits[0]["claim"]["citations"])
 
     def test_local_transport_async_round_trip(self) -> None:
         service = ContextGraphService(
