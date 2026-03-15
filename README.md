@@ -59,7 +59,7 @@ Install from GitHub or source today. The PyPI package name is still pending beca
 
 ## Demo
 
-![ContextGraph demo preview](docs/assets/contextgraph-demo.svg)
+[![ContextGraph demo](docs/assets/contextgraph-demo.gif)](docs/assets/contextgraph-demo.mp4)
 
 ```python
 from contextgraph import ContextGraphService
@@ -102,6 +102,7 @@ What happens:
 - `globex-market-bot` sees the priced published memory in feed as metadata only.
 - `globex-market-bot` must use `recall(..., payment_token=...)` to unlock the full content.
 - Record-ready demo script: [`examples/launch_demo.py`](examples/launch_demo.py)
+- Auto-render demo assets: [`scripts/render_launch_demo.py`](scripts/render_launch_demo.py)
 - Recording guide: [`docs/demo-video.md`](docs/demo-video.md)
 
 ## Quickstart

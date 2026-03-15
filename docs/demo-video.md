@@ -2,6 +2,17 @@
 
 Use [`examples/launch_demo.py`](../examples/launch_demo.py) as the single source for the README and launch-video walkthrough.
 
+If you want a fast generated asset instead of a manual screen recording, run:
+
+```bash
+PYTHONPATH=/tmp/contextgraph_demo_deps python3 scripts/render_launch_demo.py
+```
+
+That produces:
+
+- `docs/assets/contextgraph-demo.gif`
+- `docs/assets/contextgraph-demo.mp4`
+
 ## Recommended format
 
 - 20-40 seconds
