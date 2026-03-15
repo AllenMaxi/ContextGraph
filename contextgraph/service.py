@@ -98,10 +98,21 @@ class ContextGraphService:
         capabilities: list[str] | None = None,
         admin_key: str | None = None,
         erc8004_address: str = "",
+        default_visibility: str | None = None,
+        default_access_list: list[str] | None = None,
+        default_price: float | None = None,
     ) -> Agent:
         configured_admin_key = self.settings.admin_key
         if configured_admin_key and (not admin_key or admin_key != configured_admin_key):
             raise PermissionDeniedError("Agent registration requires a valid admin key when CG_ADMIN_KEY is set.")
+        resolved_default_visibility, resolved_default_access_list, resolved_default_price = self._resolve_policy_fields(
+            visibility=default_visibility,
+            access_list=default_access_list,
+            price=default_price,
+            fallback_visibility=Visibility.PRIVATE,
+            fallback_access_list=[],
+            fallback_price=0.0,
+        )
         now = utcnow()
         agent = Agent(
             agent_id=new_id("agt"),
@@ -113,6 +124,9 @@ class ContextGraphService:
             created_at=now,
             updated_at=now,
             erc8004_address=erc8004_address,
+            default_visibility=resolved_default_visibility,
+            default_access_list=resolved_default_access_list,
+            default_price=resolved_default_price,
         )
         # Verify ERC-8004 identity if provided
         if erc8004_address:
@@ -143,60 +157,144 @@ class ContextGraphService:
             raise PermissionDeniedError(f"Agent '{agent.agent_id}' is not active.")
         return agent
 
+    def update_agent_defaults(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        default_visibility: str | None = None,
+        default_access_list: list[str] | None = None,
+        default_price: float | None = None,
+    ) -> Agent:
+        requester = self.get_agent(requester_agent_id)
+        if requester.agent_id != agent_id:
+            raise PermissionDeniedError("Agents may only update their own default memory policy.")
+
+        resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
+            visibility=default_visibility,
+            access_list=default_access_list,
+            price=default_price,
+            fallback_visibility=requester.default_visibility,
+            fallback_access_list=requester.default_access_list,
+            fallback_price=requester.default_price,
+        )
+        requester.default_visibility = resolved_visibility
+        requester.default_access_list = resolved_access_list
+        requester.default_price = resolved_price
+        requester.updated_at = utcnow()
+        self.repository.save_agent(requester)
+        self._audit(
+            "update_agent_defaults",
+            actor_agent_id=requester.agent_id,
+            details={"agent_id": requester.agent_id},
+        )
+        return requester
+
+    def _resolve_policy_fields(
+        self,
+        *,
+        visibility: str | Visibility | None,
+        access_list: list[str] | None,
+        price: float | None,
+        fallback_visibility: str | Visibility,
+        fallback_access_list: list[str] | None,
+        fallback_price: float,
+    ) -> tuple[Visibility, list[str], float]:
+        resolved_visibility = self._coerce_visibility(visibility, fallback_visibility)
+        resolved_price = fallback_price if price is None else price
+        if resolved_price < 0:
+            raise ValueError("Price must be greater than or equal to 0.")
+
+        fallback_acl = self._dedupe_access_list(fallback_access_list or [])
+        raw_access_list = fallback_acl if access_list is None else self._dedupe_access_list(access_list)
+        resolved_access_list = raw_access_list if resolved_visibility == Visibility.SHARED else []
+        if resolved_visibility == Visibility.SHARED and not resolved_access_list:
+            raise ValueError("Shared visibility requires a non-empty access_list.")
+        return resolved_visibility, resolved_access_list, resolved_price
+
+    def _coerce_visibility(
+        self,
+        visibility: str | Visibility | None,
+        fallback_visibility: str | Visibility,
+    ) -> Visibility:
+        candidate = fallback_visibility if visibility is None else visibility
+        if isinstance(candidate, Visibility):
+            return candidate
+        return Visibility(candidate)
+
+    def _dedupe_access_list(self, access_list: list[str]) -> list[str]:
+        return [item for item in dict.fromkeys(access_list) if item]
+
     def store_memory(
         self,
         agent_id: str,
         content: str,
-        visibility: str = "private",
+        visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
-        price: float = 0.0,
+        price: float | None = None,
     ) -> StoreResult:
+        agent = self.get_agent(agent_id)
+        resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
+            visibility=visibility,
+            access_list=access_list,
+            price=price,
+            fallback_visibility=agent.default_visibility,
+            fallback_access_list=agent.default_access_list,
+            fallback_price=agent.default_price,
+        )
         return self._store_memory_internal(
             agent_id=agent_id,
             content=content,
-            visibility=visibility,
+            visibility=resolved_visibility.value,
             license=license,
             metadata=metadata,
-            access_list=access_list,
-            price=price,
+            access_list=resolved_access_list,
+            price=resolved_price,
         )
 
     def enqueue_memory_store(
         self,
         agent_id: str,
         content: str,
-        visibility: str = "private",
+        visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
-        price: float = 0.0,
+        price: float | None = None,
     ) -> BackgroundJob:
         agent = self.get_agent(agent_id)
+        resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
+            visibility=visibility,
+            access_list=access_list,
+            price=price,
+            fallback_visibility=agent.default_visibility,
+            fallback_access_list=agent.default_access_list,
+            fallback_price=agent.default_price,
+        )
         return self._create_job(
             job_type=JobType.STORE_MEMORY,
             owner_agent_id=agent.agent_id,
             owner_org_id=agent.org_id,
             requester_agent_id=agent.agent_id,
             payload_summary={
-                "visibility": visibility,
+                "visibility": resolved_visibility.value,
                 "license": license,
-                "price": f"{price:.4f}",
+                "price": f"{resolved_price:.4f}",
                 "content_preview": content.strip()[:120],
             },
             payload={
                 "agent_id": agent_id,
                 "content": content,
-                "visibility": visibility,
+                "visibility": resolved_visibility.value,
                 "license": license,
                 "metadata": dict(metadata or {}),
-                "access_list": list(access_list or []),
-                "price": price,
+                "access_list": resolved_access_list,
+                "price": resolved_price,
             },
             max_attempts=1,
             audit_action="enqueue_memory_store",
-            audit_details={"visibility": visibility},
+            audit_details={"visibility": resolved_visibility.value},
         )
 
     def enqueue_claim_expiry_sweep(
@@ -627,13 +725,17 @@ class ContextGraphService:
             raise NotFoundError(f"Memory '{memory_id}' not found.")
         if memory.agent_id != requester_agent_id:
             raise PermissionDeniedError("Only the source agent can update a memory policy.")
-
-        if visibility is not None:
-            memory.visibility = Visibility(visibility)
-        if price is not None:
-            memory.price = price
-        if access_list is not None:
-            memory.access_list = list(access_list)
+        resolved_visibility, resolved_access_list, resolved_price = self._resolve_policy_fields(
+            visibility=visibility,
+            access_list=access_list,
+            price=price,
+            fallback_visibility=memory.visibility,
+            fallback_access_list=memory.access_list,
+            fallback_price=memory.price,
+        )
+        memory.visibility = resolved_visibility
+        memory.access_list = resolved_access_list
+        memory.price = resolved_price
 
         memory.updated_at = utcnow()
         self.repository.update_memory(memory)
@@ -876,7 +978,7 @@ class ContextGraphService:
             if policies_match:
                 return claims
 
-        target_access_list = self._normalize_access_lists(memory.access_list, claims)
+        target_access_list = self._normalize_access_lists(memory.visibility, memory.access_list, claims)
         target_price = max([memory.price] + [claim.price for claim in claims])
         memory_changed = memory.access_list != target_access_list or memory.price != target_price
         if memory_changed:
@@ -906,9 +1008,16 @@ class ContextGraphService:
         self._normalized_memory_policies.add(memory_id)
         return normalized_claims
 
-    def _normalize_access_lists(self, memory_access_list: list[str], claims: list[Claim]) -> list[str]:
-        lists = [list(dict.fromkeys(memory_access_list))]
-        lists.extend(list(dict.fromkeys(claim.access_list)) for claim in claims)
+    def _normalize_access_lists(
+        self,
+        visibility: Visibility,
+        memory_access_list: list[str],
+        claims: list[Claim],
+    ) -> list[str]:
+        if visibility != Visibility.SHARED:
+            return []
+        lists = [self._dedupe_access_list(memory_access_list)]
+        lists.extend(self._dedupe_access_list(claim.access_list) for claim in claims)
         non_empty = [items for items in lists if items]
         if not non_empty:
             return []

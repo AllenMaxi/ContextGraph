@@ -59,7 +59,8 @@ class MemoryContext:
     source: str | None = None
     severity: str | None = None
     sensitive: bool = False
-    shared_across_org: bool = True
+    shared_across_org: bool = False
+    share_targets: list[str] = field(default_factory=list)
     deadline: str | None = None
     tags: list[str] = field(default_factory=list)
 
@@ -164,6 +165,15 @@ class MemoryPolicyHelper:
             reasons.append("tracked_workflow")
 
         decision_visibility = visibility or self._default_visibility(context, content=lowered)
+        if decision_visibility == "shared" and not context.share_targets:
+            reasons.append("missing_share_targets")
+            return MemoryPolicyDecision(
+                should_store=False,
+                visibility=decision_visibility,
+                importance_score=score,
+                reasons=reasons,
+                metadata=self._build_metadata(context, metadata, reasons, score),
+            )
         duplicate_claim_id = self._find_duplicate_claim(agent_id, extracted_claims)
         if duplicate_claim_id is not None:
             reasons.append("duplicate_claim")
@@ -213,6 +223,7 @@ class MemoryPolicyHelper:
                 content=content,
                 visibility=decision.visibility,
                 metadata=decision.metadata,
+                access_list=context.share_targets if decision.visibility == "shared" else None,
             )
         else:
             result = self.client.store(
@@ -220,6 +231,7 @@ class MemoryPolicyHelper:
                 content=content,
                 visibility=decision.visibility,
                 metadata=decision.metadata,
+                access_list=context.share_targets if decision.visibility == "shared" else None,
             )
         return MemoryStoreOutcome(decision=decision, result=result)
 
@@ -227,7 +239,7 @@ class MemoryPolicyHelper:
         lowered = content.lower() if content else ""
         if context.sensitive or any(keyword in lowered for keyword in SENSITIVE_KEYWORDS):
             return "private"
-        if context.shared_across_org:
+        if context.shared_across_org and context.share_targets:
             return "shared"
         return "private"
 

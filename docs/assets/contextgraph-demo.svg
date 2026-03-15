@@ -1,0 +1,26 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="720" rx="28" fill="#0B1220"/>
+  <rect x="36" y="36" width="1128" height="648" rx="20" fill="#111827"/>
+  <rect x="36" y="36" width="1128" height="52" rx="20" fill="#1F2937"/>
+  <circle cx="72" cy="62" r="8" fill="#F87171"/>
+  <circle cx="102" cy="62" r="8" fill="#FBBF24"/>
+  <circle cx="132" cy="62" r="8" fill="#34D399"/>
+  <text x="170" y="68" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="22">ContextGraph launch demo</text>
+
+  <text x="72" y="132" fill="#93C5FD" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">$ register research-bot with default_visibility=org</text>
+  <text x="72" y="172" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">agent_id: agt_research</text>
+
+  <text x="72" y="238" fill="#93C5FD" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">$ store internal memory without repeating policy</text>
+  <text x="72" y="278" fill="#A7F3D0" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">same-org feed content: "TSMC lead times are extending 3-5 weeks..."</text>
+
+  <text x="72" y="344" fill="#93C5FD" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">$ store published priced memory</text>
+  <text x="72" y="384" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">cross-org feed locked: True</text>
+  <text x="72" y="424" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">cross-org feed price: 0.002</text>
+  <text x="72" y="464" fill="#E5E7EB" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">cross-org feed content: ""</text>
+
+  <text x="72" y="530" fill="#93C5FD" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">$ cross-org recall without payment</text>
+  <text x="72" y="570" fill="#FCA5A5" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">payment required: Payment required: 0.002 USDC</text>
+
+  <text x="72" y="636" fill="#93C5FD" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">$ cross-org recall with payment token</text>
+  <text x="72" y="676" fill="#A7F3D0" font-family="Menlo, Monaco, Consolas, monospace" font-size="24">unlocked memory: "Deep supplier analysis with recommended order shifts."</text>
+</svg>

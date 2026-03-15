@@ -1,10 +1,8 @@
-"""Agent-to-Agent (A2A) protocol server for cross-agent discovery and communication.
+"""Experimental A2A-inspired adapter for cross-agent discovery and federation.
 
-Implements the A2A protocol specification for ContextGraph, enabling:
-- Agent card discovery (/.well-known/agent.json)
-- Capability advertisement
-- Cross-agent task delegation
-- Federated claim exchange
+This module exposes ContextGraph capabilities using an A2A-shaped surface, but it
+does not implement the full official A2A protocol contract yet. The current
+behavior is best treated as an adapter/federation wrapper for experimentation.
 """
 
 from __future__ import annotations
@@ -20,10 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class AgentCard:
-    """A2A Agent Card describing an agent's capabilities and endpoints.
-
-    Follows the A2A protocol specification for agent discovery.
-    """
+    """Experimental agent card describing capabilities and endpoints."""
 
     name: str
     description: str
@@ -51,7 +46,7 @@ class AgentSkill:
 
 @dataclass(slots=True)
 class A2ATask:
-    """A task sent between agents via A2A protocol."""
+    """A task sent through the experimental A2A adapter surface."""
 
     task_id: str
     sender_agent_id: str
@@ -72,7 +67,7 @@ class A2ATask:
 
 
 class A2AServer:
-    """A2A protocol server that exposes ContextGraph as an agent.
+    """Experimental A2A adapter that exposes ContextGraph as an agent.
 
     Handles:
     - Agent card serving (/.well-known/agent.json)

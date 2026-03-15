@@ -7,6 +7,7 @@ from ..utils import to_jsonable
 from ._compat import Depends, Header
 from .dependencies import build_authenticated_agent_dependency, require_same_agent
 from .schemas import (
+    AgentDefaultsUpdateRequest,
     AgentRegistrationRequest,
     AgentRegistrationResponse,
     AgentResponse,
@@ -55,6 +56,30 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 capabilities=payload.capabilities,
                 admin_key=x_admin_key,
                 erc8004_address=payload.erc8004_address,
+                default_visibility=payload.default_visibility.value if payload.default_visibility else None,
+                default_access_list=payload.default_access_list,
+                default_price=payload.default_price,
+            )
+        )
+
+    @app.patch("/v1/agents/{agent_id}/defaults", response_model=AgentResponse)
+    def update_agent_defaults(
+        agent_id: str,
+        payload: AgentDefaultsUpdateRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        require_same_agent(
+            authenticated,
+            agent_id,
+            "Agents may only update their own default memory policy.",
+        )
+        return to_jsonable(
+            graph.update_agent_defaults(
+                requester_agent_id=authenticated.agent_id,
+                agent_id=agent_id,
+                default_visibility=payload.default_visibility.value if payload.default_visibility else None,
+                default_access_list=payload.default_access_list,
+                default_price=payload.default_price,
             )
         )
 
@@ -73,7 +98,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
             graph.store_memory(
                 agent_id=authenticated.agent_id,
                 content=payload.content,
-                visibility=payload.visibility.value,
+                visibility=payload.visibility.value if payload.visibility else None,
                 license=payload.license,
                 metadata=payload.metadata,
                 access_list=payload.access_list,
@@ -92,7 +117,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
             graph.enqueue_memory_store(
                 agent_id=authenticated.agent_id,
                 content=payload.content,
-                visibility=payload.visibility.value,
+                visibility=payload.visibility.value if payload.visibility else None,
                 license=payload.license,
                 metadata=payload.metadata,
                 access_list=payload.access_list,

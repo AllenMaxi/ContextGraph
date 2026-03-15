@@ -54,11 +54,11 @@ class MemoryPolicyTest(unittest.TestCase):
             claim for claim in self.service.repository.list_claims() if claim.memory_id == updated.memory_id
         ]
         self.assertEqual(updated.visibility, Visibility.PUBLISHED)
-        self.assertEqual(updated.access_list, ["globex"])
+        self.assertEqual(updated.access_list, [])
         self.assertEqual(updated.price, 0.005)
         for claim in sibling_claims:
             self.assertEqual(claim.visibility, Visibility.PUBLISHED)
-            self.assertEqual(claim.access_list, ["globex"])
+            self.assertEqual(claim.access_list, [])
             self.assertEqual(claim.price, 0.005)
 
     def test_update_claim_compatibility_updates_parent_memory_policy(self) -> None:

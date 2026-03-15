@@ -27,7 +27,7 @@ dependencies = []
 Homepage = "https://github.com/AllenMaxi/ContextGraph"
 Repository = "https://github.com/AllenMaxi/ContextGraph"
 Issues = "https://github.com/AllenMaxi/ContextGraph/issues"
-Documentation = "https://contextgraph.dev/docs"
+Documentation = "https://github.com/AllenMaxi/ContextGraph/tree/main/docs"
 
 [project.scripts]
 contextgraph-eval = "contextgraph.eval_cli:run"

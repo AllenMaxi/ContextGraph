@@ -68,6 +68,9 @@ class Agent:
     identity_verified: bool = False
     reputation_score: float = 0.0
     followers_count: int = 0
+    default_visibility: Visibility = Visibility.PRIVATE
+    default_access_list: list[str] = field(default_factory=list)
+    default_price: float = 0.0
 
 
 @dataclass(slots=True)

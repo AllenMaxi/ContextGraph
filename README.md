@@ -13,7 +13,6 @@
   <a href="https://github.com/AllenMaxi/ContextGraph/actions/workflows/ci.yml"><img src="https://github.com/AllenMaxi/ContextGraph/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="https://pypi.org/project/contextgraph"><img src="https://img.shields.io/pypi/v/contextgraph.svg" alt="PyPI"></a>
 </p>
 
 <p align="center">
@@ -47,19 +46,31 @@ Supported in this repo:
 - In-memory and Neo4j backends
 - Standing queries, webhooks, and follow/feed subscriptions
 - Review, audit, and reputation primitives
-- Federation and A2A-oriented building blocks
+- Native federation flows plus an experimental A2A adapter surface
 - ERC-8004 identity hooks
 - x402-style payment gating for priced recall flows
 
 This repo is best suited for builders who want a **shared memory layer for multiple agents**, not just a single-agent memory cache.
 
+Cross-org communication today is powered by **ContextGraph-native memory sharing and federation APIs**.
+The current A2A module is experimental and should be treated as adapter-level infrastructure, not standards-complete A2A compliance.
+
+Install from GitHub or source today. The PyPI package name is still pending because `contextgraph` is already claimed by another project.
+
 ## Demo
+
+![ContextGraph demo preview](docs/assets/contextgraph-demo.svg)
 
 ```python
 from contextgraph import ContextGraphService
 
 service = ContextGraphService()
-research = service.register_agent("research-bot", "acme", ["research"])
+research = service.register_agent(
+    "research-bot",
+    "acme",
+    ["research"],
+    default_visibility="org",
+)
 procurement = service.register_agent("procurement-bot", "acme", ["procurement"])
 globex = service.register_agent("globex-market-bot", "globex", ["market"])
 
@@ -69,7 +80,6 @@ service.follow(globex.agent_id, "topic", "semiconductor")
 service.store_memory(
     research.agent_id,
     "TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
-    visibility="org",
 )
 
 service.store_memory(
@@ -91,17 +101,30 @@ What happens:
 - `procurement-bot` sees the full internal Acme memory because it is same-org.
 - `globex-market-bot` sees the priced published memory in feed as metadata only.
 - `globex-market-bot` must use `recall(..., payment_token=...)` to unlock the full content.
+- Record-ready demo script: [`examples/launch_demo.py`](examples/launch_demo.py)
+- Recording guide: [`docs/demo-video.md`](docs/demo-video.md)
 
 ## Quickstart
 
-### Install
+### Install From GitHub / Source
 
 ```bash
-pip install contextgraph
-pip install contextgraph[server]     # FastAPI server
-pip install contextgraph[mcp]        # MCP server support
-pip install contextgraph[server,mcp] # Common local setup
+git clone https://github.com/AllenMaxi/ContextGraph.git
+cd ContextGraph
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[server,mcp,dev]"
 ```
+
+Base package only:
+
+```bash
+pip install git+https://github.com/AllenMaxi/ContextGraph.git
+```
+
+### PyPI Status
+
+PyPI release is intentionally delayed for now. The package name `contextgraph` is already taken, so the first public launch is GitHub-first while package naming is resolved.
 
 ### 60-Second Example
 
@@ -109,12 +132,16 @@ pip install contextgraph[server,mcp] # Common local setup
 from contextgraph import ContextGraphService
 
 service = ContextGraphService()
-agent = service.register_agent("my-agent", "acme", ["research"])
+agent = service.register_agent(
+    "my-agent",
+    "acme",
+    ["research"],
+    default_visibility="org",
+)
 
 service.store_memory(
     agent.agent_id,
     "Acme Corp reported API latency. Jane needs a fix.",
-    visibility="org",
 )
 
 hits = service.recall(agent.agent_id, "Acme latency")
@@ -139,6 +166,9 @@ Every memory has one policy:
 - `price`
 
 Claims inherit that policy for indexing, but they do not override it.
+
+Agents can also define default memory policy once at registration or with `PATCH /v1/agents/{agent_id}/defaults`.
+If a store call omits `visibility`, `access_list`, or `price`, ContextGraph fills those fields from the agent defaults.
 
 | Visibility | Who can access full memory | Typical use |
 |---|---|---|
@@ -209,7 +239,7 @@ More workflow examples are in [docs/use-cases.md](docs/use-cases.md).
 - **Core ready now**
   In-process service API, FastAPI server, Python SDK, follow/feed model, memory-level access control, payment gating, and in-memory + Neo4j backends.
 - **Advanced integrations included**
-  MCP support, standing queries, federation building blocks, ERC-8004 identity hooks, x402-style payment hooks, and operator dashboard surface.
+  MCP support, standing queries, native federation building blocks, an experimental A2A adapter surface, ERC-8004 identity hooks, x402-style payment hooks, and operator dashboard surface.
 - **Good test coverage**
   Service, web, SDK, feed, access, and regression tests are in place.
 
@@ -218,6 +248,7 @@ More workflow examples are in [docs/use-cases.md](docs/use-cases.md).
 These features are supported in the repo, but they are still evolving compared to the core memory/feed/access path:
 
 - Federation
+- Experimental A2A adapter surface
 - Production-grade ERC-8004 registry validation
 - External x402 settlement verification beyond MVP token acceptance
 - Dashboard polish and operator UX

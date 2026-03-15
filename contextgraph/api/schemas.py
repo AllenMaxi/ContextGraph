@@ -21,6 +21,9 @@ class AgentResponse(BaseModel):
     identity_verified: bool = False
     reputation_score: float = 0.0
     followers_count: int = 0
+    default_visibility: Visibility = Visibility.PRIVATE
+    default_access_list: list[str] = Field(default_factory=list)
+    default_price: float = 0.0
 
 
 class AgentRegistrationRequest(BaseModel):
@@ -28,6 +31,9 @@ class AgentRegistrationRequest(BaseModel):
     org_id: str
     capabilities: list[str] = Field(default_factory=list)
     erc8004_address: str = Field(default="", description="ERC-8004 on-chain address (optional)")
+    default_visibility: Visibility | None = None
+    default_access_list: list[str] | None = None
+    default_price: float | None = Field(default=None, ge=0.0)
 
 
 class AgentRegistrationResponse(AgentResponse):
@@ -37,14 +43,14 @@ class AgentRegistrationResponse(AgentResponse):
 class MemoryStoreRequest(BaseModel):
     agent_id: str | None = None
     content: str = Field(..., max_length=102400)
-    visibility: Visibility = Visibility.PRIVATE
+    visibility: Visibility | None = None
     license: str = "internal"
     metadata: dict[str, str] = Field(default_factory=dict)
-    access_list: list[str] = Field(
-        default_factory=list, description="Agent/org IDs allowed access (for 'shared' visibility)"
+    access_list: list[str] | None = Field(
+        default=None, description="Agent/org IDs allowed access (for 'shared' visibility)"
     )
-    price: float = Field(
-        default=0.0, ge=0.0, description="Price per recall (0 = free). Currency set via CG_PAYMENT_CURRENCY."
+    price: float | None = Field(
+        default=None, ge=0.0, description="Price per recall (0 = free). Currency set via CG_PAYMENT_CURRENCY."
     )
 
 
@@ -263,6 +269,12 @@ class MemoryAccessUpdateRequest(BaseModel):
     visibility: Visibility | None = None
     price: float | None = Field(default=None, ge=0.0)
     access_list: list[str] | None = None
+
+
+class AgentDefaultsUpdateRequest(BaseModel):
+    default_visibility: Visibility | None = None
+    default_access_list: list[str] | None = None
+    default_price: float | None = Field(default=None, ge=0.0)
 
 
 class TrustScoreResponse(BaseModel):

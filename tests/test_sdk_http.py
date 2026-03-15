@@ -90,6 +90,41 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
             "http://localhost:8420/v1/claims?validation_status=unreviewed&only_needing_review=true&limit=25",
         )
 
+    def test_http_transport_updates_agent_defaults_via_agent_path(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = req.data.decode("utf-8")
+            return FakeResponse()
+
+        with patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.update_agent_defaults(
+                "agt_test",
+                default_visibility="shared",
+                default_access_list=["globex"],
+                default_price=0.002,
+            )
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/agents/agt_test/defaults")
+        self.assertEqual(captured["method"], "PATCH")
+        self.assertIn('"default_visibility": "shared"', captured["body"])
+        self.assertIn('"default_access_list": ["globex"]', captured["body"])
+        self.assertIn('"default_price": 0.002', captured["body"])
+
 
 if __name__ == "__main__":
     unittest.main()

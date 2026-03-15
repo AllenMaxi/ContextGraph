@@ -8,13 +8,17 @@ def main() -> None:
     #   contextgraph-server
     client = ContextGraph.http("http://localhost:8420")
 
-    agent = client.register_agent("http-demo-agent", "acme", ["research"])
+    agent = client.register_agent(
+        "http-demo-agent",
+        "acme",
+        ["research"],
+        default_visibility="org",
+    )
     client_with_key = ContextGraph.http("http://localhost:8420", api_key=agent["api_key"])
 
     client_with_key.store(
         agent["agent_id"],
         "Acme Corp reported API latency during the morning batch.",
-        visibility="org",
     )
     hits = client_with_key.recall(agent["agent_id"], "API latency")
 

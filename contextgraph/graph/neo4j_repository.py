@@ -411,6 +411,13 @@ class Neo4jRepository:
             status=props["status"],
             created_at=self._parse_dt(props["created_at"]),
             updated_at=self._parse_dt(props["updated_at"]),
+            erc8004_address=props.get("erc8004_address", ""),
+            identity_verified=bool(props.get("identity_verified", False)),
+            reputation_score=float(props.get("reputation_score", 0.0)),
+            followers_count=int(props.get("followers_count", 0)),
+            default_visibility=Visibility(props.get("default_visibility", Visibility.PRIVATE.value)),
+            default_access_list=list(props.get("default_access_list", [])),
+            default_price=float(props.get("default_price", 0.0)),
         )
 
     def _memory_from_node(self, node: Any) -> Memory:

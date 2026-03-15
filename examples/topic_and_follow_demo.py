@@ -7,7 +7,7 @@ from contextgraph.config import Settings
 def main() -> None:
     service = ContextGraphService(app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False))
     try:
-        research = service.register_agent("research-bot", "acme", ["research"])
+        research = service.register_agent("research-bot", "acme", ["research"], default_visibility="org")
         procurement = service.register_agent("procurement-bot", "acme", ["procurement"])
         market = service.register_agent("globex-market-bot", "globex", ["market"])
 
@@ -18,7 +18,6 @@ def main() -> None:
         service.store_memory(
             research.agent_id,
             "TSMC lead times are extending 3-5 weeks; move flexible Q3 orders to Samsung.",
-            visibility="org",
         )
         service.store_memory(
             research.agent_id,

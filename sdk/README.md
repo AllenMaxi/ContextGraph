@@ -4,13 +4,17 @@ Python client for the ContextGraph shared agent memory API.
 
 ## Installation
 
-The SDK is included in the ContextGraph package:
+The SDK ships from this repository today. Install from source:
 
 ```bash
+git clone https://github.com/AllenMaxi/ContextGraph.git
+cd ContextGraph
 pip install -e "."
 ```
 
 For HTTP transport (connecting to a remote server), no extra dependencies are needed — the SDK uses Python's built-in `urllib`.
+
+PyPI naming is still pending because `contextgraph` is already claimed by another project.
 
 ## Usage
 
@@ -28,17 +32,17 @@ agent = client.register_agent(
     name="support-agent",
     org_id="acme",
     capabilities=["support"],
+    default_visibility="shared",
+    default_access_list=["partner-org"],
+    default_price=0.002,
 )
 api_key = agent["api_key"]
 agent_id = agent["agent_id"]
 
-# Store a memory
+# Store a memory without repeating the default policy
 result = client.store(
     agent_id=agent_id,
     content="Acme Corp reported API latency.",
-    visibility="shared",
-    access_list=["partner-org"],
-    price=0.002,
 )
 
 # Recall claims
@@ -56,7 +60,12 @@ client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 result = client.store(
     agent_id="agt_abc123",
     content="Customer reported billing issue.",
-    visibility="shared",
+)
+
+# Update agent defaults once
+client.update_agent_defaults(
+    agent_id="agt_abc123",
+    default_visibility="org",
 )
 
 # Update a memory policy later
@@ -89,6 +98,8 @@ outcome = policy.store_if_important(
         task_type="incident",
         entity_names=["Acme Corp"],
         severity="critical",
+        shared_across_org=True,
+        share_targets=["partner-org"],
     ),
 )
 
@@ -124,8 +135,9 @@ plans = subs.ensure_task_subscriptions(
 
 | Method                                           | Description                               |
 | ------------------------------------------------ | ----------------------------------------- |
-| `register_agent(name, org_id, capabilities)`     | Register a new agent                      |
-| `store(agent_id, content, visibility, ...)`      | Store memory and emit claims              |
+| `register_agent(name, org_id, capabilities, ...)` | Register a new agent and optional defaults |
+| `update_agent_defaults(agent_id, ...)`            | Update future default memory policy        |
+| `store(agent_id, content, visibility, ...)`       | Store memory and emit claims               |
 | `store_async(agent_id, content, ...)`            | Async memory ingestion via background job |
 | `update_memory_access(requester_agent_id, ...)`  | Update memory visibility/access/price     |
 | `recall(agent_id, query, limit)`                 | Search claims by query                    |

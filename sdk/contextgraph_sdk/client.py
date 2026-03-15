@@ -21,6 +21,7 @@ from .exceptions import (
 
 class Transport(Protocol):
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -45,6 +46,11 @@ class LocalTransport:
 
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.register_agent(**payload))
+
+    def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
+        local_payload = dict(payload)
+        local_payload["requester_agent_id"] = local_payload["agent_id"]
+        return to_jsonable(self.service.update_agent_defaults(**local_payload))
 
     def store(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.store_memory(**payload))
@@ -148,6 +154,15 @@ class HttpTransport:
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/agents/register", payload)
 
+    def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        body = {
+            key: value
+            for key, value in payload.items()
+            if key in {"default_visibility", "default_access_list", "default_price"} and value is not None
+        }
+        return self._request("PATCH", f"/v1/agents/{agent_id}/defaults", body)
+
     def store(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/memory/store", payload)
 
@@ -228,18 +243,51 @@ class ContextGraph:
     def http(cls, base_url: str, api_key: str | None = None) -> ContextGraph:
         return cls(HttpTransport(base_url=base_url, api_key=api_key))
 
-    def register_agent(self, name: str, org_id: str, capabilities: list[str] | None = None) -> dict[str, Any]:
-        return self.transport.register_agent({"name": name, "org_id": org_id, "capabilities": capabilities or []})
+    def register_agent(
+        self,
+        name: str,
+        org_id: str,
+        capabilities: list[str] | None = None,
+        default_visibility: str | None = None,
+        default_access_list: list[str] | None = None,
+        default_price: float | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.register_agent(
+            {
+                "name": name,
+                "org_id": org_id,
+                "capabilities": capabilities or [],
+                "default_visibility": default_visibility,
+                "default_access_list": default_access_list,
+                "default_price": default_price,
+            }
+        )
+
+    def update_agent_defaults(
+        self,
+        agent_id: str,
+        default_visibility: str | None = None,
+        default_access_list: list[str] | None = None,
+        default_price: float | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.update_agent_defaults(
+            {
+                "agent_id": agent_id,
+                "default_visibility": default_visibility,
+                "default_access_list": default_access_list,
+                "default_price": default_price,
+            }
+        )
 
     def store(
         self,
         agent_id: str,
         content: str,
-        visibility: str = "private",
+        visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
-        price: float = 0.0,
+        price: float | None = None,
     ) -> dict[str, Any]:
         return self.transport.store(
             {
@@ -248,7 +296,7 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
-                "access_list": access_list or [],
+                "access_list": access_list,
                 "price": price,
             }
         )
@@ -257,11 +305,11 @@ class ContextGraph:
         self,
         agent_id: str,
         content: str,
-        visibility: str = "private",
+        visibility: str | None = None,
         license: str = "internal",
         metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
-        price: float = 0.0,
+        price: float | None = None,
     ) -> dict[str, Any]:
         return self.transport.store_async(
             {
@@ -270,7 +318,7 @@ class ContextGraph:
                 "visibility": visibility,
                 "license": license,
                 "metadata": metadata or {},
-                "access_list": access_list or [],
+                "access_list": access_list,
                 "price": price,
             }
         )

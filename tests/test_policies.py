@@ -34,7 +34,10 @@ class ContextGraphPoliciesTest(unittest.TestCase):
                 entity_names=["Acme Corp"],
                 severity="critical",
                 source="zendesk",
+                shared_across_org=True,
+                share_targets=["partner-org"],
             ),
+            asynchronous=False,
         )
 
         self.assertTrue(outcome.decision.should_store)
@@ -43,6 +46,7 @@ class ContextGraphPoliciesTest(unittest.TestCase):
         self.assertIn("memory_policy_score", outcome.decision.metadata)
         claims = self.client.claims(self.agent["agent_id"])
         self.assertGreaterEqual(len(claims), 1)
+        self.assertEqual(outcome.result["memory"]["access_list"], ["partner-org"])
 
     def test_memory_policy_skips_duplicate_claims(self) -> None:
         helper = MemoryPolicyHelper(self.client)
@@ -61,6 +65,25 @@ class ContextGraphPoliciesTest(unittest.TestCase):
         self.assertFalse(second.decision.should_store)
         self.assertIn("duplicate_claim", second.decision.reasons)
         self.assertIsNotNone(second.decision.duplicate_claim_id)
+
+    def test_memory_policy_refuses_shared_without_targets(self) -> None:
+        helper = MemoryPolicyHelper(self.client)
+
+        outcome = helper.store_if_important(
+            agent_id=self.agent["agent_id"],
+            content="Acme Corp reported critical API latency and requested a fix today.",
+            context=MemoryContext(
+                workflow="support",
+                task_type="incident",
+                entity_names=["Acme Corp"],
+                severity="critical",
+            ),
+            visibility="shared",
+        )
+
+        self.assertFalse(outcome.decision.should_store)
+        self.assertIn("missing_share_targets", outcome.decision.reasons)
+        self.assertIsNone(outcome.result)
 
     def test_memory_policy_defaults_sensitive_content_to_private(self) -> None:
         helper = MemoryPolicyHelper(self.client)

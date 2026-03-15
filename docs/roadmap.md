@@ -18,6 +18,6 @@
 ## Later
 
 - Federation between nodes
-- A2A-focused interoperability improvements
+- Standards-compliant A2A interoperability
 - Richer governance and approval policies
 - More production deployment guidance

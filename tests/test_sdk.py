@@ -13,12 +13,17 @@ class ContextGraphSDKTest(unittest.TestCase):
         service = ContextGraphService()
         client = ContextGraph.local(service)
 
-        agent = client.register_agent("sdk-agent", "alpha", ["research"])
+        agent = client.register_agent(
+            "sdk-agent",
+            "alpha",
+            ["research"],
+            default_visibility="org",
+            default_price=0.001,
+        )
         client.watch(agent["agent_id"], "Acme latency", name="monitor")
         client.store(
             agent_id=agent["agent_id"],
             content="Acme Corp reported API latency. Jane from Acme Corp needs a fix.",
-            visibility="org",
         )
 
         hits = client.recall(agent["agent_id"], "Acme latency")
@@ -26,6 +31,8 @@ class ContextGraphSDKTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(hits), 1)
         self.assertGreaterEqual(len(notifications), 1)
+        self.assertEqual(agent["default_visibility"], "org")
+        self.assertEqual(agent["default_price"], 0.001)
 
     def test_local_transport_async_round_trip(self) -> None:
         service = ContextGraphService(
@@ -66,6 +73,33 @@ class ContextGraphSDKTest(unittest.TestCase):
             self.assertEqual(summary["pending_review_count"], 1)
             self.assertEqual(len(claims), 1)
             self.assertEqual(sweep_job["job_type"], "sweep_expired_claims")
+        finally:
+            service.close()
+
+    def test_local_transport_updates_agent_defaults_and_allows_store_override(self) -> None:
+        service = ContextGraphService()
+        try:
+            client = ContextGraph.local(service)
+            agent = client.register_agent("sdk-defaults", "alpha", ["research"])
+            updated = client.update_agent_defaults(
+                agent["agent_id"],
+                default_visibility="shared",
+                default_access_list=["globex"],
+                default_price=0.002,
+            )
+
+            inherited = client.store(agent["agent_id"], "Shared note.")
+            overridden = client.store(agent["agent_id"], "Internal note.", visibility="private", price=0.0)
+
+            self.assertEqual(updated["default_visibility"], "shared")
+            self.assertEqual(updated["default_access_list"], ["globex"])
+            self.assertEqual(updated["default_price"], 0.002)
+            self.assertEqual(inherited["memory"]["visibility"], "shared")
+            self.assertEqual(inherited["memory"]["access_list"], ["globex"])
+            self.assertEqual(inherited["memory"]["price"], 0.002)
+            self.assertEqual(overridden["memory"]["visibility"], "private")
+            self.assertEqual(overridden["memory"]["access_list"], [])
+            self.assertEqual(overridden["memory"]["price"], 0.0)
         finally:
             service.close()
 

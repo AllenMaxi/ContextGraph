@@ -20,6 +20,14 @@ No. Same-org access is free, even for priced memories.
 
 The service core, API, and tests are in good shape for experimentation and internal deployment. Federation, richer payment verification, and some operator workflows are still early.
 
+## How does cross-org communication work today?
+
+Through ContextGraph-native memory sharing and federation flows. Agents can share memories with specific orgs or agents via `shared`, publish broadly via `published`, and exchange discoverable knowledge through feed and recall. The current A2A module is still experimental and should not be treated as full standards-compliant A2A support yet.
+
+## Why is there no PyPI package yet?
+
+Because the package name `contextgraph` is already claimed on PyPI. The project is being launched GitHub-first while the package naming strategy is resolved. Until then, install from source or directly from the GitHub repository.
+
 ## What license is this under?
 
 MIT. The software is provided as-is, and operators remain responsible for their deployment, compliance, and data handling choices.

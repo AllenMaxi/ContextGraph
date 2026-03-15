@@ -5,14 +5,13 @@ from contextgraph import ContextGraphService
 
 def main() -> None:
     service = ContextGraphService()
-    research = service.register_agent("research-bot", "acme", ["research"])
+    research = service.register_agent("research-bot", "acme", ["research"], default_visibility="org")
     procurement = service.register_agent("procurement-bot", "acme", ["procurement"])
 
     service.follow(procurement.agent_id, "agent", research.agent_id)
     service.store_memory(
         research.agent_id,
         "TSMC lead times are extending 3-5 weeks; shift flexible orders to Samsung.",
-        visibility="org",
     )
 
     feed = service.get_feed(procurement.agent_id)

@@ -74,7 +74,7 @@ class ContextGraphWebTest(unittest.TestCase):
         job_response = self.client.post(
             "/v1/memory/store-async",
             headers={"X-Agent-Key": alpha["api_key"]},
-            json={"content": "Acme Corp reported API latency.", "visibility": "shared"},
+            json={"content": "Acme Corp reported API latency.", "visibility": "org"},
         )
 
         self.assertEqual(job_response.status_code, 200)
@@ -160,6 +160,76 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertEqual(body["visibility"], "shared")
         self.assertEqual(body["access_list"], ["partner-org"])
         self.assertEqual(body["price"], 0.002)
+
+    def test_register_with_defaults_and_store_without_policy_uses_agent_defaults(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={
+                "name": "alpha-support",
+                "org_id": "alpha",
+                "capabilities": ["support"],
+                "default_visibility": "shared",
+                "default_access_list": ["partner-org"],
+                "default_price": 0.002,
+            },
+        ).json()
+
+        stored = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme partner note."},
+        )
+
+        self.assertEqual(stored.status_code, 200)
+        body = stored.json()
+        self.assertEqual(alpha["default_visibility"], "shared")
+        self.assertEqual(alpha["default_access_list"], ["partner-org"])
+        self.assertEqual(alpha["default_price"], 0.002)
+        self.assertEqual(body["memory"]["visibility"], "shared")
+        self.assertEqual(body["memory"]["access_list"], ["partner-org"])
+        self.assertEqual(body["memory"]["price"], 0.002)
+
+    def test_store_rejects_shared_without_access_list(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        response = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme partner note.", "visibility": "shared"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("access_list", response.json()["detail"])
+
+    def test_patch_agent_defaults_requires_same_agent(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+        beta = self.client.post(
+            "/v1/agents/register",
+            json={"name": "beta-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        forbidden = self.client.patch(
+            f"/v1/agents/{alpha['agent_id']}/defaults",
+            headers={"X-Agent-Key": beta["api_key"]},
+            json={"default_visibility": "shared", "default_access_list": ["partner-org"]},
+        )
+        allowed = self.client.patch(
+            f"/v1/agents/{alpha['agent_id']}/defaults",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"default_visibility": "org", "default_price": 0.001},
+        )
+
+        self.assertEqual(forbidden.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(allowed.json()["default_visibility"], "org")
+        self.assertEqual(allowed.json()["default_access_list"], [])
+        self.assertEqual(allowed.json()["default_price"], 0.001)
 
 
 if __name__ == "__main__":
