@@ -5,7 +5,7 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>Shared memory for AI agents with permissions, subscriptions, and optional payments.</strong><br>
+  <strong>Shared memory bus for MCP-compatible agents with permissions, subscriptions, and optional payments.</strong><br>
   Claim-native indexing, memory-level access control, cross-agent discovery, plus support for MCP, Neo4j, federation, ERC-8004 identity hooks, and x402-aligned payment flows.
 </p>
 
@@ -34,6 +34,12 @@
 
 ContextGraph turns raw agent memories into searchable claims while keeping **memory ownership and access control at the memory level**.
 
+The best way to think about it is:
+
+- not another vector database
+- not a single-agent scratchpad
+- a shared memory bus that MCP-compatible agents can read from, publish into, follow, and monetize
+
 - Agents store full memories.
 - ContextGraph extracts claims and entities for indexing.
 - Other agents can recall, follow, and subscribe to relevant knowledge.
@@ -50,7 +56,7 @@ Supported in this repo:
 - ERC-8004 identity hooks
 - x402-style payment gating for priced recall flows
 
-This repo is best suited for builders who want a **shared memory layer for multiple agents**, not just a single-agent memory cache.
+This repo is best suited for builders who want a **shared memory layer for multiple agents**, especially agents that already use MCP tools and need governed shared context.
 
 Cross-org communication today is powered by **ContextGraph-native memory sharing and federation APIs**.
 The current A2A module is experimental and should be treated as adapter-level infrastructure, not standards-complete A2A compliance.
@@ -185,12 +191,56 @@ print(hits[0].claim.statement)
 print(hits[0].memory_content)
 ```
 
+## MCP Chat Integration
+
+ContextGraph is designed to sit directly on the hot path of a chat agent:
+
+1. the user asks a question
+2. the agent calls `contextgraph_recall`
+3. ContextGraph returns authorized memory hits with source metadata
+4. the agent answers in the same turn
+
+That is the core wedge: **shared memory for MCP-compatible agents**, not “copy everything into another vector DB”.
+
+Minimal MCP entry point:
+
+```bash
+export CG_AGENT_ID=agt_your_agent
+export CG_AGENT_NAME=assistant-bot
+export CG_AGENT_ORG=acme
+python -m contextgraph.mcp_server
+```
+
+See:
+
+- [`docs/mcp-chat-agent.md`](docs/mcp-chat-agent.md)
+- [`examples/chat_agent_sdk.py`](examples/chat_agent_sdk.py)
+- [`sdk/README.md`](sdk/README.md)
+
 ### Examples
 
 - [`examples/basic_shared_memory.py`](examples/basic_shared_memory.py)
+- [`examples/chat_agent_sdk.py`](examples/chat_agent_sdk.py)
 - [`examples/dashboard_demo_seed.py`](examples/dashboard_demo_seed.py)
 - [`examples/http_roundtrip.py`](examples/http_roundtrip.py)
 - [`examples/topic_and_follow_demo.py`](examples/topic_and_follow_demo.py)
+
+## Local Baseline
+
+ContextGraph should be fast enough to use directly during a tool call.
+
+Local baseline on an Apple Silicon laptop with the in-memory backend and 300 seeded memories:
+
+| Path | Avg (ms) | P50 (ms) | P95 (ms) |
+| --- | ---: | ---: | ---: |
+| `store_memory` | 0.02 | 0.02 | 0.03 |
+| `recall` | 6.57 | 6.58 | 6.78 |
+| `get_feed` | 10.47 | 10.41 | 11.09 |
+
+Methodology and rerun script:
+
+- [`docs/benchmarks.md`](docs/benchmarks.md)
+- [`scripts/benchmark_local.py`](scripts/benchmark_local.py)
 
 ## How Access Works
 
@@ -289,6 +339,22 @@ These features are supported in the repo, but they are still evolving compared t
 - Production-grade ERC-8004 registry validation
 - External x402 settlement verification beyond MVP token acceptance
 - Dashboard polish and operator UX
+
+## Security and Operations
+
+ContextGraph is MIT-licensed and self-hostable, but safe operation still matters.
+
+Before using it in real agent systems:
+
+- treat recalled memories as untrusted external input
+- keep ContextGraph as the authority for access and payment checks
+- avoid blindly re-ingesting third-party memories into another persistent vector DB
+- lock down per-agent API keys and federation edges
+
+Operational guidance:
+
+- [`SECURITY.md`](SECURITY.md)
+- [`docs/security-operations.md`](docs/security-operations.md)
 
 ## More Capabilities
 

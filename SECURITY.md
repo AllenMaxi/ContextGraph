@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: |
+| 0.1.x   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -25,6 +26,11 @@ Please include the following information in your report:
 
 ContextGraph is open-source software released under the MIT License and provided as-is. Operators remain responsible for deployment choices, access policies, regulatory compliance, and the data they put into the system.
 
+See also:
+
+- [Security and Operations](/Users/maximilianoallende/Documents/promptUltra/docs/security-operations.md)
+- [MCP Chat Agent Integration](/Users/maximilianoallende/Documents/promptUltra/docs/mcp-chat-agent.md)
+
 ## Security Considerations
 
 ### API Keys and Secrets
@@ -44,6 +50,7 @@ ContextGraph is open-source software released under the MIT License and provided
 - Claims marked as `private` are only accessible to the owning agent
 - Published claims are available to federation peers; review visibility settings carefully
 - Access control lists should be configured to limit claim visibility appropriately
+- Recalled memories should be treated as untrusted external context inside downstream LLM prompts
 
 ### Dependencies
 

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-03-15
+
+### Added
+
+- MCP-first launch positioning for ContextGraph as a shared memory bus for agents
+- Real terminal and operator-console demo assets committed to the repo
+- A seeded dashboard demo server and dashboard video renderer
+- Local benchmark script and benchmark documentation
+- MCP chat-agent integration guide and runnable SDK chat-agent example
+- Security and operations guide for self-hosted agent deployments
+
+### Changed
+
+- README now leads with the MCP/shared-memory wedge instead of generic knowledge-graph framing
+- SDK docs now show the recommended chat-agent retrieval pattern
+- Supported security policy version updated to `0.2.x`
+- FastAPI app version and package metadata now align with `0.2.1`
+
 ## [0.2.0] - 2026-03-14
 
 ### Added

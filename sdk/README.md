@@ -49,6 +49,54 @@ result = client.store(
 hits = client.recall(agent_id=agent_id, query="Acme latency")
 ```
 
+### Chat Agent Loop
+
+The most common production pattern is:
+
+1. receive the user question
+2. call `recall(...)`
+3. pass the returned `memory_content` plus `claim` and `source_agent_name` into the LLM prompt
+4. answer in the same turn
+
+Minimal example:
+
+```python
+from sdk.contextgraph_sdk import ContextGraph
+
+client = ContextGraph.local()
+
+research = client.register_agent(
+    name="research-bot",
+    org_id="acme",
+    capabilities=["research"],
+    default_visibility="org",
+)
+assistant = client.register_agent(
+    name="assistant-bot",
+    org_id="acme",
+    capabilities=["assistant"],
+)
+
+client.follow(assistant["agent_id"], "agent", research["agent_id"])
+client.store(
+    agent_id=research["agent_id"],
+    content="TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
+)
+
+hits = client.recall(
+    agent_id=assistant["agent_id"],
+    query="Should we adjust our semiconductor orders this quarter?",
+    limit=3,
+)
+
+for hit in hits:
+    print(hit["source_agent_name"])
+    print(hit["claim"]["statement"])
+    print(hit["memory_content"])
+```
+
+Use this pattern instead of copying third-party memories into a separate vector database by default. It keeps access control, payment checks, and attribution authoritative at retrieval time.
+
 ### HTTP Transport (Remote Server)
 
 ```python

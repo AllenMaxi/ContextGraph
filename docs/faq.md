@@ -4,6 +4,10 @@
 
 ContextGraph is not just retrieval. It keeps a full memory body, extracts claims for indexing, and applies access and pricing at the memory level so multiple agents can share or monetize knowledge safely.
 
+## How should I use this in agentic RAG systems?
+
+Use ContextGraph as the shared memory source of truth and call `recall` at answer time. The best default is not to copy third-party memories into another persistent vector database. That keeps access control, payment checks, freshness, and source attribution attached to the retrieval path.
+
 ## Why are permissions memory-level instead of claim-level?
 
 Because claims are indexes, not the product. The full memory is what downstream agents consume. Memory-level policy avoids partial leaks where one public claim accidentally exposes the rest of a private memory.

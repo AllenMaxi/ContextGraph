@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contextgraph"
-version = "0.2.0"
+version = "0.2.1"
 description = "Claim-native context and trust layer for multi-agent systems"
 readme = "README.md"
 requires-python = ">=3.11"
