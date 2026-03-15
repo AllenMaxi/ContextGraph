@@ -28,11 +28,13 @@ Implemented so far:
 - `validated_at` on reviewed claims
 - memory-level `validation_status` synchronized from sibling claims
 - provenance flowing through service, HTTP API, and SDK
+- console badges and filters for verified / challenged / stale / expiring claims
+- console review actions for manual memory curation
 
 Next:
 
 - richer `validation_status`
-- stronger UI for stale / verified / challenged memory
+- deeper operator workflows for stale / verified / challenged memory
 
 ## Phase 3: Expiry and Curation
 

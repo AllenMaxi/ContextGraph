@@ -468,6 +468,21 @@ def _dashboard_css() -> str:
     .badge-tone-open {
       background: rgba(228,228,231,0.08); color: var(--text-sec);
     }
+    .badge-tone-review {
+      background: rgba(245,158,11,0.15); color: var(--amber);
+    }
+    .badge-tone-verified {
+      background: rgba(34,197,94,0.15); color: var(--green);
+    }
+    .badge-tone-challenged {
+      background: rgba(239,68,68,0.15); color: var(--red);
+    }
+    .badge-tone-stale {
+      background: rgba(239,68,68,0.15); color: #fca5a5;
+    }
+    .badge-tone-expiring {
+      background: rgba(245,158,11,0.15); color: #fbbf24;
+    }
 
     /* Stat cards */
     .stat-grid {
@@ -500,6 +515,17 @@ def _dashboard_css() -> str:
       gap: 4px;
       margin-bottom: 18px;
       flex-wrap: wrap;
+    }
+    .filter-block {
+      margin-bottom: 18px;
+    }
+    .filter-label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     .tab {
       padding: 6px 14px;
@@ -684,6 +710,23 @@ def _dashboard_css() -> str:
       font-size: 0.82rem;
       line-height: 1.5;
     }
+    .inline-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .detail-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .detail-list-item {
+      background: rgba(10,10,12,0.7);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
 
     /* Loading */
     .loading {
@@ -834,6 +877,68 @@ def _dashboard_js() -> str:
       return '<span class="badge badge-tone-' + esc(tone) + '">'
         + esc(label) + '</span>';
     }
+    function parseDate(value) {
+      return value ? new Date(value) : null;
+    }
+    function isExpiredDate(value) {
+      var dt = parseDate(value);
+      return !!(dt && dt.getTime() <= Date.now());
+    }
+    function isExpiringSoon(value) {
+      var dt = parseDate(value);
+      if (!dt || dt.getTime() <= Date.now()) return false;
+      return (dt.getTime() - Date.now()) <= (3 * 24 * 60 * 60 * 1000);
+    }
+    function formatDateShort(value) {
+      var dt = parseDate(value);
+      if (!dt) return 'No expiry';
+      return dt.toLocaleDateString(undefined, {
+        month: 'short', day: 'numeric', year: 'numeric'
+      });
+    }
+    function claimHealthBadges(claims) {
+      if (!claims || !claims.length) return '';
+      var badges = [];
+      var hasExpired = claims.some(function(c) {
+        return c.validation_status === 'expired' || isExpiredDate(c.expires_at);
+      });
+      var hasChallenged = claims.some(function(c) {
+        return c.validation_status === 'challenged';
+      });
+      var hasAttested = claims.some(function(c) {
+        return c.validation_status === 'attested';
+      });
+      var hasUnreviewed = claims.some(function(c) {
+        return c.validation_status === 'unreviewed';
+      });
+      var hasExpiringSoon = claims.some(function(c) {
+        return isExpiringSoon(c.expires_at);
+      });
+
+      if (hasExpired) {
+        badges.push(statusBadge('stale', 'stale'));
+      } else if (hasChallenged) {
+        badges.push(statusBadge('challenged', 'challenged'));
+      } else if (hasAttested) {
+        badges.push(statusBadge('verified', 'verified'));
+      } else if (hasUnreviewed) {
+        badges.push(statusBadge('needs review', 'review'));
+      }
+      if (hasExpiringSoon) {
+        badges.push(statusBadge('expiring soon', 'expiring'));
+      }
+      return badges.join('');
+    }
+    function matchesClaimHealth(claim, filter) {
+      var expired = claim.validation_status === 'expired' || isExpiredDate(claim.expires_at);
+      if (filter === 'all') return true;
+      if (filter === 'review') return claim.validation_status === 'unreviewed' && !expired;
+      if (filter === 'verified') return claim.validation_status === 'attested' && !expired;
+      if (filter === 'challenged') return claim.validation_status === 'challenged' && !expired;
+      if (filter === 'stale') return expired;
+      if (filter === 'expiring') return !expired && isExpiringSoon(claim.expires_at);
+      return true;
+    }
     function repColor(score) {
       if (score >= 0.7) return 'var(--green)';
       if (score >= 0.4) return 'var(--amber)';
@@ -856,6 +961,8 @@ def _dashboard_js() -> str:
     }
     function feedBadges(item) {
       var badges = [visibilityBadge(item.visibility)];
+      var health = claimHealthBadges(item.claims || []);
+      if (health) badges.push(health);
       if (item.source_org_id === CONSOLE_ORG_ID && !item.is_locked) {
         badges.push(statusBadge('same-org', 'internal'));
       }
@@ -1337,6 +1444,8 @@ def _dashboard_js() -> str:
       }
       html += '<div class="detail-section"><h4>Access</h4>';
       html += '<div class="badge-row">' + feedBadges(item) + '</div></div>';
+      html += '<div class="detail-section"><h4>Validation and Expiry</h4>';
+      html += '<div class="badge-row">' + claimHealthBadges(item.claims || []) + '</div></div>';
       html += '<div class="detail-section"><h4>Source</h4>';
       html += '<p>' + esc(item.source_agent_name) + '</p>';
       html += '<p class="muted-copy">' + esc(item.source_org_id) + '</p>';
@@ -1356,11 +1465,40 @@ def _dashboard_js() -> str:
         item.claims.forEach(function(c) {
           html += '<div style="padding:8px 0;'
             + 'border-bottom:1px solid var(--border)">';
-          html += visibilityBadge(c.visibility) + ' ';
+          html += '<div class="badge-row" style="margin-bottom:6px">'
+            + visibilityBadge(c.visibility)
+            + claimHealthBadges([c]) + '</div>';
           html += '<span style="font-size:0.85rem">'
-            + esc(c.statement) + '</span></div>';
+            + esc(c.statement) + '</span>';
+          if (c.expires_at || c.validated_at) {
+            html += '<div class="muted-copy" style="margin-top:6px">';
+            if (c.validated_at) {
+              html += 'Validated ' + esc(formatDateShort(c.validated_at)) + '. ';
+            }
+            if (c.expires_at) {
+              html += 'Expires ' + esc(formatDateShort(c.expires_at)) + '.';
+            }
+            html += '</div>';
+          }
+          html += '</div>';
         });
         html += '</div>';
+      }
+      var evidence = [];
+      var citations = [];
+      (item.claims || []).forEach(function(c) {
+        evidence = evidence.concat(c.evidence || []);
+        citations = citations.concat(c.citations || []);
+      });
+      if (evidence.length || citations.length) {
+        html += '<div class="detail-section"><h4>Provenance</h4><div class="detail-list">';
+        Array.from(new Set(evidence)).forEach(function(entry) {
+          html += '<div class="detail-list-item"><strong>Evidence</strong><br>' + esc(entry) + '</div>';
+        });
+        Array.from(new Set(citations)).forEach(function(entry) {
+          html += '<div class="detail-list-item"><strong>Citation</strong><br>' + esc(entry) + '</div>';
+        });
+        html += '</div></div>';
       }
       if (item.entities && item.entities.length) {
         html += '<div class="detail-section"><h4>Entities</h4><div>'
@@ -1373,7 +1511,8 @@ def _dashboard_js() -> str:
     // CLAIMS PAGE
     // ========================================================
     var _claimsData = [];
-    var _claimsFilter = 'all';
+    var _claimsVisibilityFilter = 'all';
+    var _claimsHealthFilter = 'all';
 
     function loadClaims() {
       var content = document.getElementById('content');
@@ -1381,7 +1520,8 @@ def _dashboard_js() -> str:
         '<div class="loading">Loading claims...</div>';
       fetchJSON('/v1/claims').then(function(claims) {
         _claimsData = claims;
-        _claimsFilter = 'all';
+        _claimsVisibilityFilter = 'all';
+        _claimsHealthFilter = 'all';
         renderClaims();
       }).catch(function(err) {
         content.innerHTML =
@@ -1392,21 +1532,60 @@ def _dashboard_js() -> str:
 
     function renderClaims() {
       var content = document.getElementById('content');
-      var filters = ['all', 'PUBLISHED', 'PRIVATE', 'ORG', 'SHARED'];
-      var html = '<div class="tabs">';
-      filters.forEach(function(f) {
-        html += '<button class="tab'
-          + (f === _claimsFilter ? ' active' : '')
-          + '" onclick="filterClaims(\'' + f + '\')">'
-          + (f === 'all' ? 'All' : f) + '</button>';
-      });
+      var visibilityFilters = ['all', 'PUBLISHED', 'PRIVATE', 'ORG', 'SHARED'];
+      var healthFilters = ['all', 'review', 'verified', 'challenged', 'stale', 'expiring'];
+      var summary = {
+        total: _claimsData.length,
+        review: _claimsData.filter(function(c) { return matchesClaimHealth(c, 'review'); }).length,
+        verified: _claimsData.filter(function(c) { return matchesClaimHealth(c, 'verified'); }).length,
+        stale: _claimsData.filter(function(c) { return matchesClaimHealth(c, 'stale'); }).length
+      };
+
+      var html = '<div class="stat-grid">';
+      html += '<div class="stat-card"><div class="label">Total Claims</div><div class="value">'
+        + summary.total + '</div></div>';
+      html += '<div class="stat-card"><div class="label">Needs Review</div><div class="value" style="color:var(--amber)">'
+        + summary.review + '</div></div>';
+      html += '<div class="stat-card"><div class="label">Verified</div><div class="value" style="color:var(--green)">'
+        + summary.verified + '</div></div>';
+      html += '<div class="stat-card"><div class="label">Stale</div><div class="value" style="color:#fca5a5">'
+        + summary.stale + '</div></div>';
       html += '</div>';
 
-      var filtered = _claimsFilter === 'all'
-        ? _claimsData
-        : _claimsData.filter(function(c) {
-            return c.visibility === _claimsFilter;
-          });
+      html += '<div class="filter-block"><span class="filter-label">Visibility</span><div class="tabs">';
+      visibilityFilters.forEach(function(f) {
+        html += '<button class="tab'
+          + (f === _claimsVisibilityFilter ? ' active' : '')
+          + '" onclick="filterClaimsVisibility(\'' + f + '\')">'
+          + (f === 'all' ? 'All' : f) + '</button>';
+      });
+      html += '</div></div>';
+
+      html += '<div class="filter-block"><span class="filter-label">Validation and Expiry</span><div class="tabs">';
+      healthFilters.forEach(function(f) {
+        var label = {
+          all: 'All',
+          review: 'Needs Review',
+          verified: 'Verified',
+          challenged: 'Challenged',
+          stale: 'Stale',
+          expiring: 'Expiring Soon'
+        }[f];
+        html += '<button class="tab'
+          + (f === _claimsHealthFilter ? ' active' : '')
+          + '" onclick="filterClaimsHealth(\'' + f + '\')">'
+          + label + '</button>';
+      });
+      html += '</div></div>';
+
+      html += '<div class="inline-actions" style="margin-bottom:18px">';
+      html += '<button class="btn btn-secondary btn-sm" onclick="runExpirySweep()">Run Expiry Sweep</button>';
+      html += '</div>';
+
+      var filtered = _claimsData.filter(function(c) {
+        var visibilityMatch = _claimsVisibilityFilter === 'all' || c.visibility === _claimsVisibilityFilter;
+        return visibilityMatch && matchesClaimHealth(c, _claimsHealthFilter);
+      });
 
       if (!filtered.length) {
         html += '<div class="empty-state"><h3>No claims</h3>'
@@ -1417,8 +1596,9 @@ def _dashboard_js() -> str:
           var origIdx = _claimsData.indexOf(c);
           html += '<div class="card" onclick="openClaim('
             + origIdx + ')">';
-          html += '<div style="margin-bottom:8px">'
-            + visibilityBadge(c.visibility) + '</div>';
+          html += '<div class="badge-row" style="margin-bottom:10px">'
+            + visibilityBadge(c.visibility)
+            + claimHealthBadges([c]) + '</div>';
           html += '<div class="card-statement">'
             + esc(c.statement) + '</div>';
           html += '<div class="card-meta">';
@@ -1426,6 +1606,12 @@ def _dashboard_js() -> str:
             + esc(c.source_agent_id.substring(0, 12))
             + '...</span>';
           html += entityTags(c.entity_ids);
+          if (c.validated_at) {
+            html += '<span>Validated ' + esc(formatDateShort(c.validated_at)) + '</span>';
+          }
+          if (c.expires_at) {
+            html += '<span>Expires ' + esc(formatDateShort(c.expires_at)) + '</span>';
+          }
           if (c.price > 0) {
             html += '<span style="color:var(--amber)">$'
               + c.price.toFixed(2) + '</span>';
@@ -1437,8 +1623,13 @@ def _dashboard_js() -> str:
       content.innerHTML = html;
     }
 
-    window.filterClaims = function(f) {
-      _claimsFilter = f;
+    window.filterClaimsVisibility = function(f) {
+      _claimsVisibilityFilter = f;
+      renderClaims();
+    };
+
+    window.filterClaimsHealth = function(f) {
+      _claimsHealthFilter = f;
       renderClaims();
     };
 
@@ -1449,6 +1640,11 @@ def _dashboard_js() -> str:
       var html = '<div class="detail-section"><h4>Statement</h4>';
       html += '<p>' + esc(c.statement) + '</p></div>';
 
+      html += '<div class="detail-section"><h4>Health</h4>';
+      html += '<div class="badge-row">'
+        + visibilityBadge(c.visibility)
+        + claimHealthBadges([c]) + '</div></div>';
+
       html += '<div class="detail-section"><h4>Details</h4>';
       html += '<p style="font-size:0.82rem;color:var(--text-sec)">';
       html += 'Claim ID: ' + esc(c.claim_id) + '<br>';
@@ -1457,8 +1653,37 @@ def _dashboard_js() -> str:
       html += 'Confidence: '
         + (c.confidence * 100).toFixed(0) + '%<br>';
       html += 'Status: ' + esc(c.validation_status) + '<br>';
+      html += 'Validated At: ' + esc(c.validated_at ? formatDateShort(c.validated_at) : 'Not yet') + '<br>';
+      html += 'Expires At: ' + esc(c.expires_at ? formatDateShort(c.expires_at) : 'No expiry') + '<br>';
       html += 'Source: ' + esc(c.source_agent_id) + '<br>';
       html += '</p></div>';
+
+      html += '<div class="detail-section"><h4>Provenance</h4>';
+      if ((c.evidence && c.evidence.length) || (c.citations && c.citations.length)) {
+        html += '<div class="detail-list">';
+        (c.evidence || []).forEach(function(item) {
+          html += '<div class="detail-list-item"><strong>Evidence</strong><br>'
+            + esc(item) + '</div>';
+        });
+        (c.citations || []).forEach(function(item) {
+          html += '<div class="detail-list-item"><strong>Citation</strong><br>'
+            + esc(item) + '</div>';
+        });
+        html += '</div>';
+      } else {
+        html += '<p class="muted-copy">No provenance metadata was attached to this claim.</p>';
+      }
+      html += '</div>';
+
+      html += '<div class="detail-section"><h4>Review and Curation</h4>';
+      html += '<div class="form-group"><label>Review reason</label>';
+      html += '<textarea id="review-reason" rows="3" placeholder="Why is this verified, challenged, or stale?"></textarea></div>';
+      html += '<div class="inline-actions">';
+      html += '<button class="btn btn-primary" onclick="reviewClaimDecision(\'' + esc(c.claim_id) + '\', \'attested\')">Mark Verified</button>';
+      html += '<button class="btn btn-secondary" onclick="reviewClaimDecision(\'' + esc(c.claim_id) + '\', \'challenged\')">Mark Challenged</button>';
+      html += '<button class="btn btn-secondary" onclick="runExpirySweep()">Run Expiry Sweep</button>';
+      html += '</div>';
+      html += '<p class="muted-copy" style="margin-top:10px">Validation actions update the trust state. Expiry sweep refreshes stale claims from their expiry timestamps.</p></div>';
 
       html += '<div class="detail-section"><h4>Edit</h4>';
       html += '<div class="form-group"><label>Visibility</label>';
@@ -1480,6 +1705,7 @@ def _dashboard_js() -> str:
       html += '<label>Access List (comma-separated IDs)</label>';
       html += '<input type="text" id="edit-access" value="'
         + esc((c.access_list || []).join(', ')) + '" /></div>';
+      html += '<p class="muted-copy" style="margin-bottom:10px">Visibility, price, and access edits apply to the whole memory so sibling claims stay consistent.</p>';
 
       html += '<button class="btn btn-primary" '
         + 'onclick="saveClaim(\'' + esc(c.claim_id)
@@ -1498,6 +1724,24 @@ def _dashboard_js() -> str:
           var g = document.getElementById('access-list-group');
           g.style.display = this.value === 'SHARED' ? '' : 'none';
         });
+    };
+
+    window.reviewClaimDecision = function(claimId, decision) {
+      var reason = document.getElementById('review-reason').value || '';
+      postJSON('/v1/claims/review', {
+        reviewer_agent_id: CONSOLE_AGENT_ID,
+        claim_id: claimId,
+        decision: decision,
+        reason: reason
+      }).then(function() {
+        closePanel();
+        if ((location.hash || '#overview').slice(1) === 'overview') {
+          loadOverview();
+        }
+        loadClaims();
+      }).catch(function(err) {
+        window.alert('Error reviewing claim: ' + err.message);
+      });
     };
 
     window.saveClaim = function(claimId) {

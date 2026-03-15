@@ -142,6 +142,9 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertIn("Knowledge Overview", console.text)
         self.assertIn("Internal Memories", console.text)
         self.assertIn("Locked Discoveries", console.text)
+        self.assertIn("Validation and Expiry", console.text)
+        self.assertIn("Needs Review", console.text)
+        self.assertIn("reviewClaimDecision", console.text)
 
     def test_update_memory_access_endpoint_updates_memory_policy(self) -> None:
         alpha = self.client.post(
