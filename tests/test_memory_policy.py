@@ -173,3 +173,27 @@ class MemoryPolicyTest(unittest.TestCase):
 
         self.assertEqual(len(hits), 1)
         self.assertIn("recommended order shifts", hits[0].memory_content)
+
+    def test_cross_org_recall_returns_free_hits_before_raising_for_locked_matches(self) -> None:
+        service = ContextGraphService(app_settings=Settings(enable_payments=True, enable_claim_expiry_sweeps=False))
+        try:
+            source = service.register_agent("source", "acme", ["research"])
+            consumer = service.register_agent("consumer", "globex", ["market"])
+            service.store_memory(
+                source.agent_id,
+                "Public semiconductor update: wafer prices increased this quarter.",
+                visibility="published",
+            )
+            service.store_memory(
+                source.agent_id,
+                "Paid semiconductor analysis: move 20 percent of flexible volume in Q3.",
+                visibility="published",
+                price=0.002,
+            )
+
+            hits = service.recall(consumer.agent_id, "semiconductor quarter")
+        finally:
+            service.close()
+
+        self.assertEqual(len(hits), 1)
+        self.assertIn("wafer prices increased", hits[0].memory_content)

@@ -12,7 +12,7 @@ from typing import Any
 from .background import BackgroundWorker
 from .config import Settings, settings
 from .delivery import DeliveryRequest, NotificationDispatcher, WebhookNotificationDispatcher, validate_webhook_url
-from .errors import AuthenticationError, NotFoundError, PermissionDeniedError
+from .errors import AuthenticationError, NotFoundError, PaymentRequiredError, PermissionDeniedError
 from .extraction import Extractor, RuleBasedExtractor
 from .identity import AgentIdentity, IdentityVerifier
 from .in_memory import InMemoryRepository
@@ -477,6 +477,7 @@ class ContextGraphService:
         all_claims = self._list_claims_with_normalized_policies()
         self._sync_bm25_index(all_claims)
         hits: list[RecallHit] = []
+        payment_blocked_error: PaymentRequiredError | None = None
         for claim in all_claims:
             memory = self.repository.get_memory(claim.memory_id)
             if memory is None or not self._can_access(requester, claim):
@@ -484,12 +485,17 @@ class ContextGraphService:
             score = self._score_claim(query, claim)
             if score <= 0:
                 continue
-            self._check_memory_payment(
-                requester=requester,
-                memory=memory,
-                payment_gate=payment_gate,
-                payment_token=payment_token,
-            )
+            try:
+                self._check_memory_payment(
+                    requester=requester,
+                    memory=memory,
+                    payment_gate=payment_gate,
+                    payment_token=payment_token,
+                )
+            except PaymentRequiredError as exc:
+                if payment_blocked_error is None:
+                    payment_blocked_error = exc
+                continue
             entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
             source_agent = self.repository.get_agent(claim.source_agent_id)
             hits.append(
@@ -504,6 +510,8 @@ class ContextGraphService:
             )
         hits.sort(key=lambda item: item.score, reverse=True)
         self._audit("recall", actor_agent_id=agent_id, details={"query": query, "limit": str(limit)})
+        if not hits and payment_blocked_error is not None:
+            raise payment_blocked_error
         return hits[:limit]
 
     def relate(self, agent_id: str, entity_a: str, entity_b: str, max_depth: int = 2) -> list[RelationPath]:
