@@ -482,7 +482,7 @@ class ContextGraphService:
             memory = self.repository.get_memory(claim.memory_id)
             if memory is None or not self._can_access(requester, claim):
                 continue
-            score = self._score_claim(query, claim)
+            score = self._score_claim(requester, query, claim)
             if score <= 0:
                 continue
             try:
@@ -1083,7 +1083,7 @@ class ContextGraphService:
             claim_org=self._memory_source_org(memory),
         )
 
-    def _score_claim(self, query: str, claim: Claim) -> float:
+    def _score_claim(self, requester: Agent, query: str, claim: Claim) -> float:
         # Use BM25 if the claim is indexed; fall back to Jaccard otherwise
         if self._bm25.has_document(claim.claim_id):
             text_score = self._bm25.score(claim.claim_id, query)
@@ -1108,7 +1108,21 @@ class ContextGraphService:
             validation_bonus = -1.0
 
         confidence = claim.confidence * 0.2
-        return text_score * 0.55 + freshness * 0.1 + confidence + validation_bonus
+        context_bonus = self._visibility_preference_bonus(requester, claim)
+        return text_score * 0.55 + freshness * 0.1 + confidence + validation_bonus + context_bonus
+
+    def _visibility_preference_bonus(self, requester: Agent, claim: Claim) -> float:
+        same_org = bool(claim.source_org_id and claim.source_org_id == requester.org_id)
+
+        if claim.visibility == Visibility.PRIVATE and claim.source_agent_id == requester.agent_id:
+            return 0.12
+        if claim.visibility == Visibility.ORG and same_org:
+            return 0.1
+        if claim.visibility == Visibility.SHARED:
+            return 0.06 if same_org else 0.04
+        if claim.visibility == Visibility.PUBLISHED and same_org:
+            return 0.01
+        return 0.0
 
     def _freshness_factor(self, claim: Claim) -> float:
         now = utcnow()
