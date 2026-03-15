@@ -368,6 +368,8 @@ See:
 
 - [sdk/README.md](sdk/README.md)
 - [docs/payments.md](docs/payments.md)
+- [docs/github-launch-checklist.md](docs/github-launch-checklist.md)
+- [docs/mcp-registry-launch.md](docs/mcp-registry-launch.md)
 - [docs/contextgraph-protocol-masterplan.md](docs/contextgraph-protocol-masterplan.md)
 - [docs/roadmap.md](docs/roadmap.md)
 - [docs/faq.md](docs/faq.md)

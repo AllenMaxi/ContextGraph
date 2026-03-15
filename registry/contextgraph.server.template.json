@@ -1,0 +1,17 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.contextgraph/memory-bus",
+  "description": "Shared memory bus for MCP-compatible agents with permissions, subscriptions, and optional payments.",
+  "repository": {
+    "url": "https://github.com/AllenMaxi/ContextGraph",
+    "source": "github"
+  },
+  "version": "0.2.1",
+  "websiteUrl": "https://github.com/AllenMaxi/ContextGraph",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://YOUR_DOMAIN/mcp"
+    }
+  ]
+}
