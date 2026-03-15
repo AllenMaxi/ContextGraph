@@ -23,7 +23,14 @@ def register_console_routes(app: Any, graph: ContextGraphService) -> None:
             response.delete_cookie(_COOKIE_NAME)
             return response
 
-        return HTMLResponse(_render_console(agent_name=agent.name))
+        return HTMLResponse(
+            _render_console(
+                agent_name=agent.name,
+                agent_id=agent.agent_id,
+                agent_org_id=agent.org_id,
+                api_key=agent.api_key,
+            )
+        )
 
     @app.post("/console/login")
     async def console_login(request: Request) -> Any:
@@ -175,8 +182,11 @@ def _render_login(error: str | None = None) -> str:
 </html>"""
 
 
-def _render_console(*, agent_name: str) -> str:
+def _render_console(*, agent_name: str, agent_id: str, agent_org_id: str, api_key: str) -> str:
     safe_name = escape(agent_name)
+    safe_agent_id = escape(agent_id)
+    safe_agent_org_id = escape(agent_org_id)
+    safe_api_key = escape(api_key)
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
@@ -186,9 +196,16 @@ def _render_console(*, agent_name: str) -> str:
         "  <title>ContextGraph Console</title>\n"
         "  <style>\n" + _dashboard_css() + "\n  </style>\n"
         "</head>\n"
-        "<body>\n"
+        f'<body data-agent-id="{safe_agent_id}" data-org-id="{safe_agent_org_id}" data-api-key="{safe_api_key}">\n'
         '  <nav id="sidebar">\n'
         '    <div class="logo">CG</div>\n'
+        '    <a href="#overview" class="nav-item" data-page="overview" title="Knowledge Overview">\n'
+        "      <svg viewBox='0 0 24 24' width='22' height='22' fill='none' "
+        "stroke='currentColor' stroke-width='2'>"
+        "<path d='M3 12l9-8 9 8'/>"
+        "<path d='M5 10.5V20h14v-9.5'/>"
+        "<path d='M10 20v-5h4v5'/></svg>\n"
+        "    </a>\n"
         '    <a href="#graph" class="nav-item" data-page="graph" title="Graph Explorer">\n'
         "      <svg viewBox='0 0 24 24' width='22' height='22' fill='none' "
         "stroke='currentColor' stroke-width='2'>"
@@ -238,7 +255,7 @@ def _render_console(*, agent_name: str) -> str:
         "  </nav>\n"
         '  <main id="main">\n'
         '    <header id="header">\n'
-        f'      <h1 id="page-title">Dashboard</h1>\n'
+        f'      <h1 id="page-title">Knowledge Overview</h1>\n'
         f'      <span class="agent-name">{safe_name}</span>\n'
         "    </header>\n"
         '    <div id="content"></div>\n'
@@ -436,6 +453,21 @@ def _dashboard_css() -> str:
     .badge-shared, .badge-SHARED {
       background: rgba(129,140,248,0.15); color: var(--purple);
     }
+    .badge-tone-locked {
+      background: rgba(239,68,68,0.15); color: var(--red);
+    }
+    .badge-tone-paid {
+      background: rgba(245,158,11,0.15); color: var(--amber);
+    }
+    .badge-tone-internal {
+      background: rgba(34,197,94,0.15); color: var(--green);
+    }
+    .badge-tone-follow {
+      background: rgba(129,140,248,0.15); color: var(--purple);
+    }
+    .badge-tone-open {
+      background: rgba(228,228,231,0.08); color: var(--text-sec);
+    }
 
     /* Stat cards */
     .stat-grid {
@@ -555,6 +587,104 @@ def _dashboard_css() -> str:
       margin: 2px;
     }
 
+    /* Overview */
+    .overview-grid {
+      display: grid;
+      gap: 18px;
+    }
+    .section-card {
+      background: linear-gradient(180deg, rgba(26,26,30,0.96), rgba(17,17,19,0.96));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .section-head h3 {
+      font-size: 0.96rem;
+      font-weight: 600;
+    }
+    .section-head p {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+    .section-meta {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .stack {
+      display: grid;
+      gap: 12px;
+    }
+    .mini-card {
+      background: rgba(10,10,12,0.75);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .mini-card:hover {
+      border-color: #3f3f46;
+      transform: translateY(-1px);
+    }
+    .mini-card-title {
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin: 10px 0 8px;
+      color: var(--text);
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .following-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .follow-pill {
+      background: rgba(10,10,12,0.75);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .follow-pill strong {
+      display: block;
+      font-size: 0.88rem;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .follow-pill span {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      word-break: break-word;
+    }
+    .locked-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.22);
+      color: #fca5a5;
+      font-size: 0.8rem;
+    }
+    .muted-copy {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
     /* Loading */
     .loading {
       text-align: center;
@@ -646,9 +776,11 @@ def _dashboard_css() -> str:
 def _dashboard_js() -> str:
     return r"""
     // --- Auth helpers ---
-    const API_KEY = document.cookie.match(/cg_session=([^;]+)/)?.[1] || '';
+    const API_KEY = document.body.dataset.apiKey || '';
+    const CONSOLE_AGENT_ID = document.body.dataset.agentId || '';
+    const CONSOLE_ORG_ID = document.body.dataset.orgId || '';
     const headers = {
-      'Authorization': 'Bearer ' + API_KEY,
+      'X-Agent-Key': API_KEY,
       'Content-Type': 'application/json'
     };
 
@@ -698,6 +830,10 @@ def _dashboard_js() -> str:
       return '<span class="badge badge-' + esc(v) + '">'
         + esc(v) + '</span>';
     }
+    function statusBadge(label, tone) {
+      return '<span class="badge badge-tone-' + esc(tone) + '">'
+        + esc(label) + '</span>';
+    }
     function repColor(score) {
       if (score >= 0.7) return 'var(--green)';
       if (score >= 0.4) return 'var(--amber)';
@@ -718,20 +854,50 @@ def _dashboard_js() -> str:
         return '<span class="entity-tag">' + esc(name) + '</span>';
       }).join('');
     }
+    function feedBadges(item) {
+      var badges = [visibilityBadge(item.visibility)];
+      if (item.source_org_id === CONSOLE_ORG_ID && !item.is_locked) {
+        badges.push(statusBadge('same-org', 'internal'));
+      }
+      if (item.visibility === 'shared' && item.source_org_id !== CONSOLE_ORG_ID && !item.is_locked) {
+        badges.push(statusBadge('shared', 'follow'));
+      }
+      if (item.is_locked) {
+        badges.push(statusBadge('locked', 'locked'));
+      } else if (item.visibility === 'published') {
+        badges.push(statusBadge('open', 'open'));
+      }
+      if (item.is_paid) {
+        badges.push(statusBadge('$' + item.price.toFixed(3), 'paid'));
+      }
+      return '<div class="badge-row">' + badges.join('') + '</div>';
+    }
+    function feedStatement(item) {
+      var mainClaim = item.claims && item.claims[0];
+      if (mainClaim && mainClaim.statement) return mainClaim.statement;
+      if (item.memory_content) return item.memory_content.substring(0, 200);
+      return 'Memory available in feed metadata.';
+    }
+    function formatFollowTarget(sub, agentNames) {
+      if (sub.target_type === 'agent') {
+        return agentNames[sub.target_id] || sub.target_id;
+      }
+      return sub.target_id;
+    }
 
     // --- Router ---
     var pages = {
-      graph: loadGraph, feed: loadFeed, claims: loadClaims,
+      overview: loadOverview, graph: loadGraph, feed: loadFeed, claims: loadClaims,
       agents: loadAgents, settings: loadSettings
     };
     var pageTitles = {
-      graph: 'Graph Explorer', feed: 'Knowledge Feed',
+      overview: 'Knowledge Overview', graph: 'Graph Explorer', feed: 'Knowledge Feed',
       claims: 'Claims', agents: 'Agents', settings: 'Settings'
     };
 
     function route() {
-      var hash = (location.hash || '#settings').slice(1);
-      var page = pages[hash] ? hash : 'settings';
+      var hash = (location.hash || '#overview').slice(1);
+      var page = pages[hash] ? hash : 'overview';
       document.getElementById('page-title').textContent = pageTitles[page];
       document.querySelectorAll('.nav-item').forEach(function(el) {
         el.classList.toggle('active', el.dataset.page === page);
@@ -741,6 +907,135 @@ def _dashboard_js() -> str:
     }
     window.addEventListener('hashchange', route);
     window.addEventListener('load', route);
+
+    // ========================================================
+    // OVERVIEW PAGE
+    // ========================================================
+    function loadOverview() {
+      var content = document.getElementById('content');
+      content.innerHTML = '<div class="loading">Loading overview...</div>';
+
+      Promise.all([
+        fetchJSON('/v1/feed'),
+        fetchJSON('/v1/following')
+      ]).then(function(results) {
+        var items = results[0];
+        var following = results[1];
+        var agentNames = {};
+
+        items.forEach(function(item) {
+          if (item.agent_id && item.source_agent_name) {
+            agentNames[item.agent_id] = item.source_agent_name;
+          }
+        });
+
+        window._feedItems = items;
+
+        var internal = items.filter(function(item) {
+          return item.source_org_id === CONSOLE_ORG_ID && !item.is_locked;
+        });
+        var shared = items.filter(function(item) {
+          return item.visibility === 'shared'
+            && item.source_org_id !== CONSOLE_ORG_ID
+            && !item.is_locked;
+        });
+        var locked = items.filter(function(item) {
+          return item.is_locked;
+        });
+
+        var html = '<div class="stat-grid">';
+        html += '<div class="stat-card"><div class="label">Internal Memories</div><div class="value">'
+          + internal.length + '</div></div>';
+        html += '<div class="stat-card"><div class="label">Shared With Me</div><div class="value" style="color:var(--purple)">'
+          + shared.length + '</div></div>';
+        html += '<div class="stat-card"><div class="label">Locked Discoveries</div><div class="value" style="color:var(--amber)">'
+          + locked.length + '</div></div>';
+        html += '<div class="stat-card"><div class="label">Following</div><div class="value">'
+          + following.length + '</div></div>';
+        html += '</div>';
+
+        html += '<div class="overview-grid">';
+        html += renderOverviewSection(
+          'Internal Memories',
+          'Same-org knowledge visible in full for this operator session.',
+          internal,
+          'No internal memories yet. Follow a same-org source or store a memory.',
+          false
+        );
+        html += renderOverviewSection(
+          'Shared With Me',
+          'Cross-org memories explicitly shared with this org or agent.',
+          shared,
+          'No shared cross-org memories are currently accessible.',
+          false
+        );
+        html += renderOverviewSection(
+          'Locked Discoveries',
+          'Published paid memories stay visible in feed but hidden until recall is authorized.',
+          locked,
+          'No priced discoveries are locked for this session.',
+          true
+        );
+        html += renderFollowingSection(following, agentNames);
+        html += '</div>';
+
+        content.innerHTML = html;
+      }).catch(function(err) {
+        content.innerHTML =
+          '<div class="empty-state"><h3>Error loading overview</h3><p>'
+          + esc(err.message) + '</p></div>';
+      });
+    }
+
+    function renderOverviewSection(title, subtitle, items, emptyMessage, lockedSection) {
+      var html = '<section class="section-card"><div class="section-head">';
+      html += '<div><h3>' + esc(title) + '</h3><p>' + esc(subtitle) + '</p></div>';
+      html += '<span class="section-meta">' + items.length + ' items</span></div>';
+      if (!items.length) {
+        html += '<div class="empty-state" style="padding:24px 12px"><p>'
+          + esc(emptyMessage) + '</p></div></section>';
+        return html;
+      }
+      html += '<div class="stack">';
+      items.slice(0, 3).forEach(function(item) {
+        var idx = window._feedItems.indexOf(item);
+        html += '<div class="mini-card" onclick="openFeedItem(' + idx + ')">';
+        html += feedBadges(item);
+        html += '<div class="mini-card-title">' + esc(feedStatement(item)) + '</div>';
+        if (lockedSection) {
+          html += '<div class="locked-note">Full memory content is hidden until paid recall is authorized.</div>';
+        }
+        html += '<div class="card-meta">';
+        html += '<span>' + esc(item.source_agent_name) + '</span>';
+        html += '<span>' + esc(item.source_org_id) + '</span>';
+        html += entityTags(item.entities);
+        html += '</div></div>';
+      });
+      html += '</div></section>';
+      return html;
+    }
+
+    function renderFollowingSection(following, agentNames) {
+      var html = '<section class="section-card"><div class="section-head">';
+      html += '<div><h3>Following</h3><p>Subscriptions driving this feed.</p></div>';
+      html += '<span class="section-meta">' + following.length + ' active</span></div>';
+      if (!following.length) {
+        html += '<div class="empty-state" style="padding:24px 12px"><p>'
+          + 'No follows yet. Use the Agents page or seed demo subscriptions.'
+          + '</p></div></section>';
+        return html;
+      }
+      html += '<div class="following-grid">';
+      following.forEach(function(sub) {
+        html += '<div class="follow-pill">';
+        html += statusBadge(sub.target_type, 'follow');
+        html += '<strong>' + esc(formatFollowTarget(sub, agentNames)) + '</strong>';
+        html += '<span>subscription_id: ' + esc(sub.subscription_id) + '</span>';
+        html += '</div>';
+      });
+      html += '</div></section>';
+      return html;
+    }
 
     // ========================================================
     // GRAPH PAGE
@@ -1001,19 +1296,15 @@ def _dashboard_js() -> str:
         }
         var html = '<div class="card-grid">';
         items.forEach(function(item, idx) {
-          var mainClaim = item.claims && item.claims[0];
-          var statement = mainClaim
-            ? mainClaim.statement
-            : (item.memory_content || '').substring(0, 200);
-          var vis = mainClaim ? mainClaim.visibility : item.visibility;
           html += '<div class="card" onclick="openFeedItem('
             + idx + ')">';
           html += '<div style="margin-bottom:8px">'
-            + visibilityBadge(vis) + '</div>';
+            + feedBadges(item) + '</div>';
           html += '<div class="card-statement">'
-            + esc(statement) + '</div>';
+            + esc(feedStatement(item)) + '</div>';
           html += '<div class="card-meta">';
           html += '<span>' + esc(item.source_agent_name) + '</span>';
+          html += '<span>' + esc(item.source_org_id) + '</span>';
           html += '<span style="flex:1">'
             + '<div class="rep-bar" style="max-width:60px">'
             + '<div class="rep-fill" style="width:'
@@ -1022,10 +1313,6 @@ def _dashboard_js() -> str:
             + repColor(item.source_reputation_score)
             + '"></div></div></span>';
           html += entityTags(item.entities);
-          if (item.is_paid) {
-            html += '<span style="color:var(--amber)">$'
-              + item.price.toFixed(2) + '</span>';
-          }
           html += '</div></div>';
         });
         html += '</div>';
@@ -1042,9 +1329,17 @@ def _dashboard_js() -> str:
       var item = window._feedItems[idx];
       if (!item) return;
       var html = '<div class="detail-section"><h4>Memory Content</h4>';
-      html += '<pre>' + esc(item.memory_content) + '</pre></div>';
+      if (item.is_locked) {
+        html += '<div class="locked-note">This memory is visible for discovery, but the full body is hidden until recall is authorized.</div>';
+        html += '<pre></pre></div>';
+      } else {
+        html += '<pre>' + esc(item.memory_content) + '</pre></div>';
+      }
+      html += '<div class="detail-section"><h4>Access</h4>';
+      html += '<div class="badge-row">' + feedBadges(item) + '</div></div>';
       html += '<div class="detail-section"><h4>Source</h4>';
       html += '<p>' + esc(item.source_agent_name) + '</p>';
+      html += '<p class="muted-copy">' + esc(item.source_org_id) + '</p>';
       html += '<div class="rep-bar" style="margin-top:4px;'
         + 'max-width:120px"><div class="rep-fill" style="width:'
         + Math.round(item.source_reputation_score * 100)

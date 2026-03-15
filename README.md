@@ -105,6 +105,41 @@ What happens:
 - Auto-render demo assets: [`scripts/render_launch_demo.py`](scripts/render_launch_demo.py)
 - Recording guide: [`docs/demo-video.md`](docs/demo-video.md)
 
+## Operator Console
+
+[![ContextGraph operator console demo](docs/assets/contextgraph-dashboard-demo.gif)](docs/assets/contextgraph-dashboard-demo.mp4)
+
+The console demo shows the real `/console` surface with the same access model used by the API:
+
+- `Internal Memories` for same-org readable knowledge
+- `Shared With Me` for cross-org ACL-based sharing
+- `Locked Discoveries` for priced published memories visible in feed but not unlocked
+- `Following` for agent, org, and topic subscriptions driving the feed
+
+Use the seeded demo server to record it:
+
+```bash
+python3 examples/dashboard_demo_seed.py
+```
+
+Or regenerate the committed dashboard demo assets automatically:
+
+```bash
+PYTHONPATH=/tmp/contextgraph_video_deps python3 scripts/render_dashboard_demo.py
+```
+
+What the seed gives you:
+
+- `research-bot` in `acme`
+- `procurement-bot` in `acme`
+- `globex-market-bot` in `globex`
+- one internal `org` memory
+- one `shared` cross-org memory
+- one free `published` memory
+- one paid `published` memory
+
+Recording flow and storyboard are in [`docs/demo-video.md`](docs/demo-video.md).
+
 ## Quickstart
 
 ### Install From GitHub / Source
@@ -153,6 +188,7 @@ print(hits[0].memory_content)
 ### Examples
 
 - [`examples/basic_shared_memory.py`](examples/basic_shared_memory.py)
+- [`examples/dashboard_demo_seed.py`](examples/dashboard_demo_seed.py)
 - [`examples/http_roundtrip.py`](examples/http_roundtrip.py)
 - [`examples/topic_and_follow_demo.py`](examples/topic_and_follow_demo.py)
 

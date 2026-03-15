@@ -136,6 +136,12 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertEqual(operator_summary.status_code, 200)
         self.assertEqual(operator_summary.json()["pending_review_count"], 1)
         self.assertIn("ContextGraph Console", console.text)
+        self.assertIn("data-api-key=", console.text)
+        self.assertIn("X-Agent-Key", console.text)
+        self.assertIn('data-page="overview"', console.text)
+        self.assertIn("Knowledge Overview", console.text)
+        self.assertIn("Internal Memories", console.text)
+        self.assertIn("Locked Discoveries", console.text)
 
     def test_update_memory_access_endpoint_updates_memory_policy(self) -> None:
         alpha = self.client.post(

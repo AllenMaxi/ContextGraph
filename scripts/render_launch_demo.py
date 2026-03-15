@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import textwrap
 from pathlib import Path
@@ -116,13 +117,33 @@ def main() -> None:
 
     imageio.mimsave(GIF_PATH, frames, duration=durations, loop=0)
 
-    fps = 12
-    with imageio.get_writer(MP4_PATH, fps=fps, codec="libx264", quality=8) as writer:
-        for frame, duration in zip(frames, durations, strict=True):
-            repeat = max(1, round(duration * fps))
-            frame_array = np.asarray(frame)
-            for _ in range(repeat):
-                writer.append_data(frame_array)
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        subprocess.run(
+            [
+                ffmpeg_path,
+                "-y",
+                "-i",
+                str(GIF_PATH),
+                "-movflags",
+                "faststart",
+                "-pix_fmt",
+                "yuv420p",
+                str(MP4_PATH),
+            ],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    else:
+        fps = 12
+        with imageio.get_writer(MP4_PATH, fps=fps, codec="libx264", quality=8) as writer:
+            for frame, duration in zip(frames, durations, strict=True):
+                repeat = max(1, round(duration * fps))
+                frame_array = np.asarray(frame)
+                for _ in range(repeat):
+                    writer.append_data(frame_array)
 
     print(f"wrote {GIF_PATH}")
     print(f"wrote {MP4_PATH}")
