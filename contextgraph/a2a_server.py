@@ -28,11 +28,13 @@ class AgentCard:
     url: str
     version: str = "1.0"
     protocol_version: str = "0.2.0"
-    capabilities: dict[str, bool] = field(default_factory=lambda: {
-        "streaming": True,
-        "pushNotifications": True,
-        "stateTransitionHistory": True,
-    })
+    capabilities: dict[str, bool] = field(
+        default_factory=lambda: {
+            "streaming": True,
+            "pushNotifications": True,
+            "stateTransitionHistory": True,
+        }
+    )
     skills: list[AgentSkill] = field(default_factory=list)
     authentication: dict[str, Any] = field(default_factory=lambda: {"schemes": ["bearer"]})
     defaultInputModes: list[str] = field(default_factory=lambda: ["application/json"])
@@ -128,7 +130,10 @@ class A2AServer:
                     description="Extract and store claims from unstructured text into the knowledge graph.",
                     tags=["memory", "knowledge", "extraction"],
                     examples=[
-                        {"input": {"agent_id": "agent-1", "content": "The sky is blue."}, "output": {"claim_id": "c-1"}},
+                        {
+                            "input": {"agent_id": "agent-1", "content": "The sky is blue."},
+                            "output": {"claim_id": "c-1"},
+                        },
                     ],
                 ),
                 AgentSkill(
@@ -146,7 +151,10 @@ class A2AServer:
                     description="Find relationship paths between two entities in the knowledge graph.",
                     tags=["entities", "relations", "graph"],
                     examples=[
-                        {"input": {"agent_id": "agent-1", "entity_a": "Earth", "entity_b": "Sun"}, "output": {"paths": []}},
+                        {
+                            "input": {"agent_id": "agent-1", "entity_a": "Earth", "entity_b": "Sun"},
+                            "output": {"paths": []},
+                        },
                     ],
                 ),
                 AgentSkill(
@@ -155,7 +163,10 @@ class A2AServer:
                     description="Attest or challenge a claim in the knowledge graph.",
                     tags=["trust", "review", "attestation"],
                     examples=[
-                        {"input": {"reviewer_agent_id": "agent-1", "claim_id": "c-1", "decision": "attest"}, "output": {"status": "attested"}},
+                        {
+                            "input": {"reviewer_agent_id": "agent-1", "claim_id": "c-1", "decision": "attest"},
+                            "output": {"status": "attested"},
+                        },
                     ],
                 ),
                 AgentSkill(
@@ -173,7 +184,10 @@ class A2AServer:
                     description="Create a standing query to watch for knowledge changes matching a pattern.",
                     tags=["subscription", "watch", "pattern"],
                     examples=[
-                        {"input": {"agent_id": "agent-1", "query": "weather", "pattern": {"subject": "weather.*"}}, "output": {"subscription_id": "sq-1"}},
+                        {
+                            "input": {"agent_id": "agent-1", "query": "weather", "pattern": {"subject": "weather.*"}},
+                            "output": {"subscription_id": "sq-1"},
+                        },
                     ],
                 ),
                 AgentSkill(
@@ -191,7 +205,10 @@ class A2AServer:
                     description="Deliver a notification to a remote A2A agent when a standing query matches.",
                     tags=["notification", "push", "a2a"],
                     examples=[
-                        {"input": {"target_url": "http://remote/v1/a2a/tasks", "task_data": {}}, "output": {"delivered": True}},
+                        {
+                            "input": {"target_url": "http://remote/v1/a2a/tasks", "task_data": {}},
+                            "output": {"delivered": True},
+                        },
                     ],
                 ),
             ],

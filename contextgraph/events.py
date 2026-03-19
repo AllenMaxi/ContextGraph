@@ -1,4 +1,5 @@
 """In-process event bus for real-time streaming."""
+
 from __future__ import annotations
 
 import asyncio

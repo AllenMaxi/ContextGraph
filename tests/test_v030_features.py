@@ -80,7 +80,9 @@ class TestProvenance:
 
 class TestImpactClassification:
     def test_low_impact_private(self, svc: ContextGraphService, agent: dict) -> None:
-        result = svc.store_memory(agent_id=agent["agent_id"], content="Internal note about process.", visibility="private")
+        result = svc.store_memory(
+            agent_id=agent["agent_id"], content="Internal note about process.", visibility="private"
+        )
         for claim in result.claims:
             assert claim.impact == ClaimImpact.LOW
             assert claim.quorum_required == 0

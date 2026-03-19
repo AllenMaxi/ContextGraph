@@ -91,9 +91,7 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
         decision = str(form.get("decision", ""))
         reason = str(form.get("reason", ""))
         agent = graph.authenticate_agent(api_key)
-        graph.review_claim(
-            reviewer_agent_id=agent.agent_id, claim_id=claim_id, decision=decision, reason=reason
-        )
+        graph.review_claim(reviewer_agent_id=agent.agent_id, claim_id=claim_id, decision=decision, reason=reason)
         return RedirectResponse(url="/dashboard/knowledge", status_code=303)
 
     # ------------------------------------------------------------------
@@ -115,21 +113,25 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
                     entity = graph.repository.get_entity(eid)
                     if entity:
                         entities[eid] = entity
-                        nodes.append({
-                            "id": eid,
-                            "name": entity.name,
-                            "type": entity.entity_type,
-                            "alias": entity.alias_key,
-                        })
+                        nodes.append(
+                            {
+                                "id": eid,
+                                "name": entity.name,
+                                "type": entity.entity_type,
+                                "alias": entity.alias_key,
+                            }
+                        )
             if len(claim.entity_ids) >= 2:
                 for i in range(len(claim.entity_ids) - 1):
-                    edges.append({
-                        "source": claim.entity_ids[i],
-                        "target": claim.entity_ids[i + 1],
-                        "claim_id": claim.claim_id,
-                        "statement": claim.statement,
-                        "relation": claim.relation_type or "related_to",
-                    })
+                    edges.append(
+                        {
+                            "source": claim.entity_ids[i],
+                            "target": claim.entity_ids[i + 1],
+                            "claim_id": claim.claim_id,
+                            "statement": claim.statement,
+                            "relation": claim.relation_type or "related_to",
+                        }
+                    )
         return {"nodes": nodes, "edges": edges}
 
     @app.get("/dashboard/api/activity")
@@ -501,6 +503,7 @@ _LIVE_FEED_JS = """\
 # Page renderers
 # ======================================================================
 
+
 def _render_login(error: str = "") -> str:
     error_html = f'<div class="error-msg">{escape(error)}</div>' if error else ""
     return f"""\
@@ -540,7 +543,9 @@ def _render_app(graph: ContextGraphService, agent: Any, page: str = "overview", 
     nav_html = ""
     for key, icon, label in nav_items:
         active = "active" if page == key else ""
-        nav_html += f'<a href="/dashboard/{key}" class="nav-item {active}"><span class="nav-icon">{icon}</span>{label}</a>\n'
+        nav_html += (
+            f'<a href="/dashboard/{key}" class="nav-item {active}"><span class="nav-icon">{icon}</span>{label}</a>\n'
+        )
 
     page_html = _render_page(graph, agent, page, detail_id)
 
@@ -645,12 +650,12 @@ def _render_overview(graph: ContextGraphService, agent: Any) -> str:
     <span style="font-size:12px;color:var(--text-muted)">v0.3.0</span>
 </div>
 <div class="stats-grid">
-    <div class="stat-card"><div class="stat-label">Agents</div><div class="stat-value blue">{snapshot.get('agents', 0)}</div></div>
-    <div class="stat-card"><div class="stat-label">Claims</div><div class="stat-value cyan">{snapshot.get('claims', 0)}</div></div>
-    <div class="stat-card"><div class="stat-label">Memories</div><div class="stat-value purple">{snapshot.get('memories', 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Agents</div><div class="stat-value blue">{snapshot.get("agents", 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Claims</div><div class="stat-value cyan">{snapshot.get("claims", 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Memories</div><div class="stat-value purple">{snapshot.get("memories", 0)}</div></div>
     <div class="stat-card"><div class="stat-label">Attested</div><div class="stat-value green">{attested}</div></div>
     <div class="stat-card"><div class="stat-label">Pending Quorum</div><div class="stat-value orange">{pending_quorum}</div></div>
-    <div class="stat-card"><div class="stat-label">Entities</div><div class="stat-value cyan">{snapshot.get('entities', 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Entities</div><div class="stat-value cyan">{snapshot.get("entities", 0)}</div></div>
 </div>
 <div class="two-col">
     <div>
@@ -841,9 +846,13 @@ def _render_claim_detail(graph: ContextGraphService, agent: Any, claim_id: str) 
 </div>"""
 
     impact_cls = f"impact-{claim.impact.value}"
-    expires_info = f' &middot; Expires: {claim.expires_at.strftime("%Y-%m-%d")}' if claim.expires_at else ""
-    price_info = f' &middot; Price: ${claim.price:.4f}' if claim.price > 0 else ""
-    derived_info = f'<div style="font-size:12px;color:var(--text-secondary)">Derived from: {", ".join(claim.derived_from)}</div>' if claim.derived_from else ""
+    expires_info = f" &middot; Expires: {claim.expires_at.strftime('%Y-%m-%d')}" if claim.expires_at else ""
+    price_info = f" &middot; Price: ${claim.price:.4f}" if claim.price > 0 else ""
+    derived_info = (
+        f'<div style="font-size:12px;color:var(--text-secondary)">Derived from: {", ".join(claim.derived_from)}</div>'
+        if claim.derived_from
+        else ""
+    )
 
     return f"""\
 <div class="page-header">
@@ -947,7 +956,11 @@ def _render_notifications(graph: ContextGraphService, agent: Any) -> str:
     for notif in notifications[:30]:
         claim = graph.repository.get_claim(notif.claim_id)
         statement = claim.statement[:100] if claim else "Unknown claim"
-        delivered_badge = '<span class="badge badge-green">delivered</span>' if notif.delivered else '<span class="badge badge-yellow">new</span>'
+        delivered_badge = (
+            '<span class="badge badge-green">delivered</span>'
+            if notif.delivered
+            else '<span class="badge badge-yellow">new</span>'
+        )
         notifs_html += f"""\
 <div class="item-card" style="margin-bottom:6px">
     <div class="item-header">
@@ -969,6 +982,7 @@ def _render_notifications(graph: ContextGraphService, agent: Any) -> str:
 # ======================================================================
 # Helper functions
 # ======================================================================
+
 
 def _visibility_badge(vis: Visibility) -> str:
     colors = {
@@ -992,7 +1006,13 @@ def _validation_badge(status: ValidationStatus) -> str:
 
 def _confidence_html(confidence: float) -> str:
     pct = int(confidence * 100)
-    color = "var(--accent-green)" if confidence >= 0.8 else "var(--accent-orange)" if confidence >= 0.5 else "var(--accent-red)"
+    color = (
+        "var(--accent-green)"
+        if confidence >= 0.8
+        else "var(--accent-orange)"
+        if confidence >= 0.5
+        else "var(--accent-red)"
+    )
     return f"""\
 <span class="confidence-bar">
     <span class="confidence-track"><span class="confidence-fill" style="width:{pct}%;background:{color}"></span></span>

@@ -462,9 +462,7 @@ class ContextGraphService:
     # Impact classification & provenance helpers
     # ------------------------------------------------------------------
 
-    def _classify_impact(
-        self, visibility: Visibility, price: float, entity_count: int
-    ) -> ClaimImpact:
+    def _classify_impact(self, visibility: Visibility, price: float, entity_count: int) -> ClaimImpact:
         if price > 0 and visibility == Visibility.PUBLISHED and entity_count >= 3:
             return ClaimImpact.CRITICAL
         if price > 0 or (visibility == Visibility.PUBLISHED and entity_count >= 2):

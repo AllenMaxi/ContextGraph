@@ -55,9 +55,7 @@ def register_ucp_routes(app: Any, graph: ContextGraphService) -> None:
     ) -> dict[str, Any]:
         all_claims = graph.repository.list_claims()
         # Only published claims with a price
-        priced = [
-            c for c in all_claims if c.visibility == Visibility.PUBLISHED and c.price > 0
-        ]
+        priced = [c for c in all_claims if c.visibility == Visibility.PUBLISHED and c.price > 0]
 
         # Optional entity filter
         if entity:

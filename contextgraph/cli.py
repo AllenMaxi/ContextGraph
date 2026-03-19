@@ -82,6 +82,7 @@ def _save_config(cfg: dict[str, Any]) -> None:
 # Transport factory
 # ---------------------------------------------------------------------------
 
+
 def _make_client() -> Any:
     """Return an ``HttpTransport`` configured from the saved config."""
     from sdk.contextgraph_sdk.client import HttpTransport  # noqa: E402
@@ -106,6 +107,7 @@ def _agent_id() -> str:
 # JSON output helper
 # ---------------------------------------------------------------------------
 
+
 def _json_out(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
@@ -113,6 +115,7 @@ def _json_out(data: Any) -> None:
 # ---------------------------------------------------------------------------
 # auth commands
 # ---------------------------------------------------------------------------
+
 
 def cmd_auth_login(args: argparse.Namespace, _client: Any) -> None:
     """Interactive authentication setup."""
@@ -141,11 +144,13 @@ def cmd_auth_login(args: argparse.Namespace, _client: Any) -> None:
 def cmd_auth_status(args: argparse.Namespace, _client: Any) -> None:
     cfg = _load_config()
     if args.json:
-        _json_out({
-            "server_url": cfg.get("server_url"),
-            "agent_id": cfg.get("agent_id"),
-            "has_api_key": bool(cfg.get("api_key")),
-        })
+        _json_out(
+            {
+                "server_url": cfg.get("server_url"),
+                "agent_id": cfg.get("agent_id"),
+                "has_api_key": bool(cfg.get("api_key")),
+            }
+        )
         return
 
     server = cfg.get("server_url")
@@ -161,6 +166,7 @@ def cmd_auth_status(args: argparse.Namespace, _client: Any) -> None:
 # store / recall / relate
 # ---------------------------------------------------------------------------
 
+
 def cmd_store(args: argparse.Namespace, client: Any) -> None:
     if args.file:
         path = Path(args.file)
@@ -172,13 +178,15 @@ def cmd_store(args: argparse.Namespace, client: Any) -> None:
     else:
         _err("Provide content as a positional argument or via --file <path>.")
 
-    result = client.store({
-        "agent_id": _agent_id(),
-        "content": content,
-        "visibility": args.visibility,
-        "license": args.license or "internal",
-        "metadata": {},
-    })
+    result = client.store(
+        {
+            "agent_id": _agent_id(),
+            "content": content,
+            "visibility": args.visibility,
+            "license": args.license or "internal",
+            "metadata": {},
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -196,11 +204,13 @@ def cmd_store(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_recall(args: argparse.Namespace, client: Any) -> None:
-    result = client.recall({
-        "agent_id": _agent_id(),
-        "query": args.query,
-        "limit": args.limit,
-    })
+    result = client.recall(
+        {
+            "agent_id": _agent_id(),
+            "query": args.query,
+            "limit": args.limit,
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -224,12 +234,14 @@ def cmd_recall(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_relate(args: argparse.Namespace, client: Any) -> None:
-    result = client.relate({
-        "agent_id": _agent_id(),
-        "entity_a": args.entity_a,
-        "entity_b": args.entity_b,
-        "max_depth": args.max_depth,
-    })
+    result = client.relate(
+        {
+            "agent_id": _agent_id(),
+            "entity_a": args.entity_a,
+            "entity_b": args.entity_b,
+            "max_depth": args.max_depth,
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -252,6 +264,7 @@ def cmd_relate(args: argparse.Namespace, client: Any) -> None:
 # ---------------------------------------------------------------------------
 # agents commands
 # ---------------------------------------------------------------------------
+
 
 def cmd_agents_list(args: argparse.Namespace, client: Any) -> None:
     result = client._request("GET", "/v1/agents")
@@ -319,6 +332,7 @@ def cmd_agents_trust(args: argparse.Namespace, client: Any) -> None:
 # claims commands
 # ---------------------------------------------------------------------------
 
+
 def cmd_claims_list(args: argparse.Namespace, client: Any) -> None:
     params: dict[str, Any] = {"limit": args.limit}
     if args.status:
@@ -377,12 +391,14 @@ def cmd_claims_review(args: argparse.Namespace, client: Any) -> None:
         _err("Specify --attest or --challenge.")
 
     decision = "attest" if args.attest else "challenge"
-    result = client.review_claim({
-        "reviewer_agent_id": _agent_id(),
-        "claim_id": args.claim_id,
-        "decision": decision,
-        "reason": args.reason or "",
-    })
+    result = client.review_claim(
+        {
+            "reviewer_agent_id": _agent_id(),
+            "claim_id": args.claim_id,
+            "decision": decision,
+            "reason": args.reason or "",
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -395,6 +411,7 @@ def cmd_claims_review(args: argparse.Namespace, client: Any) -> None:
 # ---------------------------------------------------------------------------
 # watch commands
 # ---------------------------------------------------------------------------
+
 
 def cmd_watch_create(args: argparse.Namespace, client: Any) -> None:
     payload: dict[str, Any] = {
@@ -422,10 +439,12 @@ def cmd_watch_create(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_watch_list(args: argparse.Namespace, client: Any) -> None:
-    result = client.list_watches({
-        "requester_agent_id": _agent_id(),
-        "include_inactive": args.all,
-    })
+    result = client.list_watches(
+        {
+            "requester_agent_id": _agent_id(),
+            "include_inactive": args.all,
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -447,10 +466,12 @@ def cmd_watch_list(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_watch_delete(args: argparse.Namespace, client: Any) -> None:
-    result = client.deactivate_watch({
-        "requester_agent_id": _agent_id(),
-        "query_id": args.query_id,
-    })
+    result = client.deactivate_watch(
+        {
+            "requester_agent_id": _agent_id(),
+            "query_id": args.query_id,
+        }
+    )
 
     if args.json:
         _json_out(result)
@@ -462,6 +483,7 @@ def cmd_watch_delete(args: argparse.Namespace, client: Any) -> None:
 # ---------------------------------------------------------------------------
 # feed
 # ---------------------------------------------------------------------------
+
 
 def cmd_feed(args: argparse.Namespace, client: Any) -> None:
     limit = args.limit
@@ -495,15 +517,20 @@ def cmd_feed(args: argparse.Namespace, client: Any) -> None:
 # follow / following / followers
 # ---------------------------------------------------------------------------
 
+
 def cmd_follow(args: argparse.Namespace, client: Any) -> None:
     valid_types = ("agent", "topic", "entity", "org")
     if args.target_type not in valid_types:
         _err(f"target_type must be one of: {', '.join(valid_types)}")
 
-    result = client._request("POST", "/v1/follow", {
-        "target_type": args.target_type,
-        "target_id": args.id,
-    })
+    result = client._request(
+        "POST",
+        "/v1/follow",
+        {
+            "target_type": args.target_type,
+            "target_id": args.id,
+        },
+    )
 
     if args.json:
         _json_out(result)
@@ -557,6 +584,7 @@ def cmd_followers(args: argparse.Namespace, client: Any) -> None:
 # notifications
 # ---------------------------------------------------------------------------
 
+
 def cmd_notifications(args: argparse.Namespace, client: Any) -> None:
     aid = _agent_id()
     path = f"/v1/notifications/{aid}"
@@ -590,6 +618,7 @@ def cmd_notifications(args: argparse.Namespace, client: Any) -> None:
 # status
 # ---------------------------------------------------------------------------
 
+
 def cmd_status(args: argparse.Namespace, client: Any) -> None:
     health = client._request("GET", "/health")
 
@@ -621,6 +650,7 @@ def cmd_status(args: argparse.Namespace, client: Any) -> None:
 # ---------------------------------------------------------------------------
 # Argument parser construction
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -667,7 +697,9 @@ def _build_parser() -> argparse.ArgumentParser:
     claims_sub = claims_parser.add_subparsers(dest="claims_command")
     claims_list_parser = claims_sub.add_parser("list", help="List claims")
     claims_list_parser.add_argument("--status", default=None, help="Filter by validation status")
-    claims_list_parser.add_argument("--needs-review", action="store_true", default=False, help="Only claims needing review")
+    claims_list_parser.add_argument(
+        "--needs-review", action="store_true", default=False, help="Only claims needing review"
+    )
     claims_list_parser.add_argument("--limit", "-n", type=int, default=100, help="Max results")
     claims_show_parser = claims_sub.add_parser("show", help="Show claim details")
     claims_show_parser.add_argument("claim_id", help="Claim ID")
@@ -791,6 +823,7 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = _build_parser()

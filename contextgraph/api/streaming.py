@@ -1,4 +1,5 @@
 """SSE streaming endpoints for AG-UI event streaming."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,28 +22,35 @@ logger = logging.getLogger(__name__)
 # Event type filters per stream endpoint
 # ---------------------------------------------------------------------------
 
-_FEED_EVENT_TYPES: frozenset[EventType] = frozenset({
-    EventType.FEED_UPDATE,
-    EventType.CLAIM_CREATED,
-    EventType.CLAIM_REVIEWED,
-    EventType.QUORUM_MET,
-    EventType.MEMORY_STORED,
-    EventType.AGENT_REGISTERED,
-})
+_FEED_EVENT_TYPES: frozenset[EventType] = frozenset(
+    {
+        EventType.FEED_UPDATE,
+        EventType.CLAIM_CREATED,
+        EventType.CLAIM_REVIEWED,
+        EventType.QUORUM_MET,
+        EventType.MEMORY_STORED,
+        EventType.AGENT_REGISTERED,
+    }
+)
 
-_CLAIMS_EVENT_TYPES: frozenset[EventType] = frozenset({
-    EventType.CLAIM_CREATED,
-    EventType.CLAIM_REVIEWED,
-    EventType.QUORUM_MET,
-})
+_CLAIMS_EVENT_TYPES: frozenset[EventType] = frozenset(
+    {
+        EventType.CLAIM_CREATED,
+        EventType.CLAIM_REVIEWED,
+        EventType.QUORUM_MET,
+    }
+)
 
-_NOTIFICATION_EVENT_TYPES: frozenset[EventType] = frozenset({
-    EventType.NOTIFICATION,
-})
+_NOTIFICATION_EVENT_TYPES: frozenset[EventType] = frozenset(
+    {
+        EventType.NOTIFICATION,
+    }
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
@@ -103,6 +111,7 @@ async def _event_generator(
 # ---------------------------------------------------------------------------
 # Route registration
 # ---------------------------------------------------------------------------
+
 
 def register_streaming_routes(
     app: Any,
