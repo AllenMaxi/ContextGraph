@@ -21,6 +21,7 @@ from .models import (
     AuditEntry,
     BackgroundJob,
     Claim,
+    ClaimImpact,
     DeliveryMode,
     Entity,
     JobStatus,
@@ -28,6 +29,8 @@ from .models import (
     Memory,
     MemoryCurationStatus,
     Notification,
+    PatternFilter,
+    ProvenanceEntry,
     RecallHit,
     RelationPath,
     ReviewQueueItem,
@@ -455,6 +458,39 @@ class ContextGraphService:
         self._cancel_timers()
         self._background_worker.stop()
 
+    # ------------------------------------------------------------------
+    # Impact classification & provenance helpers
+    # ------------------------------------------------------------------
+
+    def _classify_impact(
+        self, visibility: Visibility, price: float, entity_count: int
+    ) -> ClaimImpact:
+        if price > 0 and visibility == Visibility.PUBLISHED and entity_count >= 3:
+            return ClaimImpact.CRITICAL
+        if price > 0 or (visibility == Visibility.PUBLISHED and entity_count >= 2):
+            return ClaimImpact.HIGH
+        if visibility in (Visibility.SHARED, Visibility.PUBLISHED) and entity_count >= 1:
+            return ClaimImpact.MEDIUM
+        return ClaimImpact.LOW
+
+    def _default_quorum(self, impact: ClaimImpact) -> int:
+        if impact == ClaimImpact.CRITICAL:
+            return 2
+        if impact == ClaimImpact.HIGH:
+            return 2
+        return 0
+
+    def _make_provenance_entry(
+        self, agent_id: str, action: str, confidence: float, detail: str = ""
+    ) -> ProvenanceEntry:
+        return ProvenanceEntry(
+            agent_id=agent_id,
+            action=action,
+            timestamp=utcnow(),
+            confidence_at_action=confidence,
+            detail=detail,
+        )
+
     def _store_memory_internal(
         self,
         agent_id: str,
@@ -506,6 +542,8 @@ class ContextGraphService:
                 created_entities[entity.entity_id] = entity
                 entity_ids.append(entity.entity_id)
 
+            impact = self._classify_impact(visibility_enum, price, len(entity_ids))
+            quorum_required = self._default_quorum(impact)
             claim = Claim(
                 claim_id=new_id("clm"),
                 memory_id=memory.memory_id,
@@ -528,6 +566,10 @@ class ContextGraphService:
                 evidence=list(evidence_items),
                 citations=list(citation_items),
                 validated_at=None,
+                provenance=[self._make_provenance_entry(agent.agent_id, "created", extracted.confidence)],
+                impact=impact,
+                quorum_required=quorum_required,
+                quorum_met=quorum_required == 0,
             )
             self.repository.save_claim(claim)
             created_claims.append(claim)
@@ -687,6 +729,7 @@ class ContextGraphService:
         name: str | None = None,
         delivery_mode: str = "pull",
         filters: dict[str, str] | None = None,
+        pattern: dict[str, Any] | None = None,
     ) -> StandingQuery:
         self.get_agent(agent_id)
         filters_dict = dict(filters or {})
@@ -698,6 +741,17 @@ class ContextGraphService:
             if not webhook_url.startswith(("http://", "https://")):
                 raise ValueError("Webhook delivery requires an http:// or https:// webhook_url.")
             validate_webhook_url(webhook_url)
+        # Build pattern filter if provided
+        pattern_filter: PatternFilter | None = None
+        if pattern:
+            pattern_filter = PatternFilter(
+                entities=pattern.get("entities", []),
+                entity_types=pattern.get("entity_types", []),
+                relation_types=pattern.get("relation_types", []),
+                min_confidence=float(pattern.get("min_confidence", 0.0)),
+                source_org_ids=pattern.get("source_org_ids", []),
+                visibility_levels=pattern.get("visibility_levels", []),
+            )
         now = utcnow()
         standing_query = StandingQuery(
             query_id=new_id("qry"),
@@ -709,6 +763,7 @@ class ContextGraphService:
             status="active",
             created_at=now,
             updated_at=now,
+            pattern=pattern_filter,
         )
         self.repository.save_query(standing_query)
         self._audit("watch", actor_agent_id=agent_id, details={"query": query})
@@ -768,14 +823,25 @@ class ContextGraphService:
 
         if decision == ReviewDecision.ATTEST:
             claim.validation_status = ValidationStatus.ATTESTED
+            claim.attestation_count += 1
         elif decision == ReviewDecision.CHALLENGE:
             claim.validation_status = ValidationStatus.CHALLENGED
+            claim.challenge_count += 1
+            # Challenges reset quorum progress
+            claim.quorum_met = False
         else:
             raise ValueError(f"Unsupported review decision '{decision}'.")
         if reason:
             claim.review_reasons.append(reason)
         claim.validated_at = utcnow()
         claim.updated_at = claim.validated_at
+        # Append provenance entry
+        claim.provenance.append(
+            self._make_provenance_entry(reviewer_agent_id, decision, claim.confidence, detail=reason)
+        )
+        # Check quorum
+        if claim.quorum_required > 0 and claim.attestation_count >= claim.quorum_required:
+            claim.quorum_met = True
         self.repository.update_claim(claim)
         self._sync_memory_validation(claim.memory_id)
 
@@ -1372,6 +1438,11 @@ class ContextGraphService:
             return False
         if not self._can_access(owner, claim):
             return False
+
+        # Pattern-based matching (graph-native)
+        if query.pattern is not None and not self._matches_pattern(query.pattern, claim):
+            return False
+
         filters = query.filters
         source_agent_id = filters.get("source_agent_id")
         if source_agent_id and claim.source_agent_id != source_agent_id:
@@ -1394,6 +1465,38 @@ class ContextGraphService:
         if query.query.strip():
             return jaccard_similarity(query.query, claim.statement) > 0
         return True
+
+    def _matches_pattern(self, pattern: PatternFilter, claim: Claim) -> bool:
+        """Check if a claim matches a graph-native pattern filter."""
+        # Entity alias matching
+        if pattern.entities:
+            claim_entities = [self.repository.get_entity(eid) for eid in claim.entity_ids]
+            claim_aliases = {e.alias_key for e in claim_entities if e is not None}
+            pattern_aliases = {normalize_alias(e) for e in pattern.entities}
+            if not pattern_aliases & claim_aliases:
+                return False
+
+        # Entity type matching
+        if pattern.entity_types:
+            claim_entities = [self.repository.get_entity(eid) for eid in claim.entity_ids]
+            claim_types = {e.entity_type for e in claim_entities if e is not None}
+            if not set(pattern.entity_types) & claim_types:
+                return False
+
+        # Relation type matching
+        if pattern.relation_types and claim.relation_type not in pattern.relation_types:
+            return False
+
+        # Confidence threshold
+        if pattern.min_confidence > 0 and claim.confidence < pattern.min_confidence:
+            return False
+
+        # Source org filter
+        if pattern.source_org_ids and claim.source_org_id not in pattern.source_org_ids:
+            return False
+
+        # Visibility filter
+        return not (pattern.visibility_levels and claim.visibility.value not in pattern.visibility_levels)
 
     def _process_job(self, job_id: str) -> None:
         with self._job_lock:

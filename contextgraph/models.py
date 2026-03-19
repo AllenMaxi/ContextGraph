@@ -60,6 +60,32 @@ class SubscriptionTarget(StrEnum):
     ORG = "org"
 
 
+class ClaimImpact(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass(slots=True)
+class ProvenanceEntry:
+    agent_id: str
+    action: str  # "created", "attested", "challenged", "derived", "updated"
+    timestamp: datetime
+    confidence_at_action: float
+    detail: str = ""
+
+
+@dataclass(slots=True)
+class PatternFilter:
+    entities: list[str] = field(default_factory=list)
+    entity_types: list[str] = field(default_factory=list)
+    relation_types: list[str] = field(default_factory=list)
+    min_confidence: float = 0.0
+    source_org_ids: list[str] = field(default_factory=list)
+    visibility_levels: list[str] = field(default_factory=list)
+
+
 @dataclass(slots=True)
 class Agent:
     agent_id: str
@@ -135,6 +161,15 @@ class Claim:
     evidence: list[str] = field(default_factory=list)
     citations: list[str] = field(default_factory=list)
     validated_at: datetime | None = None
+    # Provenance chain — immutable audit trail
+    provenance: list[ProvenanceEntry] = field(default_factory=list)
+    derived_from: list[str] = field(default_factory=list)
+    # Quorum / consensus for high-impact claims
+    impact: ClaimImpact = ClaimImpact.LOW
+    quorum_required: int = 0
+    quorum_met: bool = True
+    attestation_count: int = 0
+    challenge_count: int = 0
 
 
 @dataclass(slots=True)
@@ -148,6 +183,7 @@ class StandingQuery:
     status: str
     created_at: datetime
     updated_at: datetime
+    pattern: PatternFilter | None = None
 
 
 @dataclass(slots=True)

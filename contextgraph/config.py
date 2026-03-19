@@ -68,6 +68,16 @@ class Settings:
     llm_api_key: str = os.getenv("CG_LLM_API_KEY", "")
     llm_model: str = os.getenv("CG_LLM_MODEL", "claude-sonnet-4-6")
     llm_base_url: str = os.getenv("CG_LLM_BASE_URL", "https://api.anthropic.com")
+    # AG-UI Streaming
+    enable_streaming: bool = _read_bool("CG_ENABLE_STREAMING", True)
+    streaming_heartbeat_seconds: float = _read_float("CG_STREAMING_HEARTBEAT_SECONDS", 30.0)
+    # Quorum defaults
+    default_quorum_high: int = _read_int("CG_DEFAULT_QUORUM_HIGH", 2)
+    default_quorum_critical: int = _read_int("CG_DEFAULT_QUORUM_CRITICAL", 2)
+    # UCP Commerce
+    enable_ucp: bool = _read_bool("CG_ENABLE_UCP", False)
+    # Dashboard
+    enable_dashboard: bool = _read_bool("CG_ENABLE_DASHBOARD", True)
 
 
 settings = Settings()

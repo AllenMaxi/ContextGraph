@@ -16,4 +16,4 @@ Set PlaybackSpeed 1.0
 Type "python3 examples/launch_demo.py"
 Enter
 
-Sleep 6s
+Sleep 10s

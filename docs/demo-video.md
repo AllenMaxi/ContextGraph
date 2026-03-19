@@ -1,11 +1,11 @@
-# Demo Video Guide
+# Demo Video Guide — v0.3.0
 
 Use two short assets for launch:
 
 - a **terminal-first proof** from [`examples/launch_demo.py`](../examples/launch_demo.py)
 - a **real console walkthrough** from [`examples/dashboard_demo_seed.py`](../examples/dashboard_demo_seed.py)
 
-The terminal demo proves the access model works. The console demo makes the project feel tangible.
+The terminal demo proves the access model and v0.3.0 features work. The console demo makes the project feel tangible.
 
 ## 1. Terminal Demo
 
@@ -22,9 +22,9 @@ That produces:
 
 ### Terminal format
 
-- 20-40 seconds
+- 30-50 seconds
 - terminal-first
-- one wedge only: internal unlock + cross-org locked discovery + paid recall
+- covers: access model, provenance, impact/quorum, pattern subscriptions, payment gate
 - no voiceover needed
 
 ### Terminal flow
@@ -40,6 +40,10 @@ That produces:
    - agent registration with `default_visibility="org"`
    - internal memory stored without repeating policy
    - same-org full memory access
+   - **provenance chain** created on claim
+   - **impact classification** (HIGH) and quorum requirement
+   - **attestation** by procurement-bot growing the provenance chain
+   - **pattern subscription** for TSMC with notification delivery
    - priced published memory appearing locked cross-org
    - `402`-style payment gate on recall
    - successful unlock with payment token
@@ -74,25 +78,32 @@ The script prints:
 
 - 30-45 seconds
 - no voiceover needed
-- one story only: same-org unlock, cross-org share, locked paid discovery
-- use the real `/console`, not a separate mock UI
+- one story: same-org unlock, cross-org share, locked paid discovery
+- show the new v0.3.0 dashboard pages
+- use the real `/dashboard`, not a separate mock UI
 
 ### Dashboard storyboard
 
 1. Log in as `procurement-bot`.
-2. Open `Overview` and pause on:
+2. Open **Overview** and pause on:
    - `Internal Memories`
    - `Following`
-3. Open `Agents` and show that `research-bot` is followed.
-4. Open `Feed` and inspect the same-org internal memory with full content.
-5. Log out and log in as `globex-market-bot`.
-6. Return to `Overview` and show:
+3. Open **Knowledge** and show:
+   - Claim impact badges (LOW / HIGH / CRITICAL)
+   - Provenance chain on a claim detail
+   - Quorum status (met / not met)
+4. Open **Agents** and show that `research-bot` is followed.
+5. Open **Feed** and inspect the same-org internal memory with full content.
+6. Open **Graph Explorer** and show the force-directed entity graph.
+7. Log out and log in as `globex-market-bot`.
+8. Open **Notifications** and show pattern subscription alerts.
+9. Return to **Overview** and show:
    - `Shared With Me`
    - `Locked Discoveries`
-7. Open the locked paid memory and show that:
-   - source, claims, and price are visible
-   - `memory_content` is hidden in the console
-8. Optionally cut back to the terminal demo for the paid recall unlock.
+10. Open the locked paid memory and show that:
+    - source, claims, and price are visible
+    - `memory_content` is hidden in the dashboard
+11. Optionally cut back to the terminal demo for the paid recall unlock.
 
 ### Recording tips
 
@@ -100,6 +111,39 @@ The script prints:
 - keep the sidebar visible
 - do not scroll through docs during the recording
 - prefer one clean cursor path over lots of clicks
+
+## 3. CLI Demo (NEW in v0.3.0)
+
+Record a third terminal clip showing the CLI tool:
+
+```bash
+# Login
+cg auth login --url http://localhost:8000 --key <api-key>
+
+# Store and recall
+cg store "TSMC lead times extending 3-5 weeks"
+cg recall "TSMC supplier"
+
+# Inspect claims with provenance
+cg claims list
+cg claims show <claim-id>
+
+# Review a claim
+cg claims review <claim-id> --decision attested --reason "Confirmed"
+
+# Pattern watch
+cg watch create "TSMC alerts" --entity tsmc --min-confidence 0.5
+cg notifications
+
+# Live feed
+cg feed
+```
+
+### CLI format
+
+- 20-30 seconds
+- show store → recall → claims → review → watch → notifications flow
+- use `--json` flag once to show machine-readable output
 
 ## Tool Suggestions
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from .api._compat import FastAPI, JSONResponse
 from .api.console import register_console_routes
+from .api.dashboard import register_dashboard_routes
 from .api.routes import register_routes
 from .bootstrap import create_service
 from .errors import AuthenticationError, ContextGraphError, NotFoundError, PaymentRequiredError, PermissionDeniedError
@@ -28,7 +29,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
         finally:
             graph.close()
 
-    app = FastAPI(title="ContextGraph", version="0.2.1", lifespan=lifespan)
+    app = FastAPI(title="ContextGraph", version="0.3.0", lifespan=lifespan)
 
     # --- CORS middleware ---
     try:
@@ -78,6 +79,18 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
     register_routes(app, graph)
     register_console_routes(app, graph)
+    if app_settings.enable_dashboard:
+        register_dashboard_routes(app, graph)
+    if app_settings.enable_streaming:
+        from .api.streaming import register_streaming_routes
+        from .events import EventBus
+
+        event_bus = EventBus()
+        register_streaming_routes(app, event_bus, graph)
+    if app_settings.enable_ucp:
+        from .api.ucp import register_ucp_routes
+
+        register_ucp_routes(app, graph)
     if app_settings.enable_remote_mcp:
         register_remote_mcp_routes(app, graph, path=app_settings.remote_mcp_path)
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "contextgraph"
-version = "0.2.1"
+version = "0.3.0"
 description = "Claim-native context and trust layer for multi-agent systems"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,7 @@ Issues = "https://github.com/AllenMaxi/ContextGraph/issues"
 Documentation = "https://github.com/AllenMaxi/ContextGraph/tree/main/docs"
 
 [project.scripts]
+cg = "contextgraph.cli:main"
 contextgraph-eval = "contextgraph.eval_cli:run"
 contextgraph-eval-dataset = "contextgraph.eval_dataset_cli:run"
 contextgraph-server = "contextgraph.server:run"
