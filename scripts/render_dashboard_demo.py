@@ -39,25 +39,6 @@ def ffmpeg_available() -> str:
     return path
 
 
-def chromium_available() -> str:
-    candidates = [
-        Path("/tmp/contextgraph_browsers/chromium-1208/chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
-        Path(
-            "/tmp/contextgraph_browsers/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        ),
-        Path(
-            "/tmp/contextgraph_browsers/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell"
-        ),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return str(candidate)
-    raise RuntimeError(
-        "Chromium for Playwright is not installed. Run:\n"
-        "PLAYWRIGHT_BROWSERS_PATH=/tmp/contextgraph_browsers PYTHONPATH=/tmp/contextgraph_video_deps python3 -m playwright install chromium"
-    )
-
-
 def render_gif(ffmpeg_path: str, source_path: Path, target_path: Path) -> None:
     palette_path = target_path.with_suffix(".palette.png")
     subprocess.run(
@@ -97,13 +78,12 @@ def render_gif(ffmpeg_path: str, source_path: Path, target_path: Path) -> None:
 
 def main() -> None:
     ffmpeg_path = ffmpeg_available()
-    chromium_path = chromium_available()
     try:
         from playwright.sync_api import sync_playwright
-    except ModuleNotFoundError as exc:  # pragma: no cover - optional dependency
+    except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "Playwright is required. Install it first, for example:\n"
-            "PYTHONPATH=/tmp/contextgraph_video_deps python3 -m pip install --target /tmp/contextgraph_video_deps playwright"
+            "Playwright is required. Install it first:\n"
+            "pip install playwright && playwright install chromium"
         ) from exc
 
     host = "127.0.0.1"
@@ -129,7 +109,6 @@ def main() -> None:
             with sync_playwright() as playwright:
                 browser = playwright.chromium.launch(
                     headless=True,
-                    executable_path=chromium_path,
                     args=["--hide-scrollbars"],
                 )
                 context = browser.new_context(
@@ -140,48 +119,53 @@ def main() -> None:
                 )
                 page = context.new_page()
 
-                page.goto(f"{base_url}/console", wait_until="networkidle")
-                page.wait_for_timeout(600)
+                # --- Login as procurement-bot (same-org) ---
+                page.goto(f"{base_url}/dashboard", wait_until="networkidle")
+                page.wait_for_timeout(800)
 
-                page.fill("#api_key", demo.procurement_api_key)
-                page.click("button[type=submit]")
+                page.fill('input[name="api_key"]', demo.procurement_api_key)
+                page.click('button[type="submit"]')
+                page.wait_for_timeout(1500)
+
+                # --- Overview page ---
+                page.goto(f"{base_url}/dashboard/overview", wait_until="networkidle")
+                page.wait_for_timeout(1500)
+
+                # --- Knowledge page (claims, provenance, impact) ---
+                page.goto(f"{base_url}/dashboard/knowledge", wait_until="networkidle")
+                page.wait_for_timeout(1500)
+
+                # --- Agents page ---
+                page.goto(f"{base_url}/dashboard/agents", wait_until="networkidle")
                 page.wait_for_timeout(1200)
 
-                page.click('a[data-page="overview"]')
-                page.wait_for_timeout(1200)
-                page.locator(".mini-card", has_text="TSMC semiconductor lead times").click()
-                page.wait_for_timeout(1100)
-                page.click("#panel-close")
-                page.wait_for_timeout(400)
+                # --- Feed page ---
+                page.goto(f"{base_url}/dashboard/feed", wait_until="networkidle")
+                page.wait_for_timeout(1500)
 
-                page.click('a[data-page="agents"]')
-                page.wait_for_timeout(1000)
+                # --- Graph Explorer ---
+                page.goto(f"{base_url}/dashboard/graph", wait_until="networkidle")
+                page.wait_for_timeout(2000)
 
-                page.click('a[data-page="feed"]')
-                page.wait_for_timeout(1000)
-                page.locator(".card", has_text="TSMC semiconductor lead times").click()
-                page.wait_for_timeout(1200)
-                page.click("#panel-close")
-                page.wait_for_timeout(500)
-
-                page.goto(f"{base_url}/console/logout", wait_until="networkidle")
-                page.wait_for_timeout(1000)
-
-                page.fill("#api_key", demo.globex_api_key)
-                page.click("button[type=submit]")
+                # --- Notifications ---
+                page.goto(f"{base_url}/dashboard/notifications", wait_until="networkidle")
                 page.wait_for_timeout(1200)
 
-                page.click('a[data-page="overview"]')
-                page.wait_for_timeout(1200)
-                page.locator(".mini-card", has_text="Premium semiconductor supplier analysis").click()
-                page.wait_for_timeout(1300)
-                page.click("#panel-close")
-                page.wait_for_timeout(500)
+                # --- Logout, login as globex (cross-org) ---
+                page.goto(f"{base_url}/dashboard-logout", wait_until="networkidle")
+                page.wait_for_timeout(800)
 
-                page.click('a[data-page="feed"]')
-                page.wait_for_timeout(900)
-                page.locator(".card", has_text="Premium semiconductor supplier analysis").click()
-                page.wait_for_timeout(1800)
+                page.fill('input[name="api_key"]', demo.globex_api_key)
+                page.click('button[type="submit"]')
+                page.wait_for_timeout(1500)
+
+                # --- Overview as cross-org ---
+                page.goto(f"{base_url}/dashboard/overview", wait_until="networkidle")
+                page.wait_for_timeout(1500)
+
+                # --- Feed as cross-org (locked content) ---
+                page.goto(f"{base_url}/dashboard/feed", wait_until="networkidle")
+                page.wait_for_timeout(2000)
 
                 video = page.video
                 page.close()
