@@ -14,10 +14,38 @@ class Visibility(StrEnum):
 
 
 class ValidationStatus(StrEnum):
+    # Canonical members (keep existing serialized values)
     UNREVIEWED = "unreviewed"
     ATTESTED = "attested"
     CHALLENGED = "challenged"
     EXPIRED = "expired"
+    # New members
+    REJECTED = "rejected"
+    TRUSTED = "trusted"
+    # Forward-looking aliases (point to same members)
+    PENDING = "unreviewed"
+    VALIDATED = "attested"
+    DISPUTED = "challenged"
+
+
+class AgentStatus(StrEnum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    DELETED = "deleted"
+
+
+class AgentRole(StrEnum):
+    AGENT = "agent"
+    SENTINEL = "sentinel"
+
+
+class SentinelDecision(StrEnum):
+    PASS = "pass"
+    VALIDATE = "validate"
+    DISPUTE = "dispute"
+    REJECT = "reject"
+    NEEDS_REVIEW = "needs_review"
+    BLOCK = "block"
 
 
 class MemoryCurationStatus(StrEnum):
@@ -51,6 +79,10 @@ class JobType(StrEnum):
     STORE_MEMORY = "store_memory"
     DELIVER_NOTIFICATION = "deliver_notification"
     SWEEP_EXPIRED_CLAIMS = "sweep_expired_claims"
+    SWEEP_IDLE_AGENTS = "sweep_idle_agents"
+    PROMOTE_TRUSTED_CLAIMS = "promote_trusted_claims"
+    SENTINEL_AUDIT = "sentinel_audit"
+    SENTINEL_CANARY = "sentinel_canary"
 
 
 class SubscriptionTarget(StrEnum):
@@ -103,6 +135,10 @@ class Agent:
     default_visibility: Visibility = Visibility.PRIVATE
     default_access_list: list[str] = field(default_factory=list)
     default_price: float = 0.0
+    last_activity_at: datetime | None = None
+    suspension_reason: str | None = None
+    suspended_at: datetime | None = None
+    role: str = "agent"
 
 
 @dataclass(slots=True)
@@ -213,6 +249,20 @@ class AuditEntry:
     action: str
     actor_agent_id: str
     target_agent_id: str | None
+    details: dict[str, str]
+    timestamp: datetime
+
+
+@dataclass(slots=True)
+class SentinelVerdict:
+    verdict_id: str
+    sentinel_agent_id: str
+    claim_id: str
+    memory_id: str
+    decision: SentinelDecision
+    confidence: float
+    reason: str
+    conflicting_claim_id: str | None
     details: dict[str, str]
     timestamp: datetime
 

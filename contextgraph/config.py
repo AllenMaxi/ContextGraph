@@ -78,6 +78,21 @@ class Settings:
     enable_ucp: bool = _read_bool("CG_ENABLE_UCP", False)
     # Dashboard
     enable_dashboard: bool = _read_bool("CG_ENABLE_DASHBOARD", True)
+    # Agent Lifecycle
+    agent_idle_threshold_days: int = _read_int("CG_AGENT_IDLE_THRESHOLD_DAYS", 30)
+    agent_idle_scan_interval_hours: int = _read_int("CG_AGENT_IDLE_SCAN_INTERVAL_HOURS", 24)
+    # Sentinel Pipeline
+    sentinel_enabled: bool = _read_bool("CG_SENTINEL_ENABLED", True)
+    sentinel_audit_depth: str = os.getenv("CG_SENTINEL_AUDIT_DEPTH", "auto")
+    sentinel_bypass_reputation_threshold: float = _read_float("CG_SENTINEL_BYPASS_REPUTATION", 0.8)
+    sentinel_new_agent_claim_threshold: int = _read_int("CG_SENTINEL_NEW_AGENT_CLAIMS", 5)
+    sentinel_canary_interval_hours: int = _read_int("CG_SENTINEL_CANARY_INTERVAL_HOURS", 24)
+    sentinel_post_store_timeout_seconds: int = _read_int("CG_SENTINEL_POST_STORE_TIMEOUT", 300)
+    # Trust Promotion
+    trust_promotion_enabled: bool = _read_bool("CG_TRUST_PROMOTION_ENABLED", True)
+    trust_promotion_min_age_days: int = _read_int("CG_TRUST_PROMOTION_MIN_AGE_DAYS", 7)
+    trust_promotion_min_attestations: int = _read_int("CG_TRUST_PROMOTION_MIN_ATTESTATIONS", 2)
+    trust_promotion_scan_interval_hours: int = _read_int("CG_TRUST_PROMOTION_SCAN_INTERVAL_HOURS", 24)
 
 
 settings = Settings()
