@@ -15,6 +15,8 @@ from ..models import (
     Notification,
     ReviewStatus,
     ReviewTask,
+    SentinelDecision,
+    SentinelVerdict,
     StandingQuery,
     ValidationStatus,
     Visibility,
@@ -350,6 +352,53 @@ class Neo4jRepository:
         records = self._fetch_all("MATCH (a:AuditEntry) RETURN a ORDER BY a.timestamp DESC")
         return [self._audit_from_node(record["a"]) for record in records]
 
+    def save_sentinel_verdict(self, verdict: SentinelVerdict) -> SentinelVerdict:
+        query = """
+        MATCH (c:Claim {claim_id: $claim_id})
+        MERGE (v:SentinelVerdict {verdict_id: $verdict_id})
+        SET v += $props
+        MERGE (v)-[:JUDGES]->(c)
+        RETURN v
+        """
+        self._write(
+            query,
+            {
+                "claim_id": verdict.claim_id,
+                "verdict_id": verdict.verdict_id,
+                "props": self._serialize(verdict),
+            },
+        )
+        return verdict
+
+    def list_verdicts_for_claim(self, claim_id: str) -> list[SentinelVerdict]:
+        records = self._fetch_all(
+            """
+            MATCH (v:SentinelVerdict {claim_id: $claim_id})
+            RETURN v ORDER BY v.timestamp DESC
+            """,
+            {"claim_id": claim_id},
+        )
+        return [self._verdict_from_node(record["v"]) for record in records]
+
+    def list_verdicts(self, limit: int = 100, decision: str | None = None) -> list[SentinelVerdict]:
+        if decision:
+            records = self._fetch_all(
+                """
+                MATCH (v:SentinelVerdict {decision: $decision})
+                RETURN v ORDER BY v.timestamp DESC LIMIT $limit
+                """,
+                {"decision": decision, "limit": limit},
+            )
+        else:
+            records = self._fetch_all(
+                """
+                MATCH (v:SentinelVerdict)
+                RETURN v ORDER BY v.timestamp DESC LIMIT $limit
+                """,
+                {"limit": limit},
+            )
+        return [self._verdict_from_node(record["v"]) for record in records]
+
     def snapshot(self) -> dict[str, int]:
         labels = {
             "agents": "Agent",
@@ -360,6 +409,7 @@ class Neo4jRepository:
             "notifications": "Notification",
             "review_tasks": "ReviewTask",
             "audit_entries": "AuditEntry",
+            "sentinel_verdicts": "SentinelVerdict",
         }
         counts: dict[str, int] = {}
         with self._driver.session() as session:
@@ -528,6 +578,21 @@ class Neo4jRepository:
             action=props["action"],
             actor_agent_id=props["actor_agent_id"],
             target_agent_id=props.get("target_agent_id"),
+            details=dict(props.get("details", {})),
+            timestamp=self._parse_dt(props["timestamp"]),
+        )
+
+    def _verdict_from_node(self, node: Any) -> SentinelVerdict:
+        props = dict(node)
+        return SentinelVerdict(
+            verdict_id=props["verdict_id"],
+            sentinel_agent_id=props["sentinel_agent_id"],
+            claim_id=props["claim_id"],
+            memory_id=props["memory_id"],
+            decision=SentinelDecision(props["decision"]),
+            confidence=float(props["confidence"]),
+            reason=props["reason"],
+            conflicting_claim_id=props.get("conflicting_claim_id"),
             details=dict(props.get("details", {})),
             timestamp=self._parse_dt(props["timestamp"]),
         )

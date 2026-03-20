@@ -10,6 +10,7 @@ from .models import (
     Memory,
     Notification,
     ReviewTask,
+    SentinelVerdict,
     StandingQuery,
     Subscription,
     SubscriptionTarget,
@@ -30,6 +31,7 @@ class InMemoryRepository:
         self._reviews: dict[str, ReviewTask] = {}
         self._audit_entries: dict[str, AuditEntry] = {}
         self._subscriptions: dict[str, Subscription] = {}
+        self._sentinel_verdicts: dict[str, SentinelVerdict] = {}
 
     def save_agent(self, agent: Agent) -> Agent:
         with self._lock:
@@ -192,6 +194,23 @@ class InMemoryRepository:
                 if s.target_type == SubscriptionTarget.AGENT and s.target_id == agent_id and s.active
             ]
 
+    def save_sentinel_verdict(self, verdict: SentinelVerdict) -> SentinelVerdict:
+        with self._lock:
+            self._sentinel_verdicts[verdict.verdict_id] = verdict
+            return verdict
+
+    def list_verdicts_for_claim(self, claim_id: str) -> list[SentinelVerdict]:
+        with self._lock:
+            return [v for v in self._sentinel_verdicts.values() if v.claim_id == claim_id]
+
+    def list_verdicts(self, limit: int = 100, decision: str | None = None) -> list[SentinelVerdict]:
+        with self._lock:
+            results = list(self._sentinel_verdicts.values())
+            if decision:
+                results = [v for v in results if v.decision == decision]
+            results.sort(key=lambda v: v.timestamp, reverse=True)
+            return results[:limit]
+
     def delete_subscription(self, subscription_id: str) -> None:
         with self._lock:
             self._subscriptions.pop(subscription_id, None)
@@ -208,6 +227,7 @@ class InMemoryRepository:
                 "review_tasks": len(self._reviews),
                 "audit_entries": len(self._audit_entries),
                 "subscriptions": len(self._subscriptions),
+                "sentinel_verdicts": len(self._sentinel_verdicts),
             }
 
     def close(self) -> None:

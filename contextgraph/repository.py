@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import Agent, AuditEntry, Claim, Entity, Memory, Notification, ReviewTask, StandingQuery, Subscription
+from .models import (
+    Agent,
+    AuditEntry,
+    Claim,
+    Entity,
+    Memory,
+    Notification,
+    ReviewTask,
+    SentinelVerdict,
+    StandingQuery,
+    Subscription,
+)
 
 
 class Repository(Protocol):
@@ -41,6 +52,10 @@ class Repository(Protocol):
 
     def save_audit_entry(self, entry: AuditEntry) -> AuditEntry: ...
     def list_audit_entries(self) -> list[AuditEntry]: ...
+
+    def save_sentinel_verdict(self, verdict: SentinelVerdict) -> SentinelVerdict: ...
+    def list_verdicts_for_claim(self, claim_id: str) -> list[SentinelVerdict]: ...
+    def list_verdicts(self, limit: int = 100, decision: str | None = None) -> list[SentinelVerdict]: ...
 
     def save_subscription(self, subscription: Subscription) -> Subscription: ...
     def get_subscription(self, subscription_id: str) -> Subscription | None: ...
