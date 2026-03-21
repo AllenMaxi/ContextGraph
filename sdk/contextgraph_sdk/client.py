@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from urllib import error, request
 from urllib.parse import urlencode
-
-from contextgraph.service import ContextGraphService
-from contextgraph.utils import to_jsonable
 
 from .exceptions import (
     AuthenticationError,
@@ -17,6 +14,9 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+
+if TYPE_CHECKING:
+    from ._local import LocalTransport as LocalTransport
 
 
 class Transport(Protocol):
@@ -38,67 +38,11 @@ class Transport(Protocol):
     def review_queue(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def operator_summary(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def expire_claims(self, payload: dict[str, Any]) -> dict[str, Any]: ...
-
-
-@dataclass(slots=True)
-class LocalTransport:
-    service: ContextGraphService
-
-    def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.register_agent(**payload))
-
-    def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]:
-        local_payload = dict(payload)
-        local_payload["requester_agent_id"] = local_payload["agent_id"]
-        return to_jsonable(self.service.update_agent_defaults(**local_payload))
-
-    def store(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.store_memory(**payload))
-
-    def store_async(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.enqueue_memory_store(**payload))
-
-    def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.update_memory_access(**payload))
-
-    def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.recall(**payload))
-
-    def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.relate(**payload))
-
-    def watch(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.watch(**payload))
-
-    def list_watches(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.list_standing_queries(**payload))
-
-    def deactivate_watch(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.deactivate_watch(**payload))
-
-    def job_status(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.get_job(**payload))
-
-    def list_jobs(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.list_jobs(**payload))
-
-    def list_claims(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.list_claims(**payload))
-
-    def notifications(self, agent_id: str) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.get_notifications(agent_id=agent_id))
-
-    def review_claim(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.review_claim(**payload))
-
-    def review_queue(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.list_review_queue(**payload))
-
-    def operator_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.operator_snapshot(**payload))
-
-    def expire_claims(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.enqueue_claim_expiry_sweep(**payload))
+    def suspend_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def reactivate_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def delete_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def sentinel_verdicts(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def sentinel_health(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(slots=True)
@@ -230,14 +174,52 @@ class HttpTransport:
     def expire_claims(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/maintenance/claims/expire")
 
+    def suspend_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        body = {"reason": payload.get("reason", "manual")}
+        return self._request("POST", f"/v1/agents/{agent_id}/suspend", body)
+
+    def reactivate_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        return self._request("POST", f"/v1/agents/{agent_id}/reactivate")
+
+    def delete_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        return self._request("DELETE", f"/v1/agents/{agent_id}")
+
+    def sentinel_verdicts(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        params = {}
+        if payload.get("claim_id"):
+            params["claim_id"] = payload["claim_id"]
+        if payload.get("decision"):
+            params["decision"] = payload["decision"]
+        path = "/v1/audit/verdicts"
+        if params:
+            path = f"{path}?{urlencode(params)}"
+        return self._request("GET", path)
+
+    def sentinel_health(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("GET", "/v1/sentinel/health")
+
 
 class ContextGraph:
     def __init__(self, transport: Transport) -> None:
         self.transport = transport
 
     @classmethod
-    def local(cls, service: ContextGraphService | None = None) -> ContextGraph:
-        return cls(LocalTransport(service or ContextGraphService()))
+    def local(cls, service: Any | None = None) -> ContextGraph:
+        try:
+            from ._local import LocalTransport
+        except ImportError as exc:
+            raise ImportError(
+                "LocalTransport requires the full contextgraph server package. "
+                "Install it with: pip install contextgraph-sdk[local] or pip install contextgraph"
+            ) from exc
+        if service is None:
+            from contextgraph.service import ContextGraphService
+
+            service = ContextGraphService()
+        return cls(LocalTransport(service))
 
     @classmethod
     def http(cls, base_url: str, api_key: str | None = None) -> ContextGraph:
@@ -454,3 +436,18 @@ class ContextGraph:
 
     def expire_claims(self, requester_agent_id: str) -> dict[str, Any]:
         return self.transport.expire_claims({"requester_agent_id": requester_agent_id})
+
+    def suspend_agent(self, agent_id: str, reason: str = "manual") -> dict[str, Any]:
+        return self.transport.suspend_agent({"agent_id": agent_id, "reason": reason})
+
+    def reactivate_agent(self, agent_id: str) -> dict[str, Any]:
+        return self.transport.reactivate_agent({"agent_id": agent_id})
+
+    def delete_agent(self, agent_id: str) -> dict[str, Any]:
+        return self.transport.delete_agent({"agent_id": agent_id})
+
+    def sentinel_verdicts(self, claim_id: str | None = None, decision: str | None = None) -> list[dict[str, Any]]:
+        return self.transport.sentinel_verdicts({"claim_id": claim_id, "decision": decision})
+
+    def sentinel_health(self) -> dict[str, Any]:
+        return self.transport.sentinel_health({})

@@ -2,7 +2,7 @@
 
 Usage: cg <command> [options]
 
-All HTTP communication goes through ``sdk.contextgraph_sdk.client.HttpTransport``.
+All HTTP communication goes through ``contextgraph_sdk.client.HttpTransport``.
 Config is stored as JSON at ``~/.contextgraph/config.json``.
 """
 
@@ -85,7 +85,7 @@ def _save_config(cfg: dict[str, Any]) -> None:
 
 def _make_client() -> Any:
     """Return an ``HttpTransport`` configured from the saved config."""
-    from sdk.contextgraph_sdk.client import HttpTransport  # noqa: E402
+    from contextgraph_sdk.client import HttpTransport
 
     cfg = _load_config()
     server_url = cfg.get("server_url")
@@ -691,6 +691,22 @@ def _build_parser() -> argparse.ArgumentParser:
     agents_sub.add_parser("me", help="Show current agent profile")
     trust_parser = agents_sub.add_parser("trust", help="Show trust score for an agent")
     trust_parser.add_argument("agent_id", help="Agent ID to check")
+    suspend_parser = agents_sub.add_parser("suspend", help="Suspend an agent")
+    suspend_parser.add_argument("agent_id", help="Agent ID")
+    suspend_parser.add_argument("--reason", default="manual", help="Suspension reason")
+    wake_parser = agents_sub.add_parser("wake", help="Reactivate a suspended agent")
+    wake_parser.add_argument("agent_id", help="Agent ID")
+    delete_parser = agents_sub.add_parser("delete", help="Soft-delete an agent")
+    delete_parser.add_argument("agent_id", help="Agent ID")
+
+    # --- sentinel ---
+    sentinel_parser = subparsers.add_parser("sentinel", help="Sentinel audit system")
+    sentinel_sub = sentinel_parser.add_subparsers(dest="sentinel_command")
+    sentinel_sub.add_parser("health", help="Show sentinel system status")
+    sentinel_verdicts_parser = sentinel_sub.add_parser("verdicts", help="List sentinel verdicts")
+    sentinel_verdicts_parser.add_argument("--claim", default=None, help="Filter by claim ID")
+    sentinel_verdicts_parser.add_argument("--status", default=None, help="Filter by decision")
+    sentinel_verdicts_parser.add_argument("--limit", "-n", type=int, default=20, help="Max results")
 
     # --- claims ---
     claims_parser = subparsers.add_parser("claims", help="Claim management")
@@ -785,8 +801,29 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             cmd_agents_me(args, client)
         elif sub == "trust":
             cmd_agents_trust(args, client)
+        elif sub == "suspend":
+            result = client.suspend_agent(args.agent_id, reason=args.reason)
+            print(json.dumps(result, indent=2, default=str))
+        elif sub == "wake":
+            result = client.reactivate_agent(args.agent_id)
+            print(json.dumps(result, indent=2, default=str))
+        elif sub == "delete":
+            result = client.delete_agent(args.agent_id)
+            print(json.dumps(result, indent=2, default=str))
         else:
-            _err("Usage: cg agents {list|me|trust <agent_id>}")
+            _err("Usage: cg agents {list|me|trust|suspend|wake|delete}")
+        return
+
+    if cmd == "sentinel":
+        sub = getattr(args, "sentinel_command", None)
+        if sub == "health":
+            result = client.sentinel_health()
+            print(json.dumps(result, indent=2, default=str))
+        elif sub == "verdicts":
+            result = client.sentinel_verdicts(claim_id=args.claim, decision=args.status)
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            _err("Usage: cg sentinel {health|verdicts}")
         return
 
     if cmd == "claims":
