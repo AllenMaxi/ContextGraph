@@ -18,6 +18,7 @@ from .identity import AgentIdentity, IdentityVerifier
 from .in_memory import InMemoryRepository
 from .models import (
     Agent,
+    AgentDiscoverability,
     AgentRole,
     AgentStatus,
     AuditEntry,
@@ -324,6 +325,7 @@ class ContextGraphService:
             default_visibility=resolved_default_visibility,
             default_access_list=resolved_default_access_list,
             default_price=resolved_default_price,
+            profile_visibility=AgentDiscoverability.ORG,
             last_activity_at=now,
             role="agent",
         )
@@ -514,11 +516,59 @@ class ContextGraphService:
             return candidate
         return Visibility(candidate)
 
+    def _resolve_profile_fields(
+        self,
+        *,
+        profile_visibility: str | AgentDiscoverability | None,
+        profile_access_list: list[str] | None,
+        profile_summary: str | None,
+        profile_links: dict[str, str] | None,
+        fallback_visibility: str | AgentDiscoverability,
+        fallback_access_list: list[str] | None,
+        fallback_summary: str,
+        fallback_links: dict[str, str] | None,
+    ) -> tuple[AgentDiscoverability, list[str], str, dict[str, str]]:
+        resolved_visibility = self._coerce_profile_visibility(profile_visibility, fallback_visibility)
+        fallback_acl = self._dedupe_access_list(fallback_access_list or [])
+        raw_access_list = fallback_acl if profile_access_list is None else self._dedupe_access_list(profile_access_list)
+        resolved_access_list = raw_access_list if resolved_visibility == AgentDiscoverability.SHARED else []
+        if resolved_visibility == AgentDiscoverability.SHARED and not resolved_access_list:
+            raise ValueError("Shared profile visibility requires a non-empty profile_access_list.")
+
+        resolved_summary = fallback_summary if profile_summary is None else profile_summary.strip()
+        if len(resolved_summary) > 500:
+            raise ValueError("Profile summary must be 500 characters or fewer.")
+
+        resolved_links = self._sanitize_profile_links(fallback_links if profile_links is None else profile_links)
+        return resolved_visibility, resolved_access_list, resolved_summary, resolved_links
+
+    def _coerce_profile_visibility(
+        self,
+        profile_visibility: str | AgentDiscoverability | None,
+        fallback_visibility: str | AgentDiscoverability,
+    ) -> AgentDiscoverability:
+        candidate = fallback_visibility if profile_visibility is None else profile_visibility
+        if isinstance(candidate, AgentDiscoverability):
+            return candidate
+        return AgentDiscoverability(candidate)
+
     def _dedupe_access_list(self, access_list: list[str]) -> list[str]:
         return [item for item in dict.fromkeys(access_list) if item]
 
     def _dedupe_strings(self, values: list[str] | None) -> list[str]:
         return [item.strip() for item in dict.fromkeys(values or []) if item and item.strip()]
+
+    def _sanitize_profile_links(self, profile_links: dict[str, str] | None) -> dict[str, str]:
+        cleaned: dict[str, str] = {}
+        for raw_label, raw_url in dict(profile_links or {}).items():
+            label = raw_label.strip()
+            url = raw_url.strip()
+            if not label or not url:
+                continue
+            if not url.startswith(("http://", "https://")):
+                raise ValueError("Profile links must use http:// or https:// URLs.")
+            cleaned[label] = url
+        return cleaned
 
     def _derive_provenance(
         self,
@@ -1256,6 +1306,227 @@ class ContextGraphService:
         requester = self.get_agent(requester_agent_id)
         return [agent for agent in agents if agent.org_id == requester.org_id]
 
+    def discover_agents(
+        self,
+        requester_agent_id: str,
+        q: str = "",
+        status: str | None = None,
+        min_reputation: float = 0.0,
+        org_id: str | None = None,
+        visibility: str | None = None,
+        sort_by: str = "reputation",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        requester = self.get_agent(requester_agent_id)
+        query = q.strip().lower()
+        visibility_filter = AgentDiscoverability(visibility) if visibility else None
+        sort_options = {"reputation", "followers", "created_at", "name"}
+        if sort_by not in sort_options:
+            raise ValueError(f"Unsupported sort_by '{sort_by}'.")
+
+        candidates: list[Agent] = []
+        for agent in self.repository.list_agents():
+            if agent.role == AgentRole.SENTINEL or agent.status == AgentStatus.DELETED:
+                continue
+            if not self._can_view_agent_profile(requester, agent):
+                continue
+            if status is not None and agent.status != status:
+                continue
+            if org_id is not None and agent.org_id != org_id:
+                continue
+            if agent.reputation_score < min_reputation:
+                continue
+            if visibility_filter is not None and agent.profile_visibility != visibility_filter:
+                continue
+            if query:
+                haystack = " ".join(
+                    [
+                        agent.name.lower(),
+                        agent.org_id.lower(),
+                        " ".join(cap.lower() for cap in agent.capabilities),
+                        agent.profile_summary.lower(),
+                    ]
+                )
+                if query not in haystack:
+                    continue
+            candidates.append(agent)
+
+        if sort_by == "followers":
+            candidates.sort(key=lambda item: (item.followers_count, item.reputation_score, item.created_at), reverse=True)
+        elif sort_by == "created_at":
+            candidates.sort(key=lambda item: item.created_at, reverse=True)
+        elif sort_by == "name":
+            candidates.sort(key=lambda item: (item.name.lower(), item.created_at))
+        else:
+            candidates.sort(
+                key=lambda item: (item.reputation_score, item.followers_count, item.created_at),
+                reverse=True,
+            )
+
+        total = len(candidates)
+        page = candidates[max(offset, 0) : max(offset, 0) + min(max(limit, 1), 100)]
+        return {
+            "items": [self._serialize_agent_profile(requester, agent) for agent in page],
+            "total": total,
+            "limit": min(max(limit, 1), 100),
+            "offset": max(offset, 0),
+        }
+
+    def get_agent_profile(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
+        requester = self.get_agent(requester_agent_id)
+        agent = self._get_visible_agent_for_requester(requester, agent_id)
+        return self._serialize_agent_profile(requester, agent)
+
+    def update_agent_profile(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        profile_visibility: str | None = None,
+        profile_access_list: list[str] | None = None,
+        profile_summary: str | None = None,
+        profile_links: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        requester = self.get_agent(requester_agent_id)
+        if requester.agent_id != agent_id:
+            raise PermissionDeniedError("Agents may only update their own discovery profile.")
+
+        resolved_visibility, resolved_access_list, resolved_summary, resolved_links = self._resolve_profile_fields(
+            profile_visibility=profile_visibility,
+            profile_access_list=profile_access_list,
+            profile_summary=profile_summary,
+            profile_links=profile_links,
+            fallback_visibility=requester.profile_visibility,
+            fallback_access_list=requester.profile_access_list,
+            fallback_summary=requester.profile_summary,
+            fallback_links=requester.profile_links,
+        )
+        requester.profile_visibility = resolved_visibility
+        requester.profile_access_list = resolved_access_list
+        requester.profile_summary = resolved_summary
+        requester.profile_links = resolved_links
+        requester.updated_at = utcnow()
+        self.repository.save_agent(requester)
+        self._audit(
+            "update_agent_profile",
+            actor_agent_id=requester.agent_id,
+            details={
+                "agent_id": requester.agent_id,
+                "profile_visibility": requester.profile_visibility.value,
+            },
+        )
+        return self._serialize_agent_profile(requester, requester)
+
+    def list_agent_claims(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        limit: int = 100,
+    ) -> list[Claim]:
+        requester = self.get_agent(requester_agent_id)
+        target = self._get_visible_agent_for_requester(requester, agent_id)
+        include_private_same_org = requester.org_id == target.org_id
+        claims = [
+            claim
+            for claim in self._list_claims_with_normalized_policies()
+            if claim.source_agent_id == target.agent_id
+            and self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org)
+        ]
+        claims.sort(key=lambda item: item.updated_at, reverse=True)
+        return claims[:limit]
+
+    def get_agent_activity(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        requester = self.get_agent(requester_agent_id)
+        target = self._get_visible_agent_for_requester(requester, agent_id)
+        include_private_same_org = requester.org_id == target.org_id
+        visible_claims = [
+            claim
+            for claim in self._list_claims_with_normalized_policies()
+            if claim.source_agent_id == target.agent_id
+            and self._can_access_claim(requester, claim, include_private_same_org=include_private_same_org)
+        ]
+
+        items: list[dict[str, Any]] = []
+        for claim in visible_claims:
+            items.append(
+                {
+                    "event_type": "claim_created",
+                    "timestamp": claim.created_at,
+                    "claim": self._serialize_claim_summary(claim),
+                    "verdict": None,
+                    "audit": None,
+                    "details": {
+                        "validation_status": claim.validation_status.value,
+                        "visibility": claim.visibility.value,
+                    },
+                }
+            )
+            for verdict in self.repository.list_verdicts_for_claim(claim.claim_id):
+                items.append(
+                    {
+                        "event_type": "sentinel_verdict",
+                        "timestamp": verdict.timestamp,
+                        "claim": self._serialize_claim_summary(claim),
+                        "verdict": self._serialize_verdict_summary(verdict),
+                        "audit": None,
+                        "details": {"decision": verdict.decision.value},
+                    }
+                )
+
+        if include_private_same_org:
+            for entry in self.repository.list_audit_entries():
+                if entry.actor_agent_id != target.agent_id and entry.target_agent_id != target.agent_id:
+                    continue
+                items.append(
+                    {
+                        "event_type": entry.action,
+                        "timestamp": entry.timestamp,
+                        "claim": None,
+                        "verdict": None,
+                        "audit": {
+                            "audit_id": entry.audit_id,
+                            "action": entry.action,
+                            "actor_agent_id": entry.actor_agent_id,
+                            "target_agent_id": entry.target_agent_id,
+                            "details": dict(entry.details),
+                        },
+                        "details": dict(entry.details),
+                    }
+                )
+
+        items.sort(key=lambda item: item["timestamp"], reverse=True)
+        total = len(items)
+        page = items[max(offset, 0) : max(offset, 0) + min(max(limit, 1), 100)]
+        return {
+            "items": page,
+            "total": total,
+            "limit": min(max(limit, 1), 100),
+            "offset": max(offset, 0),
+        }
+
+    def get_agent_trust_summary(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
+        requester = self.get_agent(requester_agent_id)
+        target = self._get_visible_agent_for_requester(requester, agent_id)
+        visible_claims = self.list_agent_claims(requester_agent_id=requester.agent_id, agent_id=target.agent_id, limit=10_000)
+        verdict_count = sum(len(self.repository.list_verdicts_for_claim(claim.claim_id)) for claim in visible_claims)
+        return {
+            "agent_id": target.agent_id,
+            "reputation_score": target.reputation_score,
+            "total_claims": len(visible_claims),
+            "attested_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.ATTESTED),
+            "challenged_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.CHALLENGED),
+            "unreviewed_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.UNREVIEWED),
+            "followers_count": target.followers_count,
+            "sentinel_verdict_count": verdict_count,
+            "status": target.status,
+        }
+
     def get_memory_for_agent(
         self,
         requester_agent_id: str,
@@ -1469,6 +1740,67 @@ class ContextGraphService:
     def close(self) -> None:
         self.stop_background_worker()
         self.repository.close()
+
+    def _get_visible_agent_for_requester(self, requester: Agent, agent_id: str) -> Agent:
+        agent = self.get_agent(agent_id)
+        if self._can_view_agent_profile(requester, agent):
+            return agent
+        raise PermissionDeniedError("Requester cannot access this agent profile.")
+
+    def _can_view_agent_profile(self, requester: Agent, target: Agent) -> bool:
+        if requester.agent_id == target.agent_id:
+            return True
+        if requester.org_id == target.org_id:
+            return True
+        if target.status == AgentStatus.DELETED or target.role == AgentRole.SENTINEL:
+            return False
+        if target.profile_visibility == AgentDiscoverability.PUBLISHED:
+            return True
+        if target.profile_visibility == AgentDiscoverability.SHARED:
+            access_list = set(target.profile_access_list)
+            return requester.agent_id in access_list or requester.org_id in access_list
+        return False
+
+    def _serialize_agent_profile(self, requester: Agent, agent: Agent) -> dict[str, Any]:
+        same_org = requester.org_id == agent.org_id or requester.agent_id == agent.agent_id
+        return {
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "org_id": agent.org_id,
+            "capabilities": list(agent.capabilities),
+            "status": agent.status,
+            "created_at": agent.created_at,
+            "updated_at": agent.updated_at,
+            "identity_verified": agent.identity_verified,
+            "reputation_score": agent.reputation_score,
+            "followers_count": agent.followers_count,
+            "profile_visibility": agent.profile_visibility,
+            "profile_access_list": list(agent.profile_access_list) if same_org else [],
+            "profile_summary": agent.profile_summary,
+            "profile_links": dict(agent.profile_links),
+        }
+
+    def _serialize_claim_summary(self, claim: Claim) -> dict[str, Any]:
+        return {
+            "claim_id": claim.claim_id,
+            "statement": claim.statement,
+            "validation_status": claim.validation_status.value,
+            "visibility": claim.visibility.value,
+            "impact": claim.impact.value,
+            "confidence": claim.confidence,
+            "created_at": claim.created_at,
+            "updated_at": claim.updated_at,
+        }
+
+    def _serialize_verdict_summary(self, verdict: SentinelVerdict) -> dict[str, Any]:
+        return {
+            "verdict_id": verdict.verdict_id,
+            "sentinel_agent_id": verdict.sentinel_agent_id,
+            "decision": verdict.decision.value,
+            "confidence": verdict.confidence,
+            "reason": verdict.reason,
+            "timestamp": verdict.timestamp,
+        }
 
     def _upsert_entity(self, name: str, entity_type: str) -> Entity:
         now = utcnow()
@@ -2085,6 +2417,8 @@ class ContextGraphService:
 
         # Validate target exists for agent/org types
         if target_enum == SubscriptionTarget.AGENT:
+            if agent_id == target_id:
+                raise ValueError("Agents cannot follow themselves.")
             self.get_agent(target_id)
         elif target_enum == SubscriptionTarget.ORG and not any(
             a.org_id == target_id for a in self.repository.list_agents()

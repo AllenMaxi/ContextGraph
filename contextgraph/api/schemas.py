@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from ..models import (
+    AgentDiscoverability,
     DeliveryMode,
     JobStatus,
     JobType,
@@ -32,6 +34,29 @@ class AgentResponse(BaseModel):
     default_visibility: Visibility = Visibility.PRIVATE
     default_access_list: list[str] = Field(default_factory=list)
     default_price: float = 0.0
+    profile_visibility: AgentDiscoverability = AgentDiscoverability.ORG
+    profile_access_list: list[str] = Field(default_factory=list)
+    profile_summary: str = ""
+    profile_links: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    agent_id: str
+    name: str
+    org_id: str
+    capabilities: list[str] = Field(default_factory=list)
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    identity_verified: bool = False
+    reputation_score: float = 0.0
+    followers_count: int = 0
+    profile_visibility: AgentDiscoverability = AgentDiscoverability.ORG
+    profile_access_list: list[str] = Field(default_factory=list)
+    profile_summary: str = ""
+    profile_links: dict[str, str] = Field(default_factory=dict)
 
 
 class AgentRegistrationRequest(BaseModel):
@@ -308,6 +333,13 @@ class AgentDefaultsUpdateRequest(BaseModel):
     default_price: float | None = Field(default=None, ge=0.0)
 
 
+class AgentProfileUpdateRequest(BaseModel):
+    profile_visibility: AgentDiscoverability | None = None
+    profile_access_list: list[str] | None = None
+    profile_summary: str | None = Field(default=None, max_length=500)
+    profile_links: dict[str, str] | None = None
+
+
 class TrustScoreResponse(BaseModel):
     agent_id: str
     reputation_score: float
@@ -316,6 +348,8 @@ class TrustScoreResponse(BaseModel):
     challenged_claims: int
     unreviewed_claims: int
     followers_count: int
+    sentinel_verdict_count: int = 0
+    status: str = "active"
 
 
 class FeedItemResponse(BaseModel):
@@ -333,6 +367,29 @@ class FeedItemResponse(BaseModel):
     price: float = 0.0
     is_locked: bool = False
     requires_payment: bool = False
+
+
+class DiscoverAgentsResponse(BaseModel):
+    items: list[AgentProfileResponse] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
+
+
+class AgentActivityItemResponse(BaseModel):
+    event_type: str
+    timestamp: datetime
+    claim: dict[str, Any] | None = None
+    verdict: dict[str, Any] | None = None
+    audit: dict[str, Any] | None = None
+    details: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentActivityResponse(BaseModel):
+    items: list[AgentActivityItemResponse] = Field(default_factory=list)
+    total: int
+    limit: int
+    offset: int
 
 
 class AgentSuspendRequest(BaseModel):

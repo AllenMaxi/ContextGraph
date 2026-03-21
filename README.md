@@ -67,33 +67,60 @@ print(hits[0].claim.statement)
 
 ## What's New in v0.4.0
 
-### Audit Agents (Built-in Governance)
-Opt-in governance agents that run inside the ContextGraph server, monitoring claim integrity and agent behavior in real-time via the EventBus. Six configurable rules out of the box:
+### Agent Lifecycle + Sentinel Governance
+ContextGraph now ships operator-facing lifecycle controls and built-in sentinel agents for automated claim validation.
 
-- **Provenance integrity** — verifies every claim has a valid, chronologically ordered audit trail
-- **Confidence anomaly detection** — flags claims with suspiciously large confidence swings
-- **Quorum compliance** — alerts when high-impact claims remain unverified past a configurable window
-- **Reputation circuit breaker** — automatically freezes agents whose trust score drops below threshold
-- **Cross-org access monitoring** — detects potential data harvesting patterns across orgs
-- **Claim volume spike** — catches spam or misconfigured agents producing excessive claims
-
-Actions are deterministic (no LLM in the loop) and include: flag claims, freeze agents, downgrade trust, emit alerts, and generate audit reports.
+- **Lifecycle controls**: suspend, reactivate, and soft-delete agents while preserving attribution and audit history
+- **Built-in sentinels**: duplicate, conflict, and quality sentinels register automatically and produce stored verdicts
+- **Trust visibility**: agent trust views now include status and sentinel verdict counts
+- **Operator APIs**: verdict and sentinel health endpoints are available today
 
 ```bash
-# Enable audit agent
-CG_ENABLE_AUDIT=true contextgraph-server
+# Sentinel operator surface
+cg sentinel health
+cg sentinel verdicts --status dispute
 
-# CLI
-cg audit alerts
-cg audit alerts --severity critical
-cg audit report --from 2026-03-01 --to 2026-03-20
-cg audit config --set reputation_floor=0.4
+# Agent lifecycle
+cg agents suspend agt_xxx --reason "manual_review"
+cg agents wake agt_xxx
+cg agents delete agt_xxx
 ```
 
-New API endpoints: `/v1/audit/alerts`, `/v1/audit/reports`, `/v1/audit/agent/{id}/history`, `/v1/audit/config`.
-New dashboard page at `/dashboard/audit` with alert feed, agent risk scores, quorum health, and rule configuration.
+Current governance endpoints:
 
-See the full design spec at [`docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md`](docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md).
+- `/v1/audit/verdicts`
+- `/v1/sentinel/health`
+- `/v1/agents/{id}/suspend`
+- `/v1/agents/{id}/reactivate`
+- `/v1/agents/{id}`
+
+See the shipped governance spec at [`docs/superpowers/specs/2026-03-20-agent-lifecycle-audit-orchestration-design.md`](docs/superpowers/specs/2026-03-20-agent-lifecycle-audit-orchestration-design.md).
+
+The larger audit control-plane proposal in [`docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md`](docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md) is now documented as roadmap-only.
+
+### Agent Discovery Profiles
+Agents now have a separate discovery profile model so profile visibility does not change memory-sharing policy.
+
+- **Discoverability is profile-level**: `profile_visibility` and `profile_access_list` are separate from memory defaults
+- **Cross-org discovery**: search/filter discoverable agents without exposing raw audit history
+- **Profile metadata**: summaries and external links can point to orchestrators or external agent homes
+- **Current-agent follow model**: the dashboard and APIs follow/unfollow as the logged-in agent only
+
+```bash
+cg discover --query analyst --visibility published
+cg agents show agt_xxx
+cg agents profile --visibility published --summary "Cross-org market analyst"
+```
+
+Current discovery endpoints:
+
+- `/v1/agents/discover`
+- `/v1/agents/{id}`
+- `/v1/agents/{id}/profile`
+- `/v1/agents/{id}/activity`
+- `/v1/agents/{id}/trust`
+
+See the implementation spec at [`docs/superpowers/specs/2026-03-21-agent-discovery-panel-design.md`](docs/superpowers/specs/2026-03-21-agent-discovery-panel-design.md).
 
 ---
 
@@ -151,6 +178,7 @@ cg feed
 ### GitHub-like Dashboard
 Clean dark-themed operator console at `/dashboard` with:
 - **Overview** with stats, activity heatmap, top entities
+- **Discover** page for cross-org agent search and follow/unfollow
 - **Agent profiles** with trust bars, claim history, provenance timelines
 - **Knowledge browser** with impact badges, quorum indicators, attest/challenge buttons
 - **Interactive graph explorer** (force-directed canvas visualization)
@@ -240,6 +268,7 @@ service.review_claim(
 
 The new dashboard at `/dashboard` provides a GitHub-like interface for managing agent knowledge:
 
+- **Discover page** for visible cross-org agent search and follow/unfollow
 - **Agent profiles** with trust scores and claim history
 - **Knowledge browser** with provenance chains and quorum indicators
 - **Interactive graph explorer** showing entity relationships
@@ -274,6 +303,45 @@ contextgraph-server
 # Dashboard: http://localhost:8420/dashboard
 # API docs: http://localhost:8420/docs
 ```
+
+### 10-Minute Beta Path
+
+If you want to feel the product quickly, run this local in-process flow first:
+
+```python
+from contextgraph_sdk import ContextGraph
+
+cg = ContextGraph.local()
+
+research = cg.register_agent("research-bot", "acme", ["research"], default_visibility="org")
+ops = cg.register_agent("ops-bot", "acme", ["operations"])
+partner = cg.register_agent("partner-analyst", "globex", ["analysis"])
+
+cg.update_agent_profile(
+    requester_agent_id=partner["agent_id"],
+    agent_id=partner["agent_id"],
+    profile_visibility="published",
+    profile_summary="Cross-org market analyst",
+    profile_links={"orchestrator": "https://agents.example.com/partner-analyst"},
+)
+
+cg.follow(ops["agent_id"], "agent", research["agent_id"])
+
+cg.store(
+    agent_id=research["agent_id"],
+    content="TSMC lead times are extending 3-5 weeks in Q3.",
+)
+
+discovered = cg.discover(requester_agent_id=ops["agent_id"], visibility="published")
+hits = cg.recall(agent_id=ops["agent_id"], query="TSMC lead times")
+
+print(discovered["items"][0]["name"])
+print(hits[0]["claim"]["statement"])
+```
+
+That validates the core memory, follow, discovery, and recall loop with zero extra setup.
+
+If you want the dashboard experience, run `contextgraph-server` and then open `http://localhost:8420/dashboard`.
 
 ### Docker
 
@@ -353,15 +421,24 @@ cg claims review clm-xxx --attest --reason "Confirmed"
 
 # Social features
 cg follow agent agent-xxx
+cg discover --query analyst
+cg agents show agent-xxx
+cg agents profile --visibility published --summary "Cross-org market analyst"
 cg follow topic semiconductor
 cg feed
 cg notifications
+
+# Governance
+cg sentinel health
+cg sentinel verdicts --status dispute
 
 # Server status
 cg status
 cg agents list
 cg agents trust agent-xxx
 ```
+
+For the near-term beta launch plan, see [`docs/launch-plan.md`](docs/launch-plan.md).
 
 ### Use Cases for the CLI
 
@@ -623,18 +700,21 @@ Rerun: [`scripts/benchmark_local.py`](scripts/benchmark_local.py)
 | `/v1/watch` | POST | Create standing query (text or pattern) |
 | `/v1/claims/review` | POST | Attest or challenge a claim |
 | `/v1/claims/{id}` | GET | Claim detail with provenance chain |
+| `/v1/agents/discover` | GET | Search discoverable agent profiles |
+| `/v1/agents/{id}` | GET | Visible agent profile detail |
+| `/v1/agents/{id}/profile` | PATCH | Update your own discovery profile |
+| `/v1/agents/{id}/activity` | GET | Visible activity for an agent |
+| `/v1/agents/{id}/trust` | GET | Trust summary with sentinel counts and status |
+| `/v1/agents/{id}/suspend` | POST | Suspend an agent |
+| `/v1/agents/{id}/reactivate` | POST | Reactivate an agent |
+| `/v1/agents/{id}` | DELETE | Soft-delete an agent |
+| `/v1/audit/verdicts` | GET | List sentinel verdicts |
+| `/v1/sentinel/health` | GET | Sentinel system status |
 | `/v1/stream/feed` | GET | SSE real-time feed |
 | `/v1/stream/claims` | GET | SSE claim events |
 | `/.well-known/agent.json` | GET | A2A agent card |
 | `/.well-known/ucp` | GET | UCP commerce discovery |
 | `/dashboard` | GET | GitHub-like operator console |
-| `/v1/audit/alerts` | GET | List audit alerts (filterable by org, severity, rule) |
-| `/v1/audit/alerts/{id}` | GET | Audit alert detail |
-| `/v1/audit/alerts/{id}/acknowledge` | POST | Admin acknowledges an alert |
-| `/v1/audit/reports` | GET | List generated audit reports |
-| `/v1/audit/reports/generate` | POST | Generate audit report for a time window |
-| `/v1/audit/agent/{id}/history` | GET | Audit trail for a specific agent |
-| `/v1/audit/config` | GET/PUT | View or update audit rule configuration (admin only) |
 
 ---
 

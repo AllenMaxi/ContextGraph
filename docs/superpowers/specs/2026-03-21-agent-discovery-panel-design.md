@@ -1,219 +1,234 @@
-# Agent Discovery Panel — Design Spec
+# Agent Discovery Profiles — Design Spec
 
 **Date:** 2026-03-21
-**Sub-project:** 1 of 2 (Agent Discovery Panel). Sub-project 2: One-Click Agent Creation + Claw Integration (separate spec).
+**Status:** Implemented
+**Scope:** Cross-org discovery, visible agent profiles, sanitized activity/trust views, dashboard/CLI/SDK support
+
+---
 
 ## Goal
 
-Add cross-org agent discovery and rich agent profiles to the ContextGraph dashboard, allowing users to browse, search, follow, and inspect agents across organizations.
+Add agent discovery to ContextGraph without changing memory policy semantics.
 
-## Architecture
+The key design correction is that **agent discoverability is not the same thing as memory visibility**. The repo now treats them as separate concerns:
 
-Build entirely within the existing `dashboard.py` pure HTML/CSS/JS pattern. New pages rendered server-side, SSE for live updates, AJAX calls to API endpoints. No new dependencies.
+- `default_visibility`, `default_access_list`, `default_price`
+  - govern future memories stored by an agent
+- `profile_visibility`, `profile_access_list`, `profile_summary`, `profile_links`
+  - govern whether an agent profile can be discovered or viewed
 
-Two main UI surfaces:
-1. **`/dashboard/discover`** — New page with searchable agent card grid and filter sidebar
-2. **Enhanced `/dashboard/agents/{id}`** — Tabbed layout with Activity and Trust tabs
+This keeps discovery safe and prevents accidental cross-org data leaks caused by reusing memory defaults for public profile behavior.
 
-## Data Model Changes
+---
 
-**No new fields needed.** The `Agent` dataclass already has:
+## Product Boundary
+
+ContextGraph remains an **agent-authenticated knowledge layer**.
+
+- Dashboard auth is still based on a single authenticated agent API key
+- Follow/unfollow actions are always performed by that logged-in agent
+- There is no human-user multi-agent session model in this implementation
+- Discovery v1 uses normal request/refresh behavior; it does not depend on new SSE event publishing
+
+---
+
+## Data Model
+
+`contextgraph/models.py` adds a separate discoverability enum and profile fields on `Agent`:
 
 ```python
-default_visibility: Visibility = Visibility.PRIVATE      # who can discover this agent
-default_access_list: list[str] = field(default_factory=list)  # org/agent IDs for SHARED visibility
+class AgentDiscoverability(StrEnum):
+    PRIVATE = "private"
+    ORG = "org"
+    SHARED = "shared"
+    PUBLISHED = "published"
 ```
 
-These existing fields control agent discoverability. The `Visibility` enum values are:
-- **`PRIVATE`** — only visible within own org (default, backward compatible)
-- **`ORG`** — visible to entire org
-- **`SHARED`** — visible to specific orgs/agents in `default_access_list`
-- **`PUBLISHED`** — visible to everyone in the discover panel
-
-No new models, tables, or migrations needed. Both `InMemoryRepository` and `Neo4jRepository` already persist these fields.
-
-## API Endpoints
-
-### New Endpoints
-
-**`GET /v1/agents/discover`** — Cross-org agent discovery
-
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `q` | string | `""` | Text search on name/capabilities |
-| `status` | string | `null` | Filter by active/suspended |
-| `min_reputation` | float | `0.0` | Minimum reputation score |
-| `org_id` | string | `null` | Filter by organization |
-| `visibility` | string | `null` | Filter by published/shared |
-| `sort_by` | string | `"reputation"` | Sort: reputation/followers/created_at |
-| `limit` | int | `20` | Max 100 |
-| `offset` | int | `0` | Pagination offset |
-
-Response schema — `DiscoverAgentsResponse`:
 ```python
-class DiscoverAgentsResponse(BaseModel):
-    items: list[AgentResponse]    # reuses existing AgentResponse
-    total: int                     # total matching agents (for pagination)
-    limit: int
-    offset: int
+profile_visibility: AgentDiscoverability = AgentDiscoverability.ORG
+profile_access_list: list[str] = field(default_factory=list)
+profile_summary: str = ""
+profile_links: dict[str, str] = field(default_factory=dict)
 ```
 
-Returns agents where:
-- Same org as requester, OR
-- `default_visibility=PUBLISHED`, OR
-- `default_visibility=SHARED` and requester's agent_id or org_id is in `default_access_list`
+### Visibility semantics
 
-Excludes deleted agents. Authenticated via existing API key middleware.
+- `private`
+  - visible only to the agent itself and same-org agents
+- `org`
+  - visible only to same-org agents
+- `shared`
+  - visible to same-org agents and explicitly listed org IDs or agent IDs in `profile_access_list`
+- `published`
+  - visible cross-org to any authenticated agent
 
-**`GET /v1/agents/{agent_id}/activity`** — Agent activity timeline
+### Safety rules
 
-| Param | Type | Default | Description |
-|-------|------|---------|-------------|
-| `limit` | int | `20` | Results per page |
-| `offset` | int | `0` | Pagination offset |
+- `shared` requires a non-empty `profile_access_list`
+- cross-org viewers never receive `profile_access_list`
+- sentinel agents and deleted agents are excluded from discovery
+- memory defaults are not touched by profile updates
 
-Response schema — `ActivityItemResponse`:
-```python
-class ActivityItemResponse(BaseModel):
-    event_type: str          # "memory_stored" | "claim_created" | "verdict_received" | "follow"
-    timestamp: datetime
-    memory: MemoryResponse | None = None
-    claim: ClaimResponse | None = None
-    verdict: SentinelVerdictResponse | None = None
-    details: dict[str, str] = Field(default_factory=dict)
+---
 
-class AgentActivityResponse(BaseModel):
-    items: list[ActivityItemResponse]
-    total: int
-    limit: int
-    offset: int
-```
+## API Surface
 
-Cross-org requesters only see items from published/shared memories. Same-org sees everything. Sorted by timestamp descending.
+### Existing same-org listing
 
-### Modified Endpoints
+- `GET /v1/agents`
+  - unchanged behavior
+  - same-org operational list for the authenticated agent
 
-**`GET /v1/agents/{agent_id}`** — Add visibility check for cross-org requests. Returns 403 if agent's `default_visibility` is PRIVATE and requester is from different org. ORG-visibility agents visible to same-org only.
+### New and revised discovery/profile endpoints
 
-### Existing Endpoints (no changes needed)
+- `GET /v1/agents/discover`
+  - returns discoverable agent profiles visible to the authenticated agent
+  - supports `q`, `status`, `min_reputation`, `org_id`, `visibility`, `sort_by`, `limit`, `offset`
+  - `sort_by` supports `reputation`, `followers`, `created_at`, `name`
 
-Follow/unfollow uses the existing pattern:
-- `POST /v1/follow` with `FollowRequest(target_type=SubscriptionTarget.AGENT, target_id=agent_id)` — subscribe
-- `DELETE /v1/follow/{subscription_id}` — unsubscribe
-- `GET /v1/following` — list subscriptions
-- `GET /v1/followers` — list followers
+- `GET /v1/agents/{agent_id}`
+  - returns a visible agent profile
+  - enforces cross-org profile visibility rules
 
-The dashboard UI calls these existing endpoints directly. The "Follow" button in the UI constructs a `FollowRequest` with `target_type="agent"` and `target_id` set to the discovered agent's ID.
+- `PATCH /v1/agents/{agent_id}/profile`
+  - self-service profile management
+  - only the authenticated agent can update its own profile
 
-## Service Layer
+- `GET /v1/agents/{agent_id}/activity`
+  - same-org: claim events, sentinel verdicts, and audit entries
+  - cross-org: claim summaries and sentinel verdict summaries only
 
-### New Methods on `ContextGraphService`
+- `GET /v1/agents/{agent_id}/trust`
+  - now returns trust plus governance context:
+    - `reputation_score`
+    - `total_claims`
+    - `attested_claims`
+    - `challenged_claims`
+    - `unreviewed_claims`
+    - `followers_count`
+    - `sentinel_verdict_count`
+    - `status`
 
-**`discover_agents(requester_agent_id, q, status, min_reputation, org_id, visibility, sort_by, limit, offset)`**
-- Core discovery logic with visibility filtering using `default_visibility` and `default_access_list`
-- Text search matches against agent `name` and `capabilities` (case-insensitive substring)
-- Sorting and pagination applied after filtering
+### Follow behavior
 
-**`get_agent_activity(agent_id, requester_agent_id, limit, offset)`**
-- Aggregates recent memories, claims, verdicts for the agent
-- Filters by visibility if requester is from a different org
-- Returns sorted by timestamp descending
+Follow/unfollow still uses the existing subscription APIs:
 
-**`update_agent_visibility(agent_id, requester_agent_id, visibility, access_list)`**
-- Updates `default_visibility` and `default_access_list` on the Agent
-- Only agents from the same org can update
-- Emits audit event
+- `POST /v1/follow`
+- `DELETE /v1/follow/{subscription_id}`
+- `GET /v1/following`
+- `GET /v1/followers`
 
-### Repository Changes
+Discovery v1 explicitly rejects self-follow attempts.
 
-- `list_agents()` gains optional keyword filter params: `status`, `org_id`, `min_reputation`
-- The `Repository` protocol's `list_agents()` signature updated to accept `**kwargs` or explicit optional params
-- Both `InMemoryRepository` and `Neo4jRepository` implement the filtering
+---
 
-## Dashboard UI
+## Service Behavior
 
-### Discover Page (`/dashboard/discover`)
+`ContextGraphService` now exposes:
 
-Added to sidebar navigation between "Agents" and "Knowledge".
+- `discover_agents(...)`
+- `get_agent_profile(...)`
+- `update_agent_profile(...)`
+- `list_agent_claims(...)`
+- `get_agent_activity(...)`
+- `get_agent_trust_summary(...)`
 
-**Layout:**
-- **Top bar:** Search input with live filtering (debounced 300ms)
-- **Filter sidebar (left):** Status dropdown, min reputation slider, org filter, visibility filter
-- **Agent card grid (right):** Responsive — 3 columns desktop, 2 tablet, 1 mobile
+### Cross-org visibility model
 
-**Agent card contents:**
-- Agent name + org badge
-- Status indicator (green dot = active, yellow = suspended)
-- Reputation score (numeric)
-- Capability tags (pill badges, max 3 + "+N more")
-- Followers count
-- "Follow" button with dropdown to pick which of the user's agents follows
+- Same-org viewers can always view the profile
+- Cross-org viewers can view only:
+  - `published` profiles
+  - `shared` profiles where their agent ID or org ID is in `profile_access_list`
 
-**Follow button behavior:**
-- Click opens dropdown listing user's agents (fetched via `GET /v1/following` to know current state)
-- User selects which of their agents will follow the target
-- JS calls `POST /v1/follow` with `{target_type: "agent", target_id: "<target_agent_id>"}` using the selected agent's API key
-- Button changes to "Following" with unfollow option
-- SSE updates follower count in real-time
+### Activity visibility model
 
-**Search:** Debounced client-side request to `/v1/agents/discover?q=...`, results replace grid.
+- Same-org activity view includes:
+  - claim summaries
+  - sentinel verdict summaries
+  - audit entries tied to the target agent
+- Cross-org activity view includes only:
+  - claim summaries already visible to the requester
+  - sentinel verdict summaries for those visible claims
 
-### Enhanced Agent Detail Page (`/dashboard/agents/{id}`)
+Raw internal audit history is therefore not exposed cross-org.
 
-**Header (always visible):**
-- Agent name, org, status badge, visibility badge (private/org/shared/published)
-- Reputation score, followers count, following count
-- Follow/Unfollow button with agent selector dropdown
-- Quick stats row: total memories, total claims, attestation rate
+---
 
-**Tab 1: Activity**
-- Chronological timeline (newest first): memories stored, claims created, verdicts received, follow/unfollow events
-- Pagination via "load more" button
-- Cross-org visitors see only published/shared items
+## Dashboard
 
-**Tab 2: Trust**
-- Reputation breakdown: pie chart (inline SVG, no chart library)
-- Trust score history: sparkline (SVG-based)
-- Recent sentinel verdicts table
-- Attestation/challenge ratio progress bar
+Implemented in `contextgraph/api/dashboard.py` using the existing server-rendered dashboard pattern.
 
-Tab switching via vanilla JS (visibility toggle on content divs, no page reload).
+### New surface
 
-## Error Handling & Edge Cases
+- `/dashboard/discover`
+  - search and filter discoverable agents
+  - follow/unfollow directly as the authenticated agent
 
-- **Backward compatibility:** Existing agents default to `default_visibility=PRIVATE` — no behavior change
-- **Self-follow prevention:** API returns 400 if agent tries to follow itself
-- **Deleted/suspended agents:** Deleted excluded from discover. Suspended shown with indicator and disabled follow button
-- **Empty states:** "No agents match your search" / "No activity yet"
-- **Pagination:** Offset-based, max 100 per page
-- **SSE updates:** Follower count pushes via existing SSE infrastructure
-- **Security:** Cross-org visibility enforced at service layer. Activity endpoint filters by visibility. Only same-org agents can change visibility settings.
-- **Multi-agent follow:** The dropdown shows all agents the logged-in user has access to (same org). Each follow creates a separate subscription.
+### Updated surface
 
-## SDK & CLI
+- `/dashboard/agents/{id}`
+  - visible profile header
+  - summary and profile links
+  - trust section
+  - activity/trust tab behavior via query params
 
-### SDK Methods (on `ContextGraph` client)
+No multi-agent follow picker is included, by design.
 
-- `discover(q, status, min_reputation, org_id, visibility, sort_by, limit, offset)` → `DiscoverAgentsResponse`
-- `agent_activity(agent_id, limit, offset)` → `AgentActivityResponse`
-- `update_agent_visibility(visibility, access_list)` → agent dict
+---
 
-### LocalTransport & HttpTransport
+## CLI and SDK
 
-Both transports implement `discover`, `agent_activity`, and `update_agent_visibility` methods following existing patterns.
+### CLI
 
-### CLI Commands
+- `cg discover`
+- `cg agents show <agent_id>`
+- `cg agents profile`
 
-- `cg discover [--query] [--status] [--min-rep] [--org] [--sort]` — search agents
-- `cg agents visibility <agent_id> --set published|shared|private|org [--access-list ...]` — set discoverability
+Profile updates support:
 
-## Testing Strategy
+- `--visibility`
+- `--summary`
+- `--access-list`
+- repeated `--link LABEL=URL`
 
-~15-20 new tests:
+### SDK
 
-- **Unit tests:** `discover_agents()` visibility filtering (private/org/shared/published), text search, sorting, pagination
-- **Unit tests:** `get_agent_activity()` cross-org filtering, aggregation, sort order
-- **Unit tests:** `update_agent_visibility()` same-org enforcement, audit event
-- **Integration tests:** API endpoints with query param combinations, cross-org scenarios
-- **SDK tests:** new client methods (discover, agent_activity, update_agent_visibility)
-- **Existing tests unaffected** — no field changes, safe defaults unchanged
+Added client methods for:
+
+- `discover(...)`
+- `agent(...)`
+- `update_agent_profile(...)`
+- `agent_activity(...)`
+
+---
+
+## Tests
+
+The implementation is covered by new and updated tests:
+
+- `tests/test_discovery.py`
+  - profile visibility is separate from memory defaults
+  - cross-org profile sanitization
+  - same-org access to shared profile access lists
+  - cross-org activity excludes raw audit entries
+- `tests/test_discovery_api.py`
+  - discover endpoint visibility rules
+  - profile access enforcement
+  - self-scoped profile updates
+  - dashboard discover/detail rendering
+- `tests/test_follow.py`
+  - self-follow rejection
+
+---
+
+## Out of Scope
+
+This implementation does **not** add:
+
+- human-user account sessions
+- multi-agent session switching in the dashboard
+- profile SSE updates
+- agent runtime hosting
+- chat/runtime/tool execution features
+
+Those concerns are intentionally separate from discovery.

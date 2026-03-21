@@ -6,6 +6,7 @@ from typing import Any
 
 from ..models import (
     Agent,
+    AgentDiscoverability,
     AuditEntry,
     Claim,
     DeliveryMode,
@@ -469,6 +470,14 @@ class Neo4jRepository:
             default_visibility=Visibility(props.get("default_visibility", Visibility.PRIVATE.value)),
             default_access_list=list(props.get("default_access_list", [])),
             default_price=float(props.get("default_price", 0.0)),
+            profile_visibility=AgentDiscoverability(props.get("profile_visibility", AgentDiscoverability.ORG.value)),
+            profile_access_list=list(props.get("profile_access_list", [])),
+            profile_summary=props.get("profile_summary", ""),
+            profile_links=dict(props.get("profile_links", {})),
+            last_activity_at=self._parse_dt(props.get("last_activity_at")),
+            suspension_reason=props.get("suspension_reason"),
+            suspended_at=self._parse_dt(props.get("suspended_at")),
+            role=props.get("role", "agent"),
         )
 
     def _memory_from_node(self, node: Any) -> Memory:

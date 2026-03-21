@@ -18,6 +18,10 @@ class FollowServiceTest(unittest.TestCase):
         self.assertEqual(sub.follower_agent_id, self.alice.agent_id)
         self.assertEqual(sub.target_id, self.bob.agent_id)
 
+    def test_follow_self_raises_value_error(self) -> None:
+        with self.assertRaises(ValueError):
+            self.service.follow(self.alice.agent_id, "agent", self.alice.agent_id)
+
     def test_follow_topic(self) -> None:
         sub = self.service.follow(self.alice.agent_id, "topic", "semiconductor")
         self.assertEqual(sub.target_type.value, "topic")

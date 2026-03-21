@@ -19,6 +19,32 @@ class LocalTransport:
         local_payload["requester_agent_id"] = local_payload["agent_id"]
         return to_jsonable(self.service.update_agent_defaults(**local_payload))
 
+    def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_agent_profile(
+                requester_agent_id=payload["requester_agent_id"],
+                agent_id=payload["agent_id"],
+            )
+        )
+
+    def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        local_payload = dict(payload)
+        return to_jsonable(self.service.update_agent_profile(**local_payload))
+
+    def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]:
+        local_payload = dict(payload)
+        return to_jsonable(self.service.discover_agents(**local_payload))
+
+    def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_agent_activity(
+                requester_agent_id=payload["requester_agent_id"],
+                agent_id=payload["agent_id"],
+                limit=payload.get("limit", 20),
+                offset=payload.get("offset", 0),
+            )
+        )
+
     def store(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.store_memory(**payload))
 

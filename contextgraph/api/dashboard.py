@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from html import escape
 from typing import Any
+from urllib.parse import urlencode
 
 from ..errors import AuthenticationError
 from ..models import ValidationStatus, Visibility
@@ -40,21 +41,23 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
         agent = _get_agent(request)
         if agent is None:
             return HTMLResponse(_render_login())
-        return HTMLResponse(_render_app(graph, agent, page="overview"))
+        return HTMLResponse(_render_app(graph, agent, page="overview", params=dict(request.query_params)))
 
     @app.get("/dashboard/{page}", response_class=HTMLResponse)
     async def dashboard_page(page: str, request: Request) -> Any:
         agent = _get_agent(request)
         if agent is None:
             return HTMLResponse(_render_login())
-        return HTMLResponse(_render_app(graph, agent, page=page))
+        return HTMLResponse(_render_app(graph, agent, page=page, params=dict(request.query_params)))
 
     @app.get("/dashboard/agents/{agent_id}", response_class=HTMLResponse)
     async def dashboard_agent_detail(agent_id: str, request: Request) -> Any:
         agent = _get_agent(request)
         if agent is None:
             return HTMLResponse(_render_login())
-        return HTMLResponse(_render_app(graph, agent, page="agent-detail", detail_id=agent_id))
+        return HTMLResponse(
+            _render_app(graph, agent, page="agent-detail", detail_id=agent_id, params=dict(request.query_params))
+        )
 
     @app.get("/dashboard/claims/{claim_id}", response_class=HTMLResponse)
     async def dashboard_claim_detail(claim_id: str, request: Request) -> Any:
@@ -93,6 +96,30 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
         agent = graph.authenticate_agent(api_key)
         graph.review_claim(reviewer_agent_id=agent.agent_id, claim_id=claim_id, decision=decision, reason=reason)
         return RedirectResponse(url="/dashboard/knowledge", status_code=303)
+
+    @app.post("/dashboard/follow")
+    async def dashboard_follow(request: Request) -> Any:
+        agent = _get_agent(request)
+        if agent is None:
+            return RedirectResponse(url="/dashboard", status_code=303)
+        form = await request.form()
+        target_id = str(form.get("target_id", "")).strip()
+        next_url = str(form.get("next", "/dashboard/discover"))
+        if target_id:
+            graph.follow(agent.agent_id, "agent", target_id)
+        return RedirectResponse(url=next_url, status_code=303)
+
+    @app.post("/dashboard/unfollow")
+    async def dashboard_unfollow(request: Request) -> Any:
+        agent = _get_agent(request)
+        if agent is None:
+            return RedirectResponse(url="/dashboard", status_code=303)
+        form = await request.form()
+        subscription_id = str(form.get("subscription_id", "")).strip()
+        next_url = str(form.get("next", "/dashboard/discover"))
+        if subscription_id:
+            graph.unfollow(agent.agent_id, subscription_id)
+        return RedirectResponse(url=next_url, status_code=303)
 
     # ------------------------------------------------------------------
     # API endpoints for dashboard JS
@@ -531,10 +558,17 @@ def _render_login(error: str = "") -> str:
 </html>"""
 
 
-def _render_app(graph: ContextGraphService, agent: Any, page: str = "overview", detail_id: str = "") -> str:
+def _render_app(
+    graph: ContextGraphService,
+    agent: Any,
+    page: str = "overview",
+    detail_id: str = "",
+    params: dict[str, str] | None = None,
+) -> str:
     nav_items = [
         ("overview", "&#x1F4CA;", "Overview"),
         ("agents", "&#x1F916;", "Agents"),
+        ("discover", "&#x1F50E;", "Discover"),
         ("knowledge", "&#x1F9E0;", "Knowledge"),
         ("feed", "&#x1F4E1;", "Feed"),
         ("graph", "&#x1F578;&#xFE0F;", "Graph Explorer"),
@@ -547,7 +581,7 @@ def _render_app(graph: ContextGraphService, agent: Any, page: str = "overview", 
             f'<a href="/dashboard/{key}" class="nav-item {active}"><span class="nav-icon">{icon}</span>{label}</a>\n'
         )
 
-    page_html = _render_page(graph, agent, page, detail_id)
+    page_html = _render_page(graph, agent, page, detail_id, params or {})
 
     return f"""\
 <!DOCTYPE html>
@@ -588,13 +622,15 @@ def _render_app(graph: ContextGraphService, agent: Any, page: str = "overview", 
 </html>"""
 
 
-def _render_page(graph: ContextGraphService, agent: Any, page: str, detail_id: str) -> str:
+def _render_page(graph: ContextGraphService, agent: Any, page: str, detail_id: str, params: dict[str, str]) -> str:
     if page == "overview":
         return _render_overview(graph, agent)
     if page == "agents":
         return _render_agents(graph, agent)
+    if page == "discover":
+        return _render_discover(graph, agent, params)
     if page == "agent-detail":
-        return _render_agent_detail(graph, agent, detail_id)
+        return _render_agent_detail(graph, agent, detail_id, params)
     if page == "knowledge":
         return _render_knowledge(graph, agent)
     if page == "claim-detail":
@@ -647,7 +683,7 @@ def _render_overview(graph: ContextGraphService, agent: Any) -> str:
     return f"""\
 <div class="page-header">
     <h2>Overview</h2>
-    <span style="font-size:12px;color:var(--text-muted)">v0.3.0</span>
+    <span style="font-size:12px;color:var(--text-muted)">v0.4.0</span>
 </div>
 <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Agents</div><div class="stat-value blue">{snapshot.get("agents", 0)}</div></div>
@@ -702,19 +738,169 @@ def _render_agents(graph: ContextGraphService, agent: Any) -> str:
 <div class="item-list">{cards_html or '<div style="color:var(--text-muted)">No agents registered yet</div>'}</div>"""
 
 
-def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str) -> str:
+def _render_discover(graph: ContextGraphService, agent: Any, params: dict[str, str]) -> str:
+    query = params.get("q", "")
+    status = params.get("status") or None
+    visibility = params.get("visibility") or None
+    org_id = params.get("org_id") or None
+    sort_by = params.get("sort_by", "reputation")
     try:
-        target = graph.get_agent(agent_id)
-    except Exception:
-        return '<div style="color:var(--accent-red)">Agent not found</div>'
+        min_reputation = float(params.get("min_reputation", "0") or 0)
+    except ValueError:
+        min_reputation = 0.0
 
-    claims = [c for c in graph.repository.list_claims() if c.source_agent_id == agent_id]
-    attested = sum(1 for c in claims if c.validation_status == ValidationStatus.ATTESTED)
-    challenged = sum(1 for c in claims if c.validation_status == ValidationStatus.CHALLENGED)
-    trust_pct = int(target.reputation_score * 100)
+    result = graph.discover_agents(
+        requester_agent_id=agent.agent_id,
+        q=query,
+        status=status,
+        min_reputation=min_reputation,
+        org_id=org_id,
+        visibility=visibility,
+        sort_by=sort_by,
+        limit=50,
+        offset=0,
+    )
+    following = {
+        sub.target_id: sub
+        for sub in graph.list_following(agent.agent_id)
+        if getattr(sub.target_type, "value", str(sub.target_type)) == "agent"
+    }
+
+    cards_html = ""
+    for item in result["items"]:
+        next_url = "/dashboard/discover?" + urlencode(
+            {
+                "q": query,
+                "status": status or "",
+                "visibility": visibility or "",
+                "org_id": org_id or "",
+                "min_reputation": min_reputation,
+                "sort_by": sort_by,
+            }
+        )
+        item_agent_id = item["agent_id"]
+        is_self = item_agent_id == agent.agent_id
+        sub = following.get(item_agent_id)
+        action_html = ""
+        if is_self:
+            action_html = '<span class="badge badge-blue">You</span>'
+        elif sub is not None:
+            action_html = f"""\
+<form method="POST" action="/dashboard/unfollow" style="display:inline">
+    <input type="hidden" name="subscription_id" value="{sub.subscription_id}">
+    <input type="hidden" name="next" value="{next_url}">
+    <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:5px 10px">Following</button>
+</form>"""
+        else:
+            action_html = f"""\
+<form method="POST" action="/dashboard/follow" style="display:inline">
+    <input type="hidden" name="target_id" value="{item_agent_id}">
+    <input type="hidden" name="next" value="{next_url}">
+    <button type="submit" class="btn btn-green" style="font-size:12px;padding:5px 10px">Follow</button>
+</form>"""
+
+        summary_html = (
+            f'<div style="margin-top:8px;font-size:13px;color:var(--text-secondary)">{escape(item["profile_summary"])}</div>'
+            if item.get("profile_summary")
+            else ""
+        )
+        caps_html = ""
+        for capability in item.get("capabilities", [])[:4]:
+            caps_html += f'<span class="entity-tag">{escape(capability)}</span>'
+        cards_html += f"""\
+<div class="item-card" style="margin-bottom:10px">
+    <div class="item-header">
+        <div>
+            <a href="/dashboard/agents/{item_agent_id}" class="item-title">{escape(item['name'])}</a>
+            <div style="font-size:12px;color:var(--text-secondary)">
+                {escape(item['org_id'])} &middot; {escape(str(item['profile_visibility']))}
+            </div>
+        </div>
+        {action_html}
+    </div>
+    <div class="item-meta">
+        <span>Status: <b>{escape(item['status'])}</b></span>
+        <span>Trust: <b>{item['reputation_score']:.2f}</b></span>
+        <span>Followers: <b>{item['followers_count']}</b></span>
+    </div>
+    {summary_html}
+    <div style="margin-top:8px">{caps_html}</div>
+</div>"""
+
+    return f"""\
+<div class="page-header">
+    <h2>Discover</h2>
+    <span style="font-size:13px;color:var(--text-secondary)">{result['total']} visible agents</span>
+</div>
+<form method="GET" action="/dashboard/discover" class="item-card" style="margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:10px">
+        <input type="text" name="q" value="{escape(query)}" placeholder="Search agents, orgs, capabilities, or summary">
+        <select name="status">
+            {_option_html(status, "", "Any status")}
+            {_option_html(status, "active", "Active")}
+            {_option_html(status, "suspended", "Suspended")}
+        </select>
+        <select name="visibility">
+            {_option_html(visibility, "", "Any profile")}
+            {_option_html(visibility, "published", "Published")}
+            {_option_html(visibility, "shared", "Shared")}
+            {_option_html(visibility, "org", "Org")}
+            {_option_html(visibility, "private", "Private")}
+        </select>
+        <input type="text" name="org_id" value="{escape(org_id or '')}" placeholder="Org filter">
+        <select name="sort_by">
+            {_option_html(sort_by, "reputation", "Sort: Reputation")}
+            {_option_html(sort_by, "followers", "Sort: Followers")}
+            {_option_html(sort_by, "created_at", "Sort: Newest")}
+            {_option_html(sort_by, "name", "Sort: Name")}
+        </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <label style="font-size:12px;color:var(--text-secondary)">Min reputation</label>
+        <input type="number" step="0.1" min="0" max="1" name="min_reputation" value="{min_reputation}">
+        <button type="submit" class="btn btn-blue">Filter</button>
+    </div>
+</form>
+<div class="item-list">{cards_html or '<div style="color:var(--text-muted)">No agents match these filters</div>'}</div>"""
+
+
+def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str, params: dict[str, str]) -> str:
+    try:
+        target = graph.get_agent_profile(viewer.agent_id, agent_id)
+    except Exception:
+        return '<div style="color:var(--accent-red)">Agent not visible or not found</div>'
+
+    trust = graph.get_agent_trust_summary(viewer.agent_id, agent_id)
+    claims = graph.list_agent_claims(viewer.agent_id, agent_id, limit=20)
+    activity = graph.get_agent_activity(viewer.agent_id, agent_id, limit=20, offset=0)
+    following = {
+        sub.target_id: sub
+        for sub in graph.list_following(viewer.agent_id)
+        if getattr(sub.target_type, "value", str(sub.target_type)) == "agent"
+    }
+    active_tab = params.get("tab", "activity")
+    trust_pct = int(target["reputation_score"] * 100)
+    is_self = viewer.agent_id == agent_id
+    follow_html = ""
+    if is_self:
+        follow_html = '<span class="badge badge-blue">Your agent</span>'
+    elif agent_id in following:
+        follow_html = f"""\
+<form method="POST" action="/dashboard/unfollow" style="display:inline">
+    <input type="hidden" name="subscription_id" value="{following[agent_id].subscription_id}">
+    <input type="hidden" name="next" value="/dashboard/agents/{agent_id}">
+    <button type="submit" class="btn btn-secondary">Following</button>
+</form>"""
+    else:
+        follow_html = f"""\
+<form method="POST" action="/dashboard/follow" style="display:inline">
+    <input type="hidden" name="target_id" value="{agent_id}">
+    <input type="hidden" name="next" value="/dashboard/agents/{agent_id}">
+    <button type="submit" class="btn btn-green">Follow</button>
+</form>"""
 
     claims_html = ""
-    for claim in sorted(claims, key=lambda c: c.created_at, reverse=True)[:20]:
+    for claim in claims:
         vis_badge = _visibility_badge(claim.visibility)
         status_badge = _validation_badge(claim.validation_status)
         impact_cls = f"impact-{claim.impact.value}"
@@ -730,27 +916,108 @@ def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str)
     </div>
 </a>"""
 
+    activity_html = ""
+    for item in activity["items"]:
+        title = item["event_type"].replace("_", " ")
+        claim = item.get("claim") or {}
+        verdict = item.get("verdict") or {}
+        audit = item.get("audit") or {}
+        details = item.get("details") or {}
+        detail_parts = []
+        if claim.get("statement"):
+            detail_parts.append(escape(claim["statement"][:120]))
+        if verdict.get("reason"):
+            detail_parts.append(escape(verdict["reason"]))
+        if audit.get("action"):
+            detail_parts.append(escape(audit["action"]))
+        if not detail_parts and details:
+            detail_parts.append(escape(", ".join(f"{key}={value}" for key, value in details.items())))
+        activity_html += f"""\
+<div class="item-card" style="margin-bottom:8px">
+    <div class="item-header">
+        <div class="item-title" style="text-transform:capitalize">{escape(title)}</div>
+        <span style="font-size:12px;color:var(--text-muted)">{item['timestamp'].strftime("%Y-%m-%d %H:%M")}</span>
+    </div>
+    <div style="font-size:13px;color:var(--text-secondary)">{' &middot; '.join(detail_parts) or 'No extra details'}</div>
+</div>"""
+
+    verdict_rows = ""
+    verdict_total = 0
+    for claim in claims:
+        verdicts = graph.list_verdicts_for_claim(claim.claim_id)
+        verdict_total += len(verdicts)
+        for verdict in verdicts[:3]:
+            verdict_rows += f"""\
+<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+    <span>{escape(verdict.decision.value)} &middot; {escape(verdict.reason[:80])}</span>
+    <span style="color:var(--text-muted)">{verdict.timestamp.strftime("%b %d")}</span>
+</div>"""
+
+    links_html = ""
+    for label, url in target.get("profile_links", {}).items():
+        links_html += f'<a href="{escape(url)}" target="_blank" rel="noreferrer">{escape(label)}</a> '
+
+    summary_html = (
+        f'<div style="margin:12px 0 0;font-size:14px;color:var(--text-secondary)">{escape(target["profile_summary"])}</div>'
+        if target.get("profile_summary")
+        else ""
+    )
+    tabs_html = f"""\
+<div class="tabs">
+    <a class="tab {'active' if active_tab == 'activity' else ''}" href="/dashboard/agents/{agent_id}?tab=activity">Activity</a>
+    <a class="tab {'active' if active_tab == 'trust' else ''}" href="/dashboard/agents/{agent_id}?tab=trust">Trust</a>
+</div>"""
+    tab_body = activity_html if active_tab == "activity" else f"""\
+<div class="two-col">
+    <div>
+        <div class="col-header">Trust Summary</div>
+        <div class="item-card">
+            <div class="item-meta">
+                <span>Visible claims: <b>{trust['total_claims']}</b></span>
+                <span>Attested: <b>{trust['attested_claims']}</b></span>
+                <span>Challenged: <b>{trust['challenged_claims']}</b></span>
+                <span>Verdicts: <b>{trust['sentinel_verdict_count']}</b></span>
+            </div>
+        </div>
+        <div class="col-header" style="margin-top:16px">Recent Claims</div>
+        <div class="item-list">{claims_html or '<div style="color:var(--text-muted)">No visible claims yet</div>'}</div>
+    </div>
+    <div>
+        <div class="col-header">Sentinel Verdicts</div>
+        <div class="item-card">
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">{verdict_total} verdicts on visible claims</div>
+            {verdict_rows or '<div style="color:var(--text-muted)">No verdicts yet</div>'}
+        </div>
+    </div>
+</div>"""
+
     return f"""\
 <div class="page-header">
     <h2 style="display:flex;align-items:center;gap:12px">
-        <div class="agent-avatar" style="width:40px;height:40px;font-size:16px">{escape(target.name[:2].upper())}</div>
+        <div class="agent-avatar" style="width:40px;height:40px;font-size:16px">{escape(target['name'][:2].upper())}</div>
         <div>
-            {escape(target.name)}
-            <div style="font-size:13px;color:var(--text-secondary);font-weight:400">{escape(target.org_id)} &middot; {escape(agent_id[:16])}...</div>
+            {escape(target['name'])}
+            <div style="font-size:13px;color:var(--text-secondary);font-weight:400">
+                {escape(target['org_id'])} &middot; {escape(agent_id[:16])}... &middot; {escape(str(target['profile_visibility']))}
+            </div>
         </div>
     </h2>
+    {follow_html}
 </div>
+{summary_html}
+<div style="margin-top:8px;font-size:13px">{links_html}</div>
 <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Trust Score</div>
-        <div class="trust-bar"><div class="trust-track"><div class="trust-fill" style="width:{trust_pct}%"></div></div> <b>{target.reputation_score:.2f}</b></div>
+        <div class="trust-bar"><div class="trust-track"><div class="trust-fill" style="width:{trust_pct}%"></div></div> <b>{target['reputation_score']:.2f}</b></div>
     </div>
-    <div class="stat-card"><div class="stat-label">Claims</div><div class="stat-value cyan">{len(claims)}</div></div>
-    <div class="stat-card"><div class="stat-label">Attested</div><div class="stat-value green">{attested}</div></div>
-    <div class="stat-card"><div class="stat-label">Challenged</div><div class="stat-value orange">{challenged}</div></div>
-    <div class="stat-card"><div class="stat-label">Followers</div><div class="stat-value purple">{target.followers_count}</div></div>
+    <div class="stat-card"><div class="stat-label">Visible Claims</div><div class="stat-value cyan">{trust['total_claims']}</div></div>
+    <div class="stat-card"><div class="stat-label">Attested</div><div class="stat-value green">{trust['attested_claims']}</div></div>
+    <div class="stat-card"><div class="stat-label">Challenged</div><div class="stat-value orange">{trust['challenged_claims']}</div></div>
+    <div class="stat-card"><div class="stat-label">Followers</div><div class="stat-value purple">{target['followers_count']}</div></div>
+    <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value blue">{escape(trust['status'])}</div></div>
 </div>
-<div class="col-header">Claims</div>
-<div class="item-list">{claims_html or '<div style="color:var(--text-muted)">No claims yet</div>'}</div>"""
+{tabs_html}
+{tab_body}"""
 
 
 def _render_knowledge(graph: ContextGraphService, agent: Any) -> str:
@@ -982,6 +1249,11 @@ def _render_notifications(graph: ContextGraphService, agent: Any) -> str:
 # ======================================================================
 # Helper functions
 # ======================================================================
+
+
+def _option_html(current: str | None, value: str, label: str) -> str:
+    selected = " selected" if (current or "") == value else ""
+    return f'<option value="{escape(value)}"{selected}>{escape(label)}</option>'
 
 
 def _visibility_badge(vis: Visibility) -> str:

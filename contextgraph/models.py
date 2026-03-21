@@ -13,6 +13,13 @@ class Visibility(StrEnum):
     PUBLISHED = "published"
 
 
+class AgentDiscoverability(StrEnum):
+    PRIVATE = "private"
+    ORG = "org"
+    SHARED = "shared"
+    PUBLISHED = "published"
+
+
 class ValidationStatus(StrEnum):
     # Canonical members (keep existing serialized values)
     UNREVIEWED = "unreviewed"
@@ -135,6 +142,10 @@ class Agent:
     default_visibility: Visibility = Visibility.PRIVATE
     default_access_list: list[str] = field(default_factory=list)
     default_price: float = 0.0
+    profile_visibility: AgentDiscoverability = AgentDiscoverability.ORG
+    profile_access_list: list[str] = field(default_factory=list)
+    profile_summary: str = ""
+    profile_links: dict[str, str] = field(default_factory=dict)
     last_activity_at: datetime | None = None
     suspension_reason: str | None = None
     suspended_at: datetime | None = None

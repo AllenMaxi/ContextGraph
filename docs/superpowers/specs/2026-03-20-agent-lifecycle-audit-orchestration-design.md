@@ -1,8 +1,8 @@
 # Agent Lifecycle & Audit Orchestration — Design Spec
 
 **Date:** 2026-03-20
-**Status:** Approved
-**Scope:** Agent sleep/wake lifecycle, sentinel audit pipeline, graduated claim lifecycle, full audit orchestration
+**Status:** Implemented
+**Scope:** Agent sleep/wake lifecycle, sentinel audit pipeline, graduated claim lifecycle, operator-visible governance surfaces
 
 ---
 
@@ -318,7 +318,6 @@ trust_promotion_scan_interval_hours: int = 24
 | `DELETE /v1/agents/{id}` | DELETE | Soft-delete |
 | `GET /v1/agents?status=...` | GET | Filter by status |
 | `GET /v1/audit/verdicts` | GET | List sentinel verdicts |
-| `GET /v1/audit/verdicts/{claim_id}` | GET | Verdicts for specific claim |
 | `GET /v1/sentinel/health` | GET | Sentinel system status |
 
 ---
@@ -349,7 +348,6 @@ cg agents list --status suspended
 cg sentinel health
 cg sentinel verdicts --claim clm_xxx
 cg sentinel verdicts --status dispute
-cg claims audit <claim_id>
 ```
 
 ---

@@ -2,12 +2,14 @@
 
 Use this checklist to finish the repo settings that do not live in git.
 
-Last verified: March 15, 2026
+Last verified: March 21, 2026
 
 ## Current Public Status
 
-- `Release`: ready
+- `Latest published release`: legacy
   - `v0.2.1` is published: <https://github.com/AllenMaxi/ContextGraph/releases/tag/v0.2.1>
+- `Next release target`: `v0.4.0`
+  - align packaging, docs, and release notes before promotion
 - `Social preview image`: asset ready, GitHub setting still needs manual upload
   - Use [`docs/assets/contextgraph-social-preview.png`](./assets/contextgraph-social-preview.png)
 - `Topics`: not configured yet
@@ -18,9 +20,9 @@ Last verified: March 15, 2026
 
 Use this as the GitHub repository description:
 
-`Shared memory bus for MCP-compatible agents with permissions, subscriptions, and optional payments.`
+`Governed shared memory and discovery layer for AI agents.`
 
-The current public description still uses the older "knowledge layer" framing, so it is worth updating before broad promotion.
+This wording is tighter for the current beta: memory, governance, and discovery are all real today.
 
 ## Recommended Topics
 
@@ -65,7 +67,7 @@ If you prefer GitHub CLI and are authenticated:
 
 ```bash
 gh repo edit AllenMaxi/ContextGraph \
-  --description "Shared memory bus for MCP-compatible agents with permissions, subscriptions, and optional payments." \
+  --description "Governed shared memory and discovery layer for AI agents." \
   --add-topic mcp \
   --add-topic model-context-protocol \
   --add-topic mcp-server \
@@ -114,8 +116,12 @@ Use [`docs/mcp-registry-launch.md`](./mcp-registry-launch.md) and [`registry/con
 
 ## Verification Script
 
-Run this anytime to re-check the public state:
+Run this before and after the next public release:
 
 ```bash
+# Check the currently published public state
 python3 scripts/check_public_launch.py --repo AllenMaxi/ContextGraph --release-tag v0.2.1
+
+# After publishing the next release
+python3 scripts/check_public_launch.py --repo AllenMaxi/ContextGraph --release-tag v0.4.0
 ```

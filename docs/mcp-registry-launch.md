@@ -42,7 +42,7 @@ When the remote endpoint exists, the listing can follow the registry schema with
     "url": "https://github.com/AllenMaxi/ContextGraph",
     "source": "github"
   },
-  "version": "0.2.1",
+  "version": "0.4.0",
   "websiteUrl": "https://github.com/AllenMaxi/ContextGraph",
   "remotes": [
     {

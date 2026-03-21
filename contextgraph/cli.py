@@ -312,6 +312,89 @@ def cmd_agents_me(args: argparse.Namespace, client: Any) -> None:
         print(f"  {_bold('Visibility:')}  {vis}")
 
 
+def cmd_agents_show(args: argparse.Namespace, client: Any) -> None:
+    result = client._request("GET", f"/v1/agents/{args.agent_id}")
+
+    if args.json:
+        _json_out(result)
+        return
+
+    print(_bold("Agent Profile"))
+    print(f"  {_bold('ID:')}          {CYAN}{result.get('agent_id')}{RESET}")
+    print(f"  {_bold('Name:')}        {result.get('name')}")
+    print(f"  {_bold('Org:')}         {_dim(result.get('org_id', ''))}")
+    print(f"  {_bold('Status:')}      {result.get('status', '')}")
+    print(f"  {_bold('Reputation:')}  {result.get('reputation_score', 'N/A')}")
+    print(f"  {_bold('Followers:')}   {result.get('followers_count', 0)}")
+    print(f"  {_bold('Profile:')}     {result.get('profile_visibility', '')}")
+    summary = result.get("profile_summary", "")
+    if summary:
+        print(f"  {_bold('Summary:')}     {summary}")
+    caps = result.get("capabilities", [])
+    if caps:
+        print(f"  {_bold('Capabilities:')} {', '.join(caps)}")
+    links = result.get("profile_links", {})
+    if links:
+        print(f"  {_bold('Links:')}")
+        for label, url in links.items():
+            print(f"    {label}: {url}")
+
+
+def cmd_agents_profile(args: argparse.Namespace, client: Any) -> None:
+    me = _agent_id()
+    if not any(
+        [
+            args.visibility is not None,
+            args.summary is not None,
+            args.access_list is not None,
+            args.link,
+        ]
+    ):
+        result = client._request("GET", f"/v1/agents/{me}")
+    else:
+        links: dict[str, str] | None = None
+        if args.link:
+            links = {}
+            for item in args.link:
+                if "=" not in item:
+                    _err("Each --link value must use LABEL=URL format.")
+                label, url = item.split("=", 1)
+                label = label.strip()
+                url = url.strip()
+                if not label or not url:
+                    _err("Each --link value must include both a label and a URL.")
+                links[label] = url
+        payload: dict[str, Any] = {}
+        if args.visibility is not None:
+            payload["profile_visibility"] = args.visibility
+        if args.summary is not None:
+            payload["profile_summary"] = args.summary
+        if args.access_list is not None:
+            payload["profile_access_list"] = [item.strip() for item in args.access_list.split(",") if item.strip()]
+        if links is not None:
+            payload["profile_links"] = links
+        result = client._request("PATCH", f"/v1/agents/{me}/profile", payload)
+
+    if args.json:
+        _json_out(result)
+        return
+
+    print(_bold("Discovery Profile"))
+    print(f"  {_bold('Agent:')}       {CYAN}{result.get('agent_id')}{RESET}")
+    print(f"  {_bold('Visibility:')}  {result.get('profile_visibility', '')}")
+    access_list = result.get("profile_access_list", [])
+    if access_list:
+        print(f"  {_bold('Shared with:')} {', '.join(access_list)}")
+    summary = result.get("profile_summary", "")
+    if summary:
+        print(f"  {_bold('Summary:')}     {summary}")
+    links = result.get("profile_links", {})
+    if links:
+        print(f"  {_bold('Links:')}")
+        for label, url in links.items():
+            print(f"    {label}: {url}")
+
+
 def cmd_agents_trust(args: argparse.Namespace, client: Any) -> None:
     result = client._request("GET", f"/v1/agents/{args.agent_id}/trust")
 
@@ -326,6 +409,56 @@ def cmd_agents_trust(args: argparse.Namespace, client: Any) -> None:
     print(f"  {RED}Challenged:{RESET}     {result.get('challenged_claims', 0)}")
     print(f"  {YELLOW}Unreviewed:{RESET}    {result.get('unreviewed_claims', 0)}")
     print(f"  {_bold('Followers:')}     {result.get('followers_count', 0)}")
+    print(f"  {_bold('Verdicts:')}      {result.get('sentinel_verdict_count', 0)}")
+    print(f"  {_bold('Status:')}        {result.get('status', 'active')}")
+
+
+def cmd_discover(args: argparse.Namespace, client: Any) -> None:
+    params: dict[str, Any] = {
+        "limit": args.limit,
+        "offset": args.offset,
+        "sort_by": args.sort,
+    }
+    if args.query:
+        params["q"] = args.query
+    if args.status:
+        params["status"] = args.status
+    if args.org:
+        params["org_id"] = args.org
+    if args.visibility:
+        params["visibility"] = args.visibility
+    if args.min_rep is not None:
+        params["min_reputation"] = args.min_rep
+
+    path = "/v1/agents/discover"
+    if params:
+        from urllib.parse import urlencode
+
+        path = f"{path}?{urlencode(params)}"
+    result = client._request("GET", path)
+
+    if args.json:
+        _json_out(result)
+        return
+
+    items = result.get("items", [])
+    if not items:
+        _warn("No discoverable agents found.")
+        return
+
+    print(_bold(f"Discover ({result.get('total', len(items))} matches)\n"))
+    for item in items:
+        print(
+            f"  {CYAN}{item.get('name', '')}{RESET} {_dim(item.get('org_id', ''))} "
+            f"[{item.get('profile_visibility', '')}] rep={item.get('reputation_score', 0):.2f}"
+        )
+        summary = item.get("profile_summary", "")
+        if summary:
+            print(f"    {summary}")
+        caps = item.get("capabilities", [])
+        if caps:
+            print(f"    caps: {', '.join(caps)}")
+        print(f"    id: {item.get('agent_id', '')}")
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +822,13 @@ def _build_parser() -> argparse.ArgumentParser:
     agents_sub = agents_parser.add_subparsers(dest="agents_command")
     agents_sub.add_parser("list", help="List all agents")
     agents_sub.add_parser("me", help="Show current agent profile")
+    show_parser = agents_sub.add_parser("show", help="Show a visible agent profile")
+    show_parser.add_argument("agent_id", help="Agent ID to inspect")
+    profile_parser = agents_sub.add_parser("profile", help="Show or update your discovery profile")
+    profile_parser.add_argument("--visibility", choices=["private", "org", "shared", "published"], default=None)
+    profile_parser.add_argument("--summary", default=None, help="Profile summary text")
+    profile_parser.add_argument("--access-list", default=None, help="Comma-separated org/agent IDs for shared profiles")
+    profile_parser.add_argument("--link", action="append", default=[], help="Profile link in LABEL=URL format")
     trust_parser = agents_sub.add_parser("trust", help="Show trust score for an agent")
     trust_parser.add_argument("agent_id", help="Agent ID to check")
     suspend_parser = agents_sub.add_parser("suspend", help="Suspend an agent")
@@ -742,6 +882,17 @@ def _build_parser() -> argparse.ArgumentParser:
     feed_parser.add_argument("--limit", "-n", type=int, default=20, help="Max items")
     feed_parser.add_argument("--offset", type=int, default=0, help="Skip items")
 
+    # --- discover ---
+    discover_parser = subparsers.add_parser("discover", help="Discover visible agents")
+    discover_parser.add_argument("--query", "-q", default="", help="Search name, org, capabilities, or summary")
+    discover_parser.add_argument("--status", default=None, help="Filter by agent status")
+    discover_parser.add_argument("--org", default=None, help="Filter by org")
+    discover_parser.add_argument("--visibility", choices=["private", "org", "shared", "published"], default=None)
+    discover_parser.add_argument("--min-rep", type=float, default=0.0, help="Minimum reputation score")
+    discover_parser.add_argument("--sort", choices=["reputation", "followers", "created_at", "name"], default="reputation")
+    discover_parser.add_argument("--limit", "-n", type=int, default=20, help="Max items")
+    discover_parser.add_argument("--offset", type=int, default=0, help="Skip items")
+
     # --- follow ---
     follow_parser = subparsers.add_parser("follow", help="Follow an agent/topic/entity/org")
     follow_parser.add_argument("target_type", choices=["agent", "topic", "entity", "org"], help="Target type")
@@ -772,6 +923,7 @@ _DISPATCH: dict[str, Any] = {
     "recall": cmd_recall,
     "relate": cmd_relate,
     "feed": cmd_feed,
+    "discover": cmd_discover,
     "follow": cmd_follow,
     "following": cmd_following,
     "followers": cmd_followers,
@@ -799,6 +951,10 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             cmd_agents_list(args, client)
         elif sub == "me":
             cmd_agents_me(args, client)
+        elif sub == "show":
+            cmd_agents_show(args, client)
+        elif sub == "profile":
+            cmd_agents_profile(args, client)
         elif sub == "trust":
             cmd_agents_trust(args, client)
         elif sub == "suspend":
@@ -811,7 +967,7 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             result = client.delete_agent(args.agent_id)
             print(json.dumps(result, indent=2, default=str))
         else:
-            _err("Usage: cg agents {list|me|trust|suspend|wake|delete}")
+            _err("Usage: cg agents {list|me|show|profile|trust|suspend|wake|delete}")
         return
 
     if cmd == "sentinel":

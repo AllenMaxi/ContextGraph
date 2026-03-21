@@ -29,7 +29,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
         finally:
             graph.close()
 
-    app = FastAPI(title="ContextGraph", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="ContextGraph", version="0.4.0", lifespan=lifespan)
 
     # --- CORS middleware ---
     try:

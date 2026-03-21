@@ -7,7 +7,10 @@ from ..utils import to_jsonable
 from ._compat import Depends, Header
 from .dependencies import build_authenticated_agent_dependency, require_same_agent
 from .schemas import (
+    AgentActivityResponse,
     AgentDefaultsUpdateRequest,
+    AgentProfileResponse,
+    AgentProfileUpdateRequest,
     AgentRegistrationRequest,
     AgentRegistrationResponse,
     AgentResponse,
@@ -16,6 +19,7 @@ from .schemas import (
     BackgroundJobResponse,
     ClaimResponse,
     ClaimUpdateRequest,
+    DiscoverAgentsResponse,
     FeedItemResponse,
     FollowRequest,
     MemoryAccessUpdateRequest,
@@ -88,6 +92,74 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/agents", response_model=list[AgentResponse])
     def list_agents(authenticated: Any = Depends(authenticated_agent)) -> Any:
         return to_jsonable(graph.list_agents(requester_agent_id=authenticated.agent_id))
+
+    @app.get("/v1/agents/discover", response_model=DiscoverAgentsResponse)
+    def discover_agents(
+        q: str = "",
+        status: str | None = None,
+        min_reputation: float = 0.0,
+        org_id: str | None = None,
+        visibility: str | None = None,
+        sort_by: str = "reputation",
+        limit: int = 20,
+        offset: int = 0,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        return to_jsonable(
+            graph.discover_agents(
+                requester_agent_id=authenticated.agent_id,
+                q=q,
+                status=status,
+                min_reputation=min_reputation,
+                org_id=org_id,
+                visibility=visibility,
+                sort_by=sort_by,
+                limit=limit,
+                offset=offset,
+            )
+        )
+
+    @app.get("/v1/agents/{agent_id}", response_model=AgentProfileResponse)
+    def get_agent_profile(agent_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.get_agent_profile(requester_agent_id=authenticated.agent_id, agent_id=agent_id))
+
+    @app.patch("/v1/agents/{agent_id}/profile", response_model=AgentProfileResponse)
+    def update_agent_profile(
+        agent_id: str,
+        payload: AgentProfileUpdateRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        require_same_agent(
+            authenticated,
+            agent_id,
+            "Agents may only update their own discovery profile.",
+        )
+        return to_jsonable(
+            graph.update_agent_profile(
+                requester_agent_id=authenticated.agent_id,
+                agent_id=agent_id,
+                profile_visibility=payload.profile_visibility.value if payload.profile_visibility else None,
+                profile_access_list=payload.profile_access_list,
+                profile_summary=payload.profile_summary,
+                profile_links=payload.profile_links,
+            )
+        )
+
+    @app.get("/v1/agents/{agent_id}/activity", response_model=AgentActivityResponse)
+    def agent_activity(
+        agent_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        return to_jsonable(
+            graph.get_agent_activity(
+                requester_agent_id=authenticated.agent_id,
+                agent_id=agent_id,
+                limit=limit,
+                offset=offset,
+            )
+        )
 
     @app.post("/v1/memory/store", response_model=StoreResultResponse)
     def store_memory(payload: MemoryStoreRequest, authenticated: Any = Depends(authenticated_agent)) -> Any:
@@ -324,19 +396,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
 
     @app.get("/v1/agents/{agent_id}/trust", response_model=TrustScoreResponse)
     def trust_score(agent_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
-        agent = graph.get_agent(agent_id)
-        claims = [c for c in graph.repository.list_claims() if c.source_agent_id == agent_id]
-        from ..models import ValidationStatus
-
-        return {
-            "agent_id": agent_id,
-            "reputation_score": agent.reputation_score,
-            "total_claims": len(claims),
-            "attested_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.ATTESTED),
-            "challenged_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.CHALLENGED),
-            "unreviewed_claims": sum(1 for c in claims if c.validation_status == ValidationStatus.UNREVIEWED),
-            "followers_count": agent.followers_count,
-        }
+        return to_jsonable(graph.get_agent_trust_summary(authenticated.agent_id, agent_id))
 
     @app.patch("/v1/claims/{claim_id}", response_model=ClaimResponse)
     def update_claim(

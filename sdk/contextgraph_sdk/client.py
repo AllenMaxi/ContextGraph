@@ -22,6 +22,10 @@ if TYPE_CHECKING:
 class Transport(Protocol):
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -106,6 +110,44 @@ class HttpTransport:
             if key in {"default_visibility", "default_access_list", "default_price"} and value is not None
         }
         return self._request("PATCH", f"/v1/agents/{agent_id}/defaults", body)
+
+    def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("GET", f"/v1/agents/{payload['agent_id']}")
+
+    def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        body = {
+            key: value
+            for key, value in payload.items()
+            if key in {"profile_visibility", "profile_access_list", "profile_summary", "profile_links"}
+            and value is not None
+        }
+        return self._request("PATCH", f"/v1/agents/{agent_id}/profile", body)
+
+    def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]:
+        query_params = {
+            key: value
+            for key, value in payload.items()
+            if key in {"q", "status", "min_reputation", "org_id", "visibility", "sort_by", "limit", "offset"}
+            and value is not None
+            and value != ""
+        }
+        path = "/v1/agents/discover"
+        if query_params:
+            path = f"{path}?{urlencode(query_params)}"
+        return self._request("GET", path)
+
+    def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]:
+        agent_id = payload["agent_id"]
+        query_params = {
+            key: value
+            for key, value in payload.items()
+            if key in {"limit", "offset"} and value is not None
+        }
+        path = f"/v1/agents/{agent_id}/activity"
+        if query_params:
+            path = f"{path}?{urlencode(query_params)}"
+        return self._request("GET", path)
 
     def store(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/memory/store", payload)
@@ -258,6 +300,71 @@ class ContextGraph:
                 "default_visibility": default_visibility,
                 "default_access_list": default_access_list,
                 "default_price": default_price,
+            }
+        )
+
+    def agent(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
+        return self.transport.get_agent({"requester_agent_id": requester_agent_id, "agent_id": agent_id})
+
+    def update_agent_profile(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        profile_visibility: str | None = None,
+        profile_access_list: list[str] | None = None,
+        profile_summary: str | None = None,
+        profile_links: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.update_agent_profile(
+            {
+                "requester_agent_id": requester_agent_id,
+                "agent_id": agent_id,
+                "profile_visibility": profile_visibility,
+                "profile_access_list": profile_access_list,
+                "profile_summary": profile_summary,
+                "profile_links": profile_links,
+            }
+        )
+
+    def discover(
+        self,
+        requester_agent_id: str,
+        q: str = "",
+        status: str | None = None,
+        min_reputation: float = 0.0,
+        org_id: str | None = None,
+        visibility: str | None = None,
+        sort_by: str = "reputation",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        return self.transport.discover_agents(
+            {
+                "requester_agent_id": requester_agent_id,
+                "q": q,
+                "status": status,
+                "min_reputation": min_reputation,
+                "org_id": org_id,
+                "visibility": visibility,
+                "sort_by": sort_by,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+
+    def agent_activity(
+        self,
+        requester_agent_id: str,
+        agent_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        return self.transport.agent_activity(
+            {
+                "requester_agent_id": requester_agent_id,
+                "agent_id": agent_id,
+                "limit": limit,
+                "offset": offset,
             }
         )
 
