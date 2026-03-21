@@ -889,7 +889,9 @@ def _build_parser() -> argparse.ArgumentParser:
     discover_parser.add_argument("--org", default=None, help="Filter by org")
     discover_parser.add_argument("--visibility", choices=["private", "org", "shared", "published"], default=None)
     discover_parser.add_argument("--min-rep", type=float, default=0.0, help="Minimum reputation score")
-    discover_parser.add_argument("--sort", choices=["reputation", "followers", "created_at", "name"], default="reputation")
+    discover_parser.add_argument(
+        "--sort", choices=["reputation", "followers", "created_at", "name"], default="reputation"
+    )
     discover_parser.add_argument("--limit", "-n", type=int, default=20, help="Max items")
     discover_parser.add_argument("--offset", type=int, default=0, help="Skip items")
 

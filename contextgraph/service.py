@@ -1353,7 +1353,9 @@ class ContextGraphService:
             candidates.append(agent)
 
         if sort_by == "followers":
-            candidates.sort(key=lambda item: (item.followers_count, item.reputation_score, item.created_at), reverse=True)
+            candidates.sort(
+                key=lambda item: (item.followers_count, item.reputation_score, item.created_at), reverse=True
+            )
         elif sort_by == "created_at":
             candidates.sort(key=lambda item: item.created_at, reverse=True)
         elif sort_by == "name":
@@ -1513,15 +1515,23 @@ class ContextGraphService:
     def get_agent_trust_summary(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
         requester = self.get_agent(requester_agent_id)
         target = self._get_visible_agent_for_requester(requester, agent_id)
-        visible_claims = self.list_agent_claims(requester_agent_id=requester.agent_id, agent_id=target.agent_id, limit=10_000)
+        visible_claims = self.list_agent_claims(
+            requester_agent_id=requester.agent_id, agent_id=target.agent_id, limit=10_000
+        )
         verdict_count = sum(len(self.repository.list_verdicts_for_claim(claim.claim_id)) for claim in visible_claims)
         return {
             "agent_id": target.agent_id,
             "reputation_score": target.reputation_score,
             "total_claims": len(visible_claims),
-            "attested_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.ATTESTED),
-            "challenged_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.CHALLENGED),
-            "unreviewed_claims": sum(1 for claim in visible_claims if claim.validation_status == ValidationStatus.UNREVIEWED),
+            "attested_claims": sum(
+                1 for claim in visible_claims if claim.validation_status == ValidationStatus.ATTESTED
+            ),
+            "challenged_claims": sum(
+                1 for claim in visible_claims if claim.validation_status == ValidationStatus.CHALLENGED
+            ),
+            "unreviewed_claims": sum(
+                1 for claim in visible_claims if claim.validation_status == ValidationStatus.UNREVIEWED
+            ),
             "followers_count": target.followers_count,
             "sentinel_verdict_count": verdict_count,
             "status": target.status,

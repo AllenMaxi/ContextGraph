@@ -811,17 +811,17 @@ def _render_discover(graph: ContextGraphService, agent: Any, params: dict[str, s
 <div class="item-card" style="margin-bottom:10px">
     <div class="item-header">
         <div>
-            <a href="/dashboard/agents/{item_agent_id}" class="item-title">{escape(item['name'])}</a>
+            <a href="/dashboard/agents/{item_agent_id}" class="item-title">{escape(item["name"])}</a>
             <div style="font-size:12px;color:var(--text-secondary)">
-                {escape(item['org_id'])} &middot; {escape(str(item['profile_visibility']))}
+                {escape(item["org_id"])} &middot; {escape(str(item["profile_visibility"]))}
             </div>
         </div>
         {action_html}
     </div>
     <div class="item-meta">
-        <span>Status: <b>{escape(item['status'])}</b></span>
-        <span>Trust: <b>{item['reputation_score']:.2f}</b></span>
-        <span>Followers: <b>{item['followers_count']}</b></span>
+        <span>Status: <b>{escape(item["status"])}</b></span>
+        <span>Trust: <b>{item["reputation_score"]:.2f}</b></span>
+        <span>Followers: <b>{item["followers_count"]}</b></span>
     </div>
     {summary_html}
     <div style="margin-top:8px">{caps_html}</div>
@@ -830,7 +830,7 @@ def _render_discover(graph: ContextGraphService, agent: Any, params: dict[str, s
     return f"""\
 <div class="page-header">
     <h2>Discover</h2>
-    <span style="font-size:13px;color:var(--text-secondary)">{result['total']} visible agents</span>
+    <span style="font-size:13px;color:var(--text-secondary)">{result["total"]} visible agents</span>
 </div>
 <form method="GET" action="/dashboard/discover" class="item-card" style="margin-bottom:16px">
     <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:10px">
@@ -847,7 +847,7 @@ def _render_discover(graph: ContextGraphService, agent: Any, params: dict[str, s
             {_option_html(visibility, "org", "Org")}
             {_option_html(visibility, "private", "Private")}
         </select>
-        <input type="text" name="org_id" value="{escape(org_id or '')}" placeholder="Org filter">
+        <input type="text" name="org_id" value="{escape(org_id or "")}" placeholder="Org filter">
         <select name="sort_by">
             {_option_html(sort_by, "reputation", "Sort: Reputation")}
             {_option_html(sort_by, "followers", "Sort: Followers")}
@@ -936,9 +936,9 @@ def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str,
 <div class="item-card" style="margin-bottom:8px">
     <div class="item-header">
         <div class="item-title" style="text-transform:capitalize">{escape(title)}</div>
-        <span style="font-size:12px;color:var(--text-muted)">{item['timestamp'].strftime("%Y-%m-%d %H:%M")}</span>
+        <span style="font-size:12px;color:var(--text-muted)">{item["timestamp"].strftime("%Y-%m-%d %H:%M")}</span>
     </div>
-    <div style="font-size:13px;color:var(--text-secondary)">{' &middot; '.join(detail_parts) or 'No extra details'}</div>
+    <div style="font-size:13px;color:var(--text-secondary)">{" &middot; ".join(detail_parts) or "No extra details"}</div>
 </div>"""
 
     verdict_rows = ""
@@ -964,19 +964,22 @@ def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str,
     )
     tabs_html = f"""\
 <div class="tabs">
-    <a class="tab {'active' if active_tab == 'activity' else ''}" href="/dashboard/agents/{agent_id}?tab=activity">Activity</a>
-    <a class="tab {'active' if active_tab == 'trust' else ''}" href="/dashboard/agents/{agent_id}?tab=trust">Trust</a>
+    <a class="tab {"active" if active_tab == "activity" else ""}" href="/dashboard/agents/{agent_id}?tab=activity">Activity</a>
+    <a class="tab {"active" if active_tab == "trust" else ""}" href="/dashboard/agents/{agent_id}?tab=trust">Trust</a>
 </div>"""
-    tab_body = activity_html if active_tab == "activity" else f"""\
+    tab_body = (
+        activity_html
+        if active_tab == "activity"
+        else f"""\
 <div class="two-col">
     <div>
         <div class="col-header">Trust Summary</div>
         <div class="item-card">
             <div class="item-meta">
-                <span>Visible claims: <b>{trust['total_claims']}</b></span>
-                <span>Attested: <b>{trust['attested_claims']}</b></span>
-                <span>Challenged: <b>{trust['challenged_claims']}</b></span>
-                <span>Verdicts: <b>{trust['sentinel_verdict_count']}</b></span>
+                <span>Visible claims: <b>{trust["total_claims"]}</b></span>
+                <span>Attested: <b>{trust["attested_claims"]}</b></span>
+                <span>Challenged: <b>{trust["challenged_claims"]}</b></span>
+                <span>Verdicts: <b>{trust["sentinel_verdict_count"]}</b></span>
             </div>
         </div>
         <div class="col-header" style="margin-top:16px">Recent Claims</div>
@@ -990,15 +993,16 @@ def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str,
         </div>
     </div>
 </div>"""
+    )
 
     return f"""\
 <div class="page-header">
     <h2 style="display:flex;align-items:center;gap:12px">
-        <div class="agent-avatar" style="width:40px;height:40px;font-size:16px">{escape(target['name'][:2].upper())}</div>
+        <div class="agent-avatar" style="width:40px;height:40px;font-size:16px">{escape(target["name"][:2].upper())}</div>
         <div>
-            {escape(target['name'])}
+            {escape(target["name"])}
             <div style="font-size:13px;color:var(--text-secondary);font-weight:400">
-                {escape(target['org_id'])} &middot; {escape(agent_id[:16])}... &middot; {escape(str(target['profile_visibility']))}
+                {escape(target["org_id"])} &middot; {escape(agent_id[:16])}... &middot; {escape(str(target["profile_visibility"]))}
             </div>
         </div>
     </h2>
@@ -1008,13 +1012,13 @@ def _render_agent_detail(graph: ContextGraphService, viewer: Any, agent_id: str,
 <div style="margin-top:8px;font-size:13px">{links_html}</div>
 <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Trust Score</div>
-        <div class="trust-bar"><div class="trust-track"><div class="trust-fill" style="width:{trust_pct}%"></div></div> <b>{target['reputation_score']:.2f}</b></div>
+        <div class="trust-bar"><div class="trust-track"><div class="trust-fill" style="width:{trust_pct}%"></div></div> <b>{target["reputation_score"]:.2f}</b></div>
     </div>
-    <div class="stat-card"><div class="stat-label">Visible Claims</div><div class="stat-value cyan">{trust['total_claims']}</div></div>
-    <div class="stat-card"><div class="stat-label">Attested</div><div class="stat-value green">{trust['attested_claims']}</div></div>
-    <div class="stat-card"><div class="stat-label">Challenged</div><div class="stat-value orange">{trust['challenged_claims']}</div></div>
-    <div class="stat-card"><div class="stat-label">Followers</div><div class="stat-value purple">{target['followers_count']}</div></div>
-    <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value blue">{escape(trust['status'])}</div></div>
+    <div class="stat-card"><div class="stat-label">Visible Claims</div><div class="stat-value cyan">{trust["total_claims"]}</div></div>
+    <div class="stat-card"><div class="stat-label">Attested</div><div class="stat-value green">{trust["attested_claims"]}</div></div>
+    <div class="stat-card"><div class="stat-label">Challenged</div><div class="stat-value orange">{trust["challenged_claims"]}</div></div>
+    <div class="stat-card"><div class="stat-label">Followers</div><div class="stat-value purple">{target["followers_count"]}</div></div>
+    <div class="stat-card"><div class="stat-label">Status</div><div class="stat-value blue">{escape(trust["status"])}</div></div>
 </div>
 {tabs_html}
 {tab_body}"""

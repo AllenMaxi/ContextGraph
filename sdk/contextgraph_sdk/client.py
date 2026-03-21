@@ -152,9 +152,7 @@ class HttpTransport:
     def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]:
         agent_id = payload["agent_id"]
         query_params = {
-            key: value
-            for key, value in payload.items()
-            if key in {"limit", "offset"} and value is not None
+            key: value for key, value in payload.items() if key in {"limit", "offset"} and value is not None
         }
         path = f"/v1/agents/{agent_id}/activity"
         if query_params:
@@ -213,9 +211,7 @@ class HttpTransport:
 
     def feed(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         query_params = {
-            key: value
-            for key, value in payload.items()
-            if key in {"limit", "offset"} and value is not None
+            key: value for key, value in payload.items() if key in {"limit", "offset"} and value is not None
         }
         path = "/v1/feed"
         if query_params:
