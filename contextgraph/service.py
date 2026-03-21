@@ -253,6 +253,35 @@ class ContextGraphService:
 
         return verdicts
 
+    def promote_trusted_claims(self) -> int:
+        if not self.settings.trust_promotion_enabled:
+            return 0
+        now = utcnow()
+        min_age = timedelta(days=self.settings.trust_promotion_min_age_days)
+        min_attestations = self.settings.trust_promotion_min_attestations
+        count = 0
+        for claim in self.repository.list_claims():
+            if claim.validation_status != ValidationStatus.VALIDATED:
+                continue
+            if claim.validated_at is None:
+                continue
+            if now - claim.validated_at < min_age:
+                continue
+            if claim.attestation_count < min_attestations:
+                continue
+            if claim.challenge_count > 0:
+                continue
+            claim.validation_status = ValidationStatus.TRUSTED
+            claim.updated_at = now
+            self.repository.update_claim(claim)
+            self._audit(
+                "promote_trusted_claim",
+                actor_agent_id=claim.source_agent_id,
+                details={"claim_id": claim.claim_id, "attestation_count": str(claim.attestation_count)},
+            )
+            count += 1
+        return count
+
     def list_verdicts_for_claim(self, claim_id: str) -> list[SentinelVerdict]:
         return self.repository.list_verdicts_for_claim(claim_id)
 
@@ -886,6 +915,8 @@ class ContextGraphService:
         hits: list[RecallHit] = []
         payment_blocked_error: PaymentRequiredError | None = None
         for claim in all_claims:
+            if claim.validation_status == ValidationStatus.REJECTED:
+                continue
             memory = self.repository.get_memory(claim.memory_id)
             if memory is None or not self._memory_is_active(memory) or not self._can_access(requester, claim):
                 continue
@@ -1624,11 +1655,13 @@ class ContextGraphService:
 
         freshness = self._freshness_factor(claim)
         validation_bonus = 0.0
-        if claim.validation_status == ValidationStatus.ATTESTED:
+        if claim.validation_status == ValidationStatus.TRUSTED:
+            validation_bonus = 0.25
+        elif claim.validation_status == ValidationStatus.ATTESTED:
             validation_bonus = 0.15
         elif claim.validation_status == ValidationStatus.CHALLENGED:
             validation_bonus = -0.2
-        elif claim.validation_status == ValidationStatus.EXPIRED:
+        elif claim.validation_status in (ValidationStatus.EXPIRED, ValidationStatus.REJECTED):
             validation_bonus = -1.0
 
         confidence = claim.confidence * 0.2
