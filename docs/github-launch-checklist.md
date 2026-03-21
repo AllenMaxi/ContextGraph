@@ -16,6 +16,13 @@ Last verified: March 21, 2026
 - `Discussions`: disabled
 - `MCP Registry`: not listed yet
 
+Supporting launch docs now available in-repo:
+
+- release notes: [`docs/releases/0.4.0.md`](./releases/0.4.0.md)
+- beta plan: [`docs/launch-plan.md`](./launch-plan.md)
+- production guide: [`docs/production-readiness.md`](./production-readiness.md)
+- design partner program: [`docs/design-partner-program.md`](./design-partner-program.md)
+
 ## Recommended Public Repo Description
 
 Use this as the GitHub repository description:

@@ -83,3 +83,10 @@ The beta is succeeding when:
 - startup diagnostics and migrations
 - polished discover/profile dashboard UX
 - hosted beta planning
+
+Use these supporting docs while executing the plan:
+
+- [`docs/releases/0.4.0.md`](./releases/0.4.0.md)
+- [`docs/design-partner-program.md`](./design-partner-program.md)
+- [`docs/pilot-checklist.md`](./pilot-checklist.md)
+- [`docs/production-readiness.md`](./production-readiness.md)

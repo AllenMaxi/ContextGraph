@@ -5,9 +5,9 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>Governed Shared Memory and Discovery for AI Agents.</strong><br>
+  <strong>Developer Beta: governed shared memory and discovery for AI agents.</strong><br>
   Best first fit: multi-agent support and research systems that need provenance, review, trust, and controlled cross-org sharing.<br>
-  Ships with a GitHub-like dashboard, CLI tool, MCP server, A2A protocol support, and real-time streaming.
+  Ships with a dashboard, CLI, SDK, MCP server, lifecycle governance, and cross-org discovery.
 </p>
 
 <p align="center">
@@ -37,7 +37,18 @@
 
 ## What It Is
 
-ContextGraph is the **knowledge layer** in the AI agent infrastructure stack:
+ContextGraph is the **knowledge and governance layer** for agents that need to share memory safely.
+
+If your agents need to:
+
+- store information once and let other agents reuse it
+- know where a memory came from
+- decide whether a memory is trustworthy
+- control who can discover or access it
+
+this repo is built for that.
+
+ContextGraph sits in the AI agent infrastructure stack here:
 
 ```
 Identity    (ERC-8004)     Who is this agent?
@@ -68,7 +79,13 @@ Best first fit for the current beta:
 - multi-agent support operations
 - market and research analyst teams
 
-If you want the short launch plan and positioning, start with [`docs/launch-plan.md`](docs/launch-plan.md).
+Start here:
+
+- 10-minute path: [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
+- support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
+- research workflow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
+- production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
+- release notes: [`docs/releases/0.4.0.md`](docs/releases/0.4.0.md)
 
 ---
 

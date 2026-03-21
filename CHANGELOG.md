@@ -1,62 +1,42 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to ContextGraph should be recorded in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+## 0.4.0
 
-## [0.2.1] - 2026-03-15
+`0.4.0` is the first release that packages ContextGraph as a sharper developer beta.
 
 ### Added
 
-- MCP-first launch positioning for ContextGraph as a shared memory bus for agents
-- Real terminal and operator-console demo assets committed to the repo
-- A seeded dashboard demo server and dashboard video renderer
-- Local benchmark script and benchmark documentation
-- MCP chat-agent integration guide and runnable SDK chat-agent example
-- Security and operations guide for self-hosted agent deployments
+- agent lifecycle controls: suspend, reactivate, and soft-delete
+- built-in sentinel governance with verdict visibility and trust integration
+- agent discovery profiles with separate discoverability controls
+- discover page in the dashboard
+- visible agent activity and trust views
+- SDK support for discovery, feed, follow, and trust workflows
+- runnable reference workflows for support and research teams
+- production readiness and launch planning docs
 
 ### Changed
 
-- README now leads with the MCP/shared-memory wedge instead of generic knowledge-graph framing
-- SDK docs now show the recommended chat-agent retrieval pattern
-- Supported security policy version updated to `0.2.x`
-- FastAPI app version and package metadata now align with `0.2.1`
+- clarified product scope: ContextGraph remains the knowledge and governance layer
+- separated agent profile discoverability from memory default visibility
+- aligned versioning and launch-facing docs to `0.4.0`
+- tightened README positioning around support and research workflows
 
-## [0.2.0] - 2026-03-14
+### Not Included
 
-### Added
+- native runtime hosting inside this repo
+- provider secret management
+- chat/runtime/tool execution platform
+- audit alerts/reports control plane
 
-- Memory-level access ownership with `visibility`, `access_list`, and `price` persisted on memories
-- Canonical memory policy update endpoint at `PATCH /v1/memories/{memory_id}/access`
-- Locked feed items for priced cross-org knowledge with `is_locked` and `requires_payment`
-- Regression coverage for feed payment leaks, mixed-policy memories, and cross-org follow/access flows
-- Public launch docs: roadmap, FAQ, use cases, and runnable examples
+These remain outside the current release scope.
 
-### Changed
+## 0.2.1
 
-- Claim policy updates now act as a compatibility shim that rewrites the parent memory policy
-- Feed now acts as discovery for priced cross-org memories instead of exposing locked content
-- Recall now enforces payment at the memory level and normalizes legacy sibling-claim policy drift on access
-- FastAPI app lifecycle uses lifespan handlers instead of deprecated shutdown hooks
+See [`docs/releases/0.2.1-launch.md`](docs/releases/0.2.1-launch.md).
 
-## [0.1.0] - 2026-03-09
+## 0.2.0
 
-### Added
-
-- Core claim-native memory engine with entity extraction
-- In-memory and Neo4j repository backends
-- FastAPI HTTP API with agent authentication (`X-Agent-Key`)
-- Admin key gating for agent registration (`CG_ADMIN_KEY`)
-- Standing queries with pull and webhook delivery modes
-- Background job processing with retry and dead-letter semantics
-- Claim TTL with automatic expiry sweeps
-- Review workflow (attest/challenge) with audit logging
-- Operator console with cookie-based authentication
-- Python SDK with local and HTTP transports
-- Memory and subscription policy helpers
-- Fixture-driven extractor evaluation framework
-- CORS middleware (configurable via `CG_CORS_ORIGINS`)
-- Rate limiting middleware (`CG_RATE_LIMIT_PER_MINUTE`)
-- Docker and Docker Compose support
-- GitHub Actions CI for Python 3.11–3.13
-- Comprehensive test suite
+See [`docs/releases/0.2.0-launch.md`](docs/releases/0.2.0-launch.md).
