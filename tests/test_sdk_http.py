@@ -5,7 +5,7 @@ from io import BytesIO
 from unittest.mock import patch
 from urllib import error
 
-from sdk.contextgraph_sdk import (
+from contextgraph_sdk import (
     AuthenticationError,
     ContextGraph,
     ContextGraphConnectionError,
@@ -25,7 +25,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         )
 
         with (
-            patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=http_error),
+            patch("contextgraph_sdk.client.request.urlopen", side_effect=http_error),
             self.assertRaises(AuthenticationError) as context,
         ):
             client.recall("agt_test", "Acme latency")
@@ -44,7 +44,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         )
 
         with (
-            patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=http_error),
+            patch("contextgraph_sdk.client.request.urlopen", side_effect=http_error),
             self.assertRaises(PermissionDeniedError) as context,
         ):
             client.store("agt_other", "Acme Corp reported API latency.", visibility="shared")
@@ -56,7 +56,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         url_error = error.URLError("connection refused")
 
         with (
-            patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=url_error),
+            patch("contextgraph_sdk.client.request.urlopen", side_effect=url_error),
             self.assertRaises(ContextGraphConnectionError) as context,
         ):
             client.notifications("agt_test")
@@ -82,7 +82,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
             captured["url"] = req.full_url
             return FakeResponse()
 
-        with patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
             client.claims("agt_test", validation_status="unreviewed", only_needing_review=True, limit=25)
 
         self.assertEqual(
@@ -111,7 +111,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
             captured["body"] = req.data.decode("utf-8")
             return FakeResponse()
 
-        with patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
             client.update_agent_defaults(
                 "agt_test",
                 default_visibility="shared",
@@ -146,7 +146,7 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
             captured["body"] = req.data.decode("utf-8")
             return FakeResponse()
 
-        with patch("sdk.contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
             client.store(
                 "agt_test",
                 "Acme Corp reported API latency.",

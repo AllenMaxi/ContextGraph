@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
+from contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
 
 
 @dataclass(slots=True)

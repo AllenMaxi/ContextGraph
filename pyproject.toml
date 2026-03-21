@@ -67,4 +67,4 @@ ignore = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["contextgraph", "sdk/contextgraph_sdk"]
+packages = ["contextgraph"]

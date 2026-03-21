@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import unittest
 
+from contextgraph_sdk import ContextGraph
+
 from contextgraph import ContextGraphService
 from contextgraph.config import Settings
 from contextgraph.models import JobStatus
-from sdk.contextgraph_sdk import ContextGraph
 
 
 class ContextGraphSDKTest(unittest.TestCase):

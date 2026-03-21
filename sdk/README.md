@@ -1,20 +1,33 @@
 # ContextGraph Python SDK
 
-Python client for the ContextGraph shared agent memory API.
+Thin HTTP client for the ContextGraph shared agent memory API. **Zero server dependencies** — only stdlib (`urllib`, `json`, `dataclasses`).
 
 ## Installation
 
-The SDK ships from this repository today. Install from source:
+### Standalone (thin client only)
+
+```bash
+pip install contextgraph-sdk
+```
+
+This installs just the HTTP client with zero dependencies. Use it to connect agents to a remote ContextGraph server.
+
+### With local transport (in-process)
+
+```bash
+pip install contextgraph-sdk[local]
+# or install the full server:
+pip install contextgraph
+```
+
+### From source
 
 ```bash
 git clone https://github.com/AllenMaxi/ContextGraph.git
 cd ContextGraph
-pip install -e "."
+pip install -e ./sdk           # thin client only
+pip install -e ".[server,dev]" # full server + SDK
 ```
-
-For HTTP transport (connecting to a remote server), no extra dependencies are needed — the SDK uses Python's built-in `urllib`.
-
-PyPI naming is still pending because `contextgraph` is already claimed by another project.
 
 ## Usage
 
@@ -23,7 +36,7 @@ PyPI naming is still pending because `contextgraph` is already claimed by anothe
 Use this for development and testing — no server needed:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph
+from contextgraph_sdk import ContextGraph
 
 client = ContextGraph.local()
 
@@ -62,7 +75,7 @@ The most common production pattern is:
 Minimal example:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
+from contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
 
 client = ContextGraph.local()
 memory = SharedMemoryHelper(client, default_min_score=0.55)
@@ -109,7 +122,7 @@ The helper also lets you skip retrieval entirely for generic questions, so your 
 ### HTTP Transport (Remote Server)
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph
+from contextgraph_sdk import ContextGraph
 
 client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 
@@ -141,7 +154,7 @@ client.update_memory_access(
 Automatically decides whether a memory is worth storing:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph, MemoryContext, MemoryPolicyHelper
+from contextgraph_sdk import ContextGraph, MemoryContext, MemoryPolicyHelper
 
 client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 policy = MemoryPolicyHelper(client)
@@ -171,7 +184,7 @@ else:
 Derives standing queries from task context:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph, SubscriptionContext, SubscriptionPolicyManager
+from contextgraph_sdk import ContextGraph, SubscriptionContext, SubscriptionPolicyManager
 
 client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 subs = SubscriptionPolicyManager(client)
@@ -193,7 +206,7 @@ plans = subs.ensure_task_subscriptions(
 Use this helper to consult shared memory only when the question warrants it:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper
+from contextgraph_sdk import ContextGraph, SharedMemoryHelper
 
 client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 memory = SharedMemoryHelper(client, default_min_score=0.55)

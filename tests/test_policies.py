@@ -3,8 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock
 
-from contextgraph import ContextGraphService
-from sdk.contextgraph_sdk import (
+from contextgraph_sdk import (
     ContextGraph,
     MemoryContext,
     MemoryPolicyHelper,
@@ -13,6 +12,8 @@ from sdk.contextgraph_sdk import (
     SubscriptionContext,
     SubscriptionPolicyManager,
 )
+
+from contextgraph import ContextGraphService
 
 
 class ContextGraphPoliciesTest(unittest.TestCase):

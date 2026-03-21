@@ -14,13 +14,14 @@
   <a href="https://github.com/AllenMaxi/ContextGraph/actions/workflows/ci.yml"><img src="https://github.com/AllenMaxi/ContextGraph/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <img src="https://img.shields.io/badge/version-0.3.0-blue.svg" alt="Version 0.3.0">
+  <img src="https://img.shields.io/badge/version-0.4.0-blue.svg" alt="Version 0.4.0">
 </p>
 
 <p align="center">
   <a href="#demo">Demo</a> &middot;
-  <a href="#whats-new-in-v030">What's New</a> &middot;
+  <a href="#whats-new-in-v040">What's New</a> &middot;
   <a href="#quickstart">Quickstart</a> &middot;
+  <a href="#python-sdk">SDK</a> &middot;
   <a href="#cli-tool">CLI</a> &middot;
   <a href="#dashboard">Dashboard</a> &middot;
   <a href="#how-access-works">Access Model</a> &middot;
@@ -61,6 +62,38 @@ hits = service.recall(agent.agent_id, "latency EU")
 print(hits[0].claim.statement)
 # "Acme Corp reported 3x latency in EU region."
 ```
+
+---
+
+## What's New in v0.4.0
+
+### Audit Agents (Built-in Governance)
+Opt-in governance agents that run inside the ContextGraph server, monitoring claim integrity and agent behavior in real-time via the EventBus. Six configurable rules out of the box:
+
+- **Provenance integrity** — verifies every claim has a valid, chronologically ordered audit trail
+- **Confidence anomaly detection** — flags claims with suspiciously large confidence swings
+- **Quorum compliance** — alerts when high-impact claims remain unverified past a configurable window
+- **Reputation circuit breaker** — automatically freezes agents whose trust score drops below threshold
+- **Cross-org access monitoring** — detects potential data harvesting patterns across orgs
+- **Claim volume spike** — catches spam or misconfigured agents producing excessive claims
+
+Actions are deterministic (no LLM in the loop) and include: flag claims, freeze agents, downgrade trust, emit alerts, and generate audit reports.
+
+```bash
+# Enable audit agent
+CG_ENABLE_AUDIT=true contextgraph-server
+
+# CLI
+cg audit alerts
+cg audit alerts --severity critical
+cg audit report --from 2026-03-01 --to 2026-03-20
+cg audit config --set reputation_floor=0.4
+```
+
+New API endpoints: `/v1/audit/alerts`, `/v1/audit/reports`, `/v1/audit/agent/{id}/history`, `/v1/audit/config`.
+New dashboard page at `/dashboard/audit` with alert feed, agent risk scores, quorum health, and rule configuration.
+
+See the full design spec at [`docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md`](docs/superpowers/specs/2026-03-20-audit-agents-cloud-design.md).
 
 ---
 
@@ -248,6 +281,40 @@ contextgraph-server
 docker compose up -d
 # Starts ContextGraph + Neo4j
 ```
+
+---
+
+## Python SDK
+
+The SDK is a **standalone thin client** with zero server dependencies — just `urllib`, `json`, and `dataclasses`. Install it on any agent without pulling in FastAPI, Neo4j drivers, or the extraction engine.
+
+```bash
+pip install contextgraph-sdk              # thin HTTP client, zero deps
+pip install contextgraph-sdk[local]       # adds LocalTransport (needs server package)
+pip install contextgraph-sdk[policies]    # adds policy helpers (needs server package)
+```
+
+### Connect to a remote server
+
+```python
+from contextgraph_sdk import ContextGraph
+
+client = ContextGraph.http("https://contextgraph.yourcompany.com", api_key="cgk_...")
+agent = client.register_agent("my-agent", "acme", ["research"])
+client.store(agent["agent_id"], "TSMC lead times extending 3-5 weeks in Q3.")
+hits = client.recall(agent["agent_id"], "TSMC lead times")
+```
+
+### Local transport (dev/testing)
+
+```python
+from contextgraph_sdk import ContextGraph
+
+client = ContextGraph.local()  # requires contextgraph server package
+agent = client.register_agent("dev-agent", "acme", ["research"])
+```
+
+See [`sdk/README.md`](sdk/README.md) for full SDK docs including policy helpers (MemoryPolicyHelper, SharedMemoryHelper, SubscriptionPolicyManager).
 
 ---
 
@@ -561,6 +628,13 @@ Rerun: [`scripts/benchmark_local.py`](scripts/benchmark_local.py)
 | `/.well-known/agent.json` | GET | A2A agent card |
 | `/.well-known/ucp` | GET | UCP commerce discovery |
 | `/dashboard` | GET | GitHub-like operator console |
+| `/v1/audit/alerts` | GET | List audit alerts (filterable by org, severity, rule) |
+| `/v1/audit/alerts/{id}` | GET | Audit alert detail |
+| `/v1/audit/alerts/{id}/acknowledge` | POST | Admin acknowledges an alert |
+| `/v1/audit/reports` | GET | List generated audit reports |
+| `/v1/audit/reports/generate` | POST | Generate audit report for a time window |
+| `/v1/audit/agent/{id}/history` | GET | Audit trail for a specific agent |
+| `/v1/audit/config` | GET/PUT | View or update audit rule configuration (admin only) |
 
 ---
 

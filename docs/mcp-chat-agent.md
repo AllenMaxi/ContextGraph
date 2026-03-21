@@ -67,7 +67,7 @@ See the MCP intro and tool-model docs for the current protocol shape:
 If you are embedding ContextGraph inside your own runtime instead of using MCP directly, the pattern is still the same:
 
 ```python
-from sdk.contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
+from contextgraph_sdk import ContextGraph, SharedMemoryHelper, SharedMemoryQueryContext
 
 client = ContextGraph.http("http://localhost:8420", api_key="cgk_...")
 memory = SharedMemoryHelper(client, default_min_score=0.55)

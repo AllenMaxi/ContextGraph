@@ -4,10 +4,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from contextgraph.extraction import RuleBasedExtractor
-from contextgraph.utils import jaccard_similarity
-
+from ._utils import jaccard_similarity as jaccard_similarity
 from .client import ContextGraph
+
+
+def _get_extractor() -> Any:
+    try:
+        from contextgraph.extraction import RuleBasedExtractor
+    except ImportError as exc:
+        raise ImportError(
+            "Policy helpers require the full contextgraph server package. "
+            "Install it with: pip install contextgraph-sdk[policies] or pip install contextgraph"
+        ) from exc
+    return RuleBasedExtractor()
+
 
 IMPORTANT_KEYWORDS = {
     "deadline",
@@ -195,7 +205,7 @@ class MemoryPolicyHelper:
         recent_claim_limit: int = 100,
     ) -> None:
         self.client = client
-        self.extractor = RuleBasedExtractor()
+        self.extractor = _get_extractor()
         self.duplicate_similarity_threshold = duplicate_similarity_threshold
         self.recent_claim_limit = recent_claim_limit
 
@@ -479,7 +489,7 @@ class SharedMemoryHelper:
         default_limit: int = 3,
     ) -> None:
         self.client = client
-        self.extractor = RuleBasedExtractor()
+        self.extractor = _get_extractor()
         self.default_min_score = default_min_score
         self.default_limit = default_limit
 

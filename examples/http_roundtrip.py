@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sdk.contextgraph_sdk import ContextGraph
+from contextgraph_sdk import ContextGraph
 
 
 def main() -> None:
