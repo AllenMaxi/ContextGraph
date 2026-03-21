@@ -18,6 +18,8 @@ from .identity import AgentIdentity, IdentityVerifier
 from .in_memory import InMemoryRepository
 from .models import (
     Agent,
+    AgentRole,
+    AgentStatus,
     AuditEntry,
     BackgroundJob,
     Claim,
@@ -131,6 +133,8 @@ class ContextGraphService:
             default_visibility=resolved_default_visibility,
             default_access_list=resolved_default_access_list,
             default_price=resolved_default_price,
+            last_activity_at=now,
+            role="agent",
         )
         # Verify ERC-8004 identity if provided
         if erc8004_address:
@@ -157,8 +161,30 @@ class ContextGraphService:
         agent = self.repository.find_agent_by_key(api_key)
         if agent is None:
             raise AuthenticationError("Invalid API key.")
-        if agent.status != "active":
-            raise PermissionDeniedError(f"Agent '{agent.agent_id}' is not active.")
+        if agent.status == AgentStatus.DELETED:
+            raise PermissionDeniedError(f"Agent '{agent.agent_id}' has been deleted.")
+        if agent.status == AgentStatus.SUSPENDED:
+            if agent.suspension_reason == "idle":
+                # Auto-wake: transparent reactivation (virtual actor pattern)
+                agent.status = AgentStatus.ACTIVE
+                agent.suspension_reason = None
+                agent.suspended_at = None
+                agent.last_activity_at = utcnow()
+                agent.updated_at = utcnow()
+                self.repository.save_agent(agent)
+                self._audit(
+                    "auto_reactivation",
+                    actor_agent_id=agent.agent_id,
+                    details={"reason": "idle_agent_api_call"},
+                )
+                return agent
+            raise PermissionDeniedError(
+                f"Agent '{agent.agent_id}' is suspended: {agent.suspension_reason or 'no reason provided'}. "
+                "Contact your admin to reactivate."
+            )
+        # Update last activity
+        agent.last_activity_at = utcnow()
+        self.repository.save_agent(agent)
         return agent
 
     def update_agent_defaults(
@@ -192,6 +218,78 @@ class ContextGraphService:
             details={"agent_id": requester.agent_id},
         )
         return requester
+
+    def suspend_agent(self, requester_agent_id: str, agent_id: str, reason: str = "manual") -> Agent:
+        agent = self.get_agent(agent_id)
+        if agent.status == AgentStatus.DELETED:
+            raise PermissionDeniedError("Cannot suspend a deleted agent.")
+        if agent.status == AgentStatus.SUSPENDED:
+            return agent
+        now = utcnow()
+        agent.status = AgentStatus.SUSPENDED
+        agent.suspension_reason = reason
+        agent.suspended_at = now
+        agent.updated_at = now
+        self.repository.save_agent(agent)
+        self._audit(
+            "suspend_agent",
+            actor_agent_id=requester_agent_id,
+            target_agent_id=agent_id,
+            details={"reason": reason},
+        )
+        return agent
+
+    def reactivate_agent(self, requester_agent_id: str, agent_id: str) -> Agent:
+        agent = self.get_agent(agent_id)
+        if agent.status == AgentStatus.DELETED:
+            raise PermissionDeniedError("Cannot reactivate a deleted agent.")
+        if agent.status == AgentStatus.ACTIVE:
+            return agent
+        now = utcnow()
+        agent.status = AgentStatus.ACTIVE
+        agent.suspension_reason = None
+        agent.suspended_at = None
+        agent.last_activity_at = now
+        agent.updated_at = now
+        self.repository.save_agent(agent)
+        self._audit(
+            "reactivate_agent",
+            actor_agent_id=requester_agent_id,
+            target_agent_id=agent_id,
+            details={},
+        )
+        return agent
+
+    def delete_agent(self, requester_agent_id: str, agent_id: str) -> Agent:
+        agent = self.get_agent(agent_id)
+        if agent.status == AgentStatus.DELETED:
+            return agent
+        now = utcnow()
+        agent.status = AgentStatus.DELETED
+        agent.updated_at = now
+        self.repository.save_agent(agent)
+        self._audit(
+            "delete_agent",
+            actor_agent_id=requester_agent_id,
+            target_agent_id=agent_id,
+            details={},
+        )
+        return agent
+
+    def sweep_idle_agents(self) -> int:
+        threshold = utcnow() - timedelta(days=self.settings.agent_idle_threshold_days)
+        agents = self.repository.list_agents()
+        count = 0
+        for agent in agents:
+            if agent.status != AgentStatus.ACTIVE:
+                continue
+            if agent.role == AgentRole.SENTINEL:
+                continue
+            activity = agent.last_activity_at or agent.created_at
+            if activity < threshold:
+                self.suspend_agent(agent.agent_id, agent.agent_id, reason="idle")
+                count += 1
+        return count
 
     def _resolve_policy_fields(
         self,

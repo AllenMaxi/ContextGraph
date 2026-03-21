@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..errors import AuthenticationError
+from ..errors import AuthenticationError, PermissionDeniedError
 from ..service import ContextGraphService
 from ._compat import Header, HTTPException
 
@@ -15,6 +15,8 @@ def build_authenticated_agent_dependency(graph: ContextGraphService):
             return graph.authenticate_agent(x_agent_key)
         except AuthenticationError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except PermissionDeniedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     return authenticated_agent
 
