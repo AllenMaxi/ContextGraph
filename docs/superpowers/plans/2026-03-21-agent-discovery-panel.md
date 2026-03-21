@@ -390,8 +390,27 @@ git commit -m "feat: add discover_agents() service method with visibility filter
 ### Task 3: Service — Add `get_agent_activity()` and `update_agent_visibility()`
 
 **Files:**
+- Modify: `contextgraph/repository.py` (add `list_memories_by_agent` to protocol)
+- Modify: `contextgraph/in_memory.py` (implement `list_memories_by_agent`)
+- Modify: `contextgraph/graph/neo4j_repository.py` (implement `list_memories_by_agent`)
 - Modify: `contextgraph/service.py`
 - Test: `tests/test_discover.py`
+
+**Before implementing, add `list_memories_by_agent` to the Repository protocol:**
+
+Add to `contextgraph/repository.py` after `get_memory`:
+```python
+def list_memories_by_agent(self, agent_id: str) -> list[Memory]: ...
+```
+
+Add to `contextgraph/in_memory.py`:
+```python
+def list_memories_by_agent(self, agent_id: str) -> list[Memory]:
+    with self._lock:
+        return [m for m in self._memories.values() if m.agent_id == agent_id]
+```
+
+Add matching implementation to Neo4j repo (Cypher: `MATCH (m:Memory {agent_id: $agent_id}) RETURN m`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -522,7 +541,7 @@ def get_agent_activity(
     items: list[dict[str, Any]] = []
 
     # Memories
-    all_memories = [m for m in self._list_all_memories() if m.agent_id == agent_id]
+    all_memories = self.repository.list_memories_by_agent(agent_id)
     for mem in all_memories:
         if cross_org and mem.visibility == Visibility.PRIVATE:
             continue
@@ -561,16 +580,17 @@ def get_agent_activity(
 
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
-def _list_all_memories(self) -> list[Memory]:
-    """Return all memories. Helper for activity aggregation."""
-    # InMemoryRepository stores memories in _memories dict
-    if hasattr(self.repository, "_memories"):
-        return list(self.repository._memories.values())
-    # For Neo4j or other repos, use a dedicated method if available
-    return []
 ```
 
-Note: `_list_all_memories` is a pragmatic helper. If the repository doesn't expose a `list_memories` method, check what's available. If needed, add `list_memories_by_agent(agent_id)` to the protocol — but check first if one exists.
+**Important:** Do NOT use `hasattr(self.repository, "_memories")` to access private repo internals. Instead, add a `list_memories_by_agent(agent_id: str)` method to the `Repository` protocol and implement it in both `InMemoryRepository` and `Neo4jRepository`. In `InMemoryRepository`:
+
+```python
+def list_memories_by_agent(self, agent_id: str) -> list[Memory]:
+    with self._lock:
+        return [m for m in self._memories.values() if m.agent_id == agent_id]
+```
+
+Then in the service method, call `self.repository.list_memories_by_agent(agent_id)` instead of `self._list_all_memories()`.
 
 - [ ] **Step 4: Implement `update_agent_visibility()` in service.py**
 
@@ -662,7 +682,7 @@ class AgentVisibilityUpdateRequest(BaseModel):
 
 Add to `contextgraph/api/routes.py` inside `register_routes()`. Add the imports for new schemas at the top of the file.
 
-Important: the `GET /v1/agents/discover` route **must be registered before** the existing `GET /v1/agents/{agent_id}` route, otherwise FastAPI will try to match "discover" as an `agent_id`. Place it right after the agent registration endpoint.
+Important: the `GET /v1/agents/discover` route **must be registered before** any `{agent_id}` parameterized routes to avoid FastAPI matching "discover" as an `agent_id`. Place it immediately after the `POST /v1/agents/register` handler (around line 49 of routes.py) and before any `PATCH /v1/agents/{agent_id}` routes.
 
 ```python
 @app.get("/v1/agents/discover", response_model=DiscoverAgentsResponse)
@@ -723,7 +743,36 @@ def update_agent_visibility(
     )
 ```
 
-- [ ] **Step 3: Write API integration tests**
+- [ ] **Step 3: Add `GET /v1/agents/{agent_id}` endpoint with cross-org visibility guard**
+
+This endpoint does not exist yet in `routes.py`. Create it with a visibility check so cross-org requests return 403 for PRIVATE/ORG agents. Place it **after** the `GET /v1/agents/discover` route (to avoid path conflicts):
+
+```python
+@app.get("/v1/agents/{agent_id}", response_model=AgentResponse)
+def get_agent(
+    agent_id: str,
+    authenticated: Any = Depends(authenticated_agent),
+) -> Any:
+    from fastapi import HTTPException
+    from contextgraph.models import Visibility
+
+    target = graph.get_agent(agent_id)
+    requester = authenticated
+
+    if target.org_id != requester.org_id:
+        if target.default_visibility == Visibility.PRIVATE:
+            raise HTTPException(status_code=403, detail="Agent is private")
+        if target.default_visibility == Visibility.ORG:
+            raise HTTPException(status_code=403, detail="Agent is org-only")
+        if target.default_visibility == Visibility.SHARED:
+            if requester.agent_id not in target.default_access_list and requester.org_id not in target.default_access_list:
+                raise HTTPException(status_code=403, detail="Agent not shared with you")
+    # PUBLISHED: allow through
+
+    return to_jsonable(target)
+```
+
+- [ ] **Step 4: Write API integration tests**
 
 ```python
 # tests/test_discover_api.py
@@ -778,16 +827,16 @@ class DiscoverAPITest(unittest.TestCase):
         self.assertEqual(updated.default_visibility, Visibility.PUBLISHED)
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 5: Run tests**
 
 Run: `python -m pytest tests/test_discover.py tests/test_discover_api.py -v`
 Expected: All tests PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add contextgraph/api/schemas.py contextgraph/api/routes.py tests/test_discover_api.py
-git commit -m "feat: add discover, activity, and visibility API endpoints"
+git commit -m "feat: add discover, activity, visibility API endpoints and cross-org guard"
 ```
 
 ---
@@ -814,6 +863,7 @@ Add to `HttpTransport` class (around line 200):
 
 ```python
 def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]:
+    # requester_agent_id not sent over HTTP — API key header handles auth
     params = {}
     for key in ("q", "status", "min_reputation", "org_id", "visibility", "sort_by", "limit", "offset"):
         if payload.get(key) is not None:
@@ -860,6 +910,7 @@ def discover(
     offset: int = 0,
 ) -> dict[str, Any]:
     return self.transport.discover_agents({
+        "requester_agent_id": self._agent_id,
         "q": q, "status": status, "min_reputation": min_reputation,
         "org_id": org_id, "visibility": visibility, "sort_by": sort_by,
         "limit": limit, "offset": offset,
@@ -869,7 +920,9 @@ def agent_activity(
     self, agent_id: str, limit: int = 20, offset: int = 0
 ) -> dict[str, Any]:
     return self.transport.agent_activity({
-        "agent_id": agent_id, "limit": limit, "offset": offset,
+        "agent_id": agent_id,
+        "requester_agent_id": self._agent_id,
+        "limit": limit, "offset": offset,
     })
 
 def update_agent_visibility(
@@ -879,6 +932,7 @@ def update_agent_visibility(
 ) -> dict[str, Any]:
     return self.transport.update_agent_visibility({
         "agent_id": self._agent_id,
+        "requester_agent_id": self._agent_id,
         "visibility": visibility,
         "access_list": access_list,
     })
@@ -890,25 +944,73 @@ Add to `sdk/contextgraph_sdk/_local.py`:
 
 ```python
 def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]:
+    # requester_agent_id included in payload by SDK client
     return to_jsonable(self.service.discover_agents(**payload))
 
 def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]:
+    # Maps to service.get_agent_activity (note: different method name)
     return to_jsonable(self.service.get_agent_activity(**payload))
 
 def update_agent_visibility(self, payload: dict[str, Any]) -> dict[str, Any]:
     return to_jsonable(self.service.update_agent_visibility(**payload))
 ```
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 5: Write SDK tests**
 
-Run: `python -m pytest tests/ -q`
+Create `tests/test_sdk_discover.py`:
+
+```python
+from __future__ import annotations
+
+import unittest
+
+from contextgraph import ContextGraphService
+from contextgraph.models import Visibility
+from sdk.contextgraph_sdk._local import LocalTransport
+from sdk.contextgraph_sdk.client import ContextGraph
+
+
+class SDKDiscoverTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.service = ContextGraphService()
+        transport = LocalTransport(self.service)
+        self.agent = self.service.register_agent("sdk-test", "acme", ["research"])
+        self.client = ContextGraph(transport)
+        self.client._agent_id = self.agent.agent_id
+
+    def tearDown(self) -> None:
+        self.service.close()
+
+    def test_discover_returns_agents(self) -> None:
+        self.service.register_agent("other-agent", "acme", ["coding"])
+        result = self.client.discover()
+        self.assertIn("items", result)
+        self.assertGreater(result["total"], 0)
+
+    def test_agent_activity_returns_events(self) -> None:
+        self.service.store_memory(
+            agent_id=self.agent.agent_id,
+            content="The Eiffel Tower is in Paris, France",
+        )
+        result = self.client.agent_activity(self.agent.agent_id)
+        self.assertIn("items", result)
+        self.assertGreater(result["total"], 0)
+
+    def test_update_visibility(self) -> None:
+        result = self.client.update_agent_visibility(visibility="published")
+        self.assertEqual(result["default_visibility"], "published")
+```
+
+- [ ] **Step 6: Run tests**
+
+Run: `python -m pytest tests/test_sdk_discover.py tests/ -q`
 Expected: All tests pass
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add sdk/contextgraph_sdk/client.py sdk/contextgraph_sdk/_local.py
-git commit -m "feat: add discover, activity, visibility SDK client methods"
+git add sdk/contextgraph_sdk/client.py sdk/contextgraph_sdk/_local.py tests/test_sdk_discover.py
+git commit -m "feat: add discover, activity, visibility SDK client methods with tests"
 ```
 
 ---
@@ -1408,3 +1510,17 @@ print('OK: activity works')
 s.close()
 "
 ```
+
+---
+
+## Deferred Features (V2)
+
+The following spec features are intentionally deferred from this implementation to keep scope focused. They will be addressed in a follow-up:
+
+| Feature | Spec Section | Reason for Deferral |
+|---------|-------------|---------------------|
+| **Multi-agent selector dropdown** on Follow button | Dashboard UI - Follow button behavior | Simplified to single-click follow using the authenticated dashboard agent. Multi-agent selection (choosing which of your agents follows the target) requires additional UI complexity and API key switching. Will add when multi-agent dashboard login is implemented. |
+| **SSE real-time follower count updates** | Dashboard UI - Follow button behavior | Follow button reloads the page for now. Real-time SSE push for follower count changes requires wiring new event types into the existing SSE infrastructure. Will add alongside other real-time dashboard features. |
+| **Trust score history sparkline** | Agent Detail - Trust tab | Requires storing historical reputation snapshots (currently only current score is persisted). Will add once a `reputation_history` time-series is implemented. The Trust tab shows current attestation/challenge rates and recent verdicts instead. |
+
+These simplifications do not affect the core discovery, follow, or activity functionality.
