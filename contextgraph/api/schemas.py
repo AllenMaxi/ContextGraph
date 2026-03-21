@@ -333,3 +333,28 @@ class FeedItemResponse(BaseModel):
     price: float = 0.0
     is_locked: bool = False
     requires_payment: bool = False
+
+
+class AgentSuspendRequest(BaseModel):
+    reason: str = "manual"
+
+
+class SentinelVerdictResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    verdict_id: str
+    sentinel_agent_id: str
+    claim_id: str
+    memory_id: str
+    decision: str
+    confidence: float
+    reason: str
+    conflicting_claim_id: str | None = None
+    details: dict[str, str] = Field(default_factory=dict)
+    timestamp: datetime
+
+
+class SentinelHealthResponse(BaseModel):
+    sentinels_active: int
+    total_verdicts: int
+    last_canary_passed: bool | None = None

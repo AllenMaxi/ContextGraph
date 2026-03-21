@@ -11,6 +11,7 @@ from .schemas import (
     AgentRegistrationRequest,
     AgentRegistrationResponse,
     AgentResponse,
+    AgentSuspendRequest,
     AuditEntryResponse,
     BackgroundJobResponse,
     ClaimResponse,
@@ -401,3 +402,66 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 reason=payload.reason,
             )
         )
+
+    # --- Agent Lifecycle ---
+
+    @app.post("/v1/agents/{agent_id}/suspend")
+    def suspend_agent(
+        agent_id: str,
+        payload: AgentSuspendRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        target = graph.get_agent(agent_id)
+        if authenticated.org_id != target.org_id:
+            from ._compat import HTTPException
+
+            raise HTTPException(status_code=403, detail="Can only suspend agents in your org.")
+        return to_jsonable(graph.suspend_agent(authenticated.agent_id, agent_id, reason=payload.reason))
+
+    @app.post("/v1/agents/{agent_id}/reactivate")
+    def reactivate_agent(
+        agent_id: str,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        target = graph.get_agent(agent_id)
+        if authenticated.org_id != target.org_id:
+            from ._compat import HTTPException
+
+            raise HTTPException(status_code=403, detail="Can only reactivate agents in your org.")
+        return to_jsonable(graph.reactivate_agent(authenticated.agent_id, agent_id))
+
+    @app.delete("/v1/agents/{agent_id}")
+    def delete_agent(
+        agent_id: str,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        target = graph.get_agent(agent_id)
+        if authenticated.org_id != target.org_id:
+            from ._compat import HTTPException
+
+            raise HTTPException(status_code=403, detail="Can only delete agents in your org.")
+        return to_jsonable(graph.delete_agent(authenticated.agent_id, agent_id))
+
+    # --- Sentinel Audit ---
+
+    @app.get("/v1/audit/verdicts")
+    def list_verdicts(
+        claim_id: str | None = None,
+        decision: str | None = None,
+        limit: int = 100,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        if claim_id:
+            results = graph.list_verdicts_for_claim(claim_id)
+        else:
+            results = graph.list_verdicts(limit=limit, decision=decision)
+        return to_jsonable(results)
+
+    @app.get("/v1/sentinel/health")
+    def sentinel_health(authenticated: Any = Depends(authenticated_agent)) -> Any:
+        sentinels = [a for a in graph.repository.list_agents() if a.role == "sentinel"]
+        return {
+            "sentinels_active": len([s for s in sentinels if s.status == "active"]),
+            "total_verdicts": len(graph.repository.list_verdicts()),
+            "last_canary_passed": None,
+        }
