@@ -27,6 +27,14 @@ class LocalTransport:
             )
         )
 
+    def agent_trust(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_agent_trust_summary(
+                requester_agent_id=payload["requester_agent_id"],
+                agent_id=payload["agent_id"],
+            )
+        )
+
     def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
         local_payload = dict(payload)
         return to_jsonable(self.service.update_agent_profile(**local_payload))
@@ -68,6 +76,37 @@ class LocalTransport:
 
     def deactivate_watch(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.deactivate_watch(**payload))
+
+    def follow(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.follow(
+                agent_id=payload["agent_id"],
+                target_type=payload["target_type"],
+                target_id=payload["target_id"],
+            )
+        )
+
+    def unfollow(self, payload: dict[str, Any]) -> None:
+        self.service.unfollow(
+            agent_id=payload["agent_id"],
+            subscription_id=payload["subscription_id"],
+        )
+        return None
+
+    def list_following(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(self.service.list_following(agent_id=payload["agent_id"]))
+
+    def list_followers(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(self.service.list_followers(agent_id=payload["agent_id"]))
+
+    def feed(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(
+            self.service.get_feed(
+                agent_id=payload["agent_id"],
+                limit=payload.get("limit", 20),
+                offset=payload.get("offset", 0),
+            )
+        )
 
     def job_status(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.get_job(**payload))

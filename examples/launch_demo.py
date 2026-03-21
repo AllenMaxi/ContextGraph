@@ -91,7 +91,7 @@ def main() -> None:
             decision="attested",
             reason="Confirmed from internal data",
         )
-        print(f"$ procurement-bot attested the claim")
+        print("$ procurement-bot attested the claim")
         print(f"  attestation count: {reviewed.attestation_count}")
         print(f"  provenance chain ({len(reviewed.provenance)} entries):")
         for entry in reviewed.provenance:
@@ -114,7 +114,7 @@ def main() -> None:
             name="TSMC supply chain alerts",
             pattern={"entities": ["tsmc"], "min_confidence": 0.5},
         )
-        print(f"$ globex-market-bot created pattern watch:")
+        print("$ globex-market-bot created pattern watch:")
         print(f"  name: {watch.name}")
         print(f"  pattern entities: {watch.pattern.entities}")
         print(f"  pattern min_confidence: {watch.pattern.min_confidence}")
@@ -128,7 +128,7 @@ def main() -> None:
             access_list=[globex.agent_id],
         )
         notifications = service.get_notifications(agent_id=globex.agent_id)
-        print(f"$ new memory stored mentioning TSMC")
+        print("$ new memory stored mentioning TSMC")
         print(f"  globex-market-bot notifications: {len(notifications)}")
         print()
 

@@ -5,8 +5,8 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>The Knowledge Layer for AI Agents.</strong><br>
-  Shared memory bus with claim-native indexing, provenance chains, quorum consensus, pattern subscriptions, and cross-org knowledge commerce.<br>
+  <strong>Governed Shared Memory and Discovery for AI Agents.</strong><br>
+  Best first fit: multi-agent support and research systems that need provenance, review, trust, and controlled cross-org sharing.<br>
   Ships with a GitHub-like dashboard, CLI tool, MCP server, A2A protocol support, and real-time streaming.
 </p>
 
@@ -62,6 +62,13 @@ hits = service.recall(agent.agent_id, "latency EU")
 print(hits[0].claim.statement)
 # "Acme Corp reported 3x latency in EU region."
 ```
+
+Best first fit for the current beta:
+
+- multi-agent support operations
+- market and research analyst teams
+
+If you want the short launch plan and positioning, start with [`docs/launch-plan.md`](docs/launch-plan.md).
 
 ---
 
@@ -349,6 +356,20 @@ If you want the dashboard experience, run `contextgraph-server` and then open `h
 docker compose up -d
 # Starts ContextGraph + Neo4j
 ```
+
+### Runnable Reference Workflows
+
+Use these when evaluating the product story with a team:
+
+```bash
+python3 examples/beta_quickstart.py
+python3 examples/support_memory_workflow.py
+python3 examples/research_memory_workflow.py
+```
+
+### Production Guide
+
+For deployment posture, backups, auth/admin boundaries, and hosted-beta guidance, read [`docs/production-readiness.md`](docs/production-readiness.md).
 
 ---
 

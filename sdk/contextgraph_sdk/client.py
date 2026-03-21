@@ -23,6 +23,7 @@ class Transport(Protocol):
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def agent_trust(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def discover_agents(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def agent_activity(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -34,6 +35,11 @@ class Transport(Protocol):
     def watch(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_watches(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def deactivate_watch(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def follow(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def unfollow(self, payload: dict[str, Any]) -> None: ...
+    def list_following(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def list_followers(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def feed(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def job_status(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_jobs(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def list_claims(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
@@ -65,7 +71,10 @@ class HttpTransport:
         req = request.Request(url, data=data, headers=headers, method=method)
         try:
             with request.urlopen(req) as response:  # noqa: S310 - caller controls base_url
-                return json.loads(response.read().decode("utf-8"))
+                raw = response.read().decode("utf-8")
+                if not raw.strip():
+                    return None
+                return json.loads(raw)
         except error.HTTPError as exc:
             detail = self._parse_error_detail(exc)
             raise self._map_http_error(exc.code, detail) from exc
@@ -113,6 +122,9 @@ class HttpTransport:
 
     def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("GET", f"/v1/agents/{payload['agent_id']}")
+
+    def agent_trust(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("GET", f"/v1/agents/{payload['agent_id']}/trust")
 
     def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
         agent_id = payload["agent_id"]
@@ -181,6 +193,34 @@ class HttpTransport:
 
     def deactivate_watch(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", f"/v1/watch/{payload['query_id']}/deactivate")
+
+    def follow(self, payload: dict[str, Any]) -> dict[str, Any]:
+        body = {
+            "target_type": payload["target_type"],
+            "target_id": payload["target_id"],
+        }
+        return self._request("POST", "/v1/follow", body)
+
+    def unfollow(self, payload: dict[str, Any]) -> None:
+        self._request("DELETE", f"/v1/follow/{payload['subscription_id']}")
+        return None
+
+    def list_following(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._request("GET", "/v1/following")
+
+    def list_followers(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._request("GET", "/v1/followers")
+
+    def feed(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        query_params = {
+            key: value
+            for key, value in payload.items()
+            if key in {"limit", "offset"} and value is not None
+        }
+        path = "/v1/feed"
+        if query_params:
+            path = f"{path}?{urlencode(query_params)}"
+        return self._request("GET", path)
 
     def job_status(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("GET", f"/v1/jobs/{payload['job_id']}")
@@ -305,6 +345,9 @@ class ContextGraph:
 
     def agent(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
         return self.transport.get_agent({"requester_agent_id": requester_agent_id, "agent_id": agent_id})
+
+    def agent_trust(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
+        return self.transport.agent_trust({"requester_agent_id": requester_agent_id, "agent_id": agent_id})
 
     def update_agent_profile(
         self,
@@ -488,6 +531,32 @@ class ContextGraph:
                 "query_id": query_id,
             }
         )
+
+    def follow(self, agent_id: str, target_type: str, target_id: str) -> dict[str, Any]:
+        return self.transport.follow(
+            {
+                "agent_id": agent_id,
+                "target_type": target_type,
+                "target_id": target_id,
+            }
+        )
+
+    def unfollow(self, agent_id: str, subscription_id: str) -> None:
+        self.transport.unfollow(
+            {
+                "agent_id": agent_id,
+                "subscription_id": subscription_id,
+            }
+        )
+
+    def following(self, agent_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_following({"agent_id": agent_id})
+
+    def followers(self, agent_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_followers({"agent_id": agent_id})
+
+    def feed(self, agent_id: str, limit: int = 20, offset: int = 0) -> list[dict[str, Any]]:
+        return self.transport.feed({"agent_id": agent_id, "limit": limit, "offset": offset})
 
     def job_status(self, job_id: str, requester_agent_id: str) -> dict[str, Any]:
         return self.transport.job_status(

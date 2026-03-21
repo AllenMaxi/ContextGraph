@@ -109,6 +109,43 @@ class ContextGraphSDKTest(unittest.TestCase):
         finally:
             service.close()
 
+    def test_local_transport_supports_follow_discovery_feed_and_trust(self) -> None:
+        service = ContextGraphService()
+        try:
+            client = ContextGraph.local(service)
+            research = client.register_agent("research-bot", "acme", ["research"])
+            ops = client.register_agent("ops-bot", "acme", ["operations"])
+            partner = client.register_agent("partner-analyst", "globex", ["analysis"])
+
+            client.update_agent_profile(
+                requester_agent_id=partner["agent_id"],
+                agent_id=partner["agent_id"],
+                profile_visibility="published",
+                profile_summary="Cross-org market analyst",
+                profile_links={"orchestrator": "https://agents.example.com/partner-analyst"},
+            )
+            client.follow(ops["agent_id"], "agent", research["agent_id"])
+            client.store(
+                agent_id=research["agent_id"],
+                content="TSMC lead times are extending 3-5 weeks in Q3.",
+                visibility="org",
+            )
+
+            discovered = client.discover(requester_agent_id=ops["agent_id"], q="analyst")
+            following = client.following(ops["agent_id"])
+            feed = client.feed(ops["agent_id"])
+            trust = client.agent_trust(ops["agent_id"], research["agent_id"])
+
+            self.assertEqual(discovered["items"][0]["agent_id"], partner["agent_id"])
+            self.assertEqual(len(following), 1)
+            self.assertEqual(following[0]["target_id"], research["agent_id"])
+            self.assertGreaterEqual(len(feed), 1)
+            self.assertEqual(feed[0]["agent_id"], research["agent_id"])
+            self.assertEqual(trust["agent_id"], research["agent_id"])
+            self.assertEqual(trust["status"], "active")
+        finally:
+            service.close()
+
 
 if __name__ == "__main__":
     unittest.main()

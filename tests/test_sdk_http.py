@@ -161,6 +161,86 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertIn('"citations": ["ticket:INC-42"]', captured["body"])
         self.assertIn('"expires_in_days": 14', captured["body"])
 
+    def test_http_transport_follow_uses_follow_endpoint(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = req.data.decode("utf-8")
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.follow("agt_test", "agent", "agt_target")
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/follow")
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn('"target_type": "agent"', captured["body"])
+        self.assertIn('"target_id": "agt_target"', captured["body"])
+
+    def test_http_transport_feed_uses_encoded_query_parameters(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"[]"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.feed("agt_test", limit=5, offset=10)
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/feed?limit=5&offset=10")
+
+    def test_http_transport_unfollow_handles_empty_204_response(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b""
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            result = client.unfollow("agt_test", "sub_123")
+
+        self.assertIsNone(result)
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/follow/sub_123")
+        self.assertEqual(captured["method"], "DELETE")
+
 
 if __name__ == "__main__":
     unittest.main()

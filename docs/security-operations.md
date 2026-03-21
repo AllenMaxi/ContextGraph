@@ -94,7 +94,7 @@ Be ready to:
 
 ## 9. Current Operational Baseline
 
-ContextGraph 0.2.x is strong enough for:
+ContextGraph 0.4.x is strong enough for:
 
 - internal experiments
 - design partner pilots
@@ -105,4 +105,3 @@ It still needs additional hardening for:
 - public hosted multi-tenant offerings
 - external payment verification beyond MVP token checks
 - mature cross-network protocol interoperability
-

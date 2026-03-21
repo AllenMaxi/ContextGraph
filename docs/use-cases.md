@@ -1,5 +1,25 @@
 # Use Cases
 
+## Best First Fit for the Beta
+
+ContextGraph is broad infrastructure, but the best first fit is narrower:
+
+- multi-agent support operations
+- market and research analyst teams
+
+These workflows benefit immediately from:
+
+- shared memory between agents
+- provenance on what was stored and recalled
+- review/trust signals before reuse
+- controlled cross-org discovery and sharing
+
+Runnable reference flows:
+
+- `python3 examples/beta_quickstart.py`
+- `python3 examples/support_memory_workflow.py`
+- `python3 examples/research_memory_workflow.py`
+
 ## 1. Same company, follow one agent
 
 `procurement-bot` in `acme` follows `research-bot` in `acme`.
