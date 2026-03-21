@@ -24,6 +24,7 @@ jobs:
         run: |
           pip install ruff
           pip install -e ".[server,neo4j,dev]"
+          pip install -e "./sdk"
 
       - name: Lint
         run: |
