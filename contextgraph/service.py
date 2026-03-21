@@ -38,6 +38,8 @@ from .models import (
     ReviewQueueItem,
     ReviewStatus,
     ReviewTask,
+    SentinelDecision,
+    SentinelVerdict,
     StandingQuery,
     StoreResult,
     Subscription,
@@ -96,6 +98,166 @@ class ContextGraphService:
             self._background_worker.start()
             if self.settings.enable_claim_expiry_sweeps:
                 self._schedule_claim_expiry_sweep(self.settings.claim_expiry_sweep_seconds)
+        if self.settings.sentinel_enabled:
+            self._register_sentinels()
+
+    def _register_sentinels(self) -> None:
+        """Register built-in sentinel agents (idempotent)."""
+        for name in ("sentinel_duplicate", "sentinel_conflict", "sentinel_quality"):
+            existing = [a for a in self.repository.list_agents() if a.name == name and a.org_id == "_system"]
+            if existing:
+                continue
+            now = utcnow()
+            sentinel = Agent(
+                agent_id=new_id("agt"),
+                name=name,
+                org_id="_system",
+                capabilities=["sentinel"],
+                api_key=new_api_key(),
+                status=AgentStatus.ACTIVE,
+                created_at=now,
+                updated_at=now,
+                role=AgentRole.SENTINEL,
+                last_activity_at=now,
+            )
+            self.repository.save_agent(sentinel)
+
+    def _get_sentinel_agent(self, name: str) -> Agent | None:
+        for agent in self.repository.list_agents():
+            if agent.name == name and agent.org_id == "_system" and agent.role == AgentRole.SENTINEL:
+                return agent
+        return None
+
+    def run_sentinel_audit(self, claim_id: str) -> list[SentinelVerdict]:
+        from .sentinel import (
+            ConflictSentinel,
+            DuplicateSentinel,
+            QualitySentinel,
+            aggregate_verdicts,
+            determine_audit_depth,
+        )
+
+        claim = self.repository.get_claim(claim_id)
+        if claim is None:
+            raise NotFoundError(f"Claim '{claim_id}' not found.")
+
+        source_agent = self.get_agent(claim.source_agent_id)
+        depth = determine_audit_depth(source_agent, self.settings)
+
+        if depth == "off":
+            return []
+
+        now = utcnow()
+        verdicts: list[SentinelVerdict] = []
+        decisions: list[SentinelDecision] = []
+
+        # Get recent claims for duplicate/conflict checks
+        recent_claims = [
+            c
+            for c in self.repository.list_claims()
+            if c.source_agent_id == claim.source_agent_id and c.claim_id != claim.claim_id
+        ][-100:]
+
+        # Duplicate check (always runs)
+        dup_sentinel = DuplicateSentinel()
+        dup_result = dup_sentinel.check(claim, recent_claims)
+        dup_agent = self._get_sentinel_agent("sentinel_duplicate")
+        if dup_agent:
+            verdict = SentinelVerdict(
+                verdict_id=new_id("vrd"),
+                sentinel_agent_id=dup_agent.agent_id,
+                claim_id=claim.claim_id,
+                memory_id=claim.memory_id,
+                decision=dup_result.decision,
+                confidence=dup_result.confidence,
+                reason=dup_result.reason,
+                conflicting_claim_id=dup_result.conflicting_claim_id,
+                details=dict(dup_result.details or {}),
+                timestamp=now,
+            )
+            self.repository.save_sentinel_verdict(verdict)
+            verdicts.append(verdict)
+            decisions.append(dup_result.decision)
+
+        if depth in ("full", "light"):
+            # Conflict check
+            validated_claims = [
+                c
+                for c in self.repository.list_claims()
+                if c.validation_status in (ValidationStatus.VALIDATED, ValidationStatus.PENDING)
+                and c.claim_id != claim.claim_id
+            ]
+            conflict_sentinel = ConflictSentinel()
+            conflict_result = conflict_sentinel.check(claim, validated_claims)
+            conflict_agent = self._get_sentinel_agent("sentinel_conflict")
+            if conflict_agent and depth == "full":
+                verdict = SentinelVerdict(
+                    verdict_id=new_id("vrd"),
+                    sentinel_agent_id=conflict_agent.agent_id,
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    decision=conflict_result.decision,
+                    confidence=conflict_result.confidence,
+                    reason=conflict_result.reason,
+                    conflicting_claim_id=conflict_result.conflicting_claim_id,
+                    details=dict(conflict_result.details or {}),
+                    timestamp=now,
+                )
+                self.repository.save_sentinel_verdict(verdict)
+                verdicts.append(verdict)
+                decisions.append(conflict_result.decision)
+
+            # Quality check
+            quality_sentinel = QualitySentinel()
+            quality_result = quality_sentinel.check(claim, source_agent)
+            quality_agent = self._get_sentinel_agent("sentinel_quality")
+            if quality_agent:
+                verdict = SentinelVerdict(
+                    verdict_id=new_id("vrd"),
+                    sentinel_agent_id=quality_agent.agent_id,
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    decision=quality_result.decision,
+                    confidence=quality_result.confidence,
+                    reason=quality_result.reason,
+                    conflicting_claim_id=quality_result.conflicting_claim_id,
+                    details=dict(quality_result.details or {}),
+                    timestamp=now,
+                )
+                self.repository.save_sentinel_verdict(verdict)
+                verdicts.append(verdict)
+                decisions.append(quality_result.decision)
+
+        # Aggregate and apply
+        final = aggregate_verdicts(decisions)
+        if final == SentinelDecision.VALIDATE:
+            claim.validation_status = ValidationStatus.VALIDATED
+            claim.validated_at = now
+        elif final == SentinelDecision.DISPUTE:
+            claim.validation_status = ValidationStatus.DISPUTED
+        elif final == SentinelDecision.REJECT:
+            claim.validation_status = ValidationStatus.REJECTED
+        elif final == SentinelDecision.NEEDS_REVIEW:
+            review = ReviewTask(
+                task_id=new_id("rev"),
+                claim_id=claim.claim_id,
+                reason="sentinel_needs_review",
+                status=ReviewStatus.OPEN,
+                created_at=now,
+            )
+            self.repository.save_review_task(review)
+
+        claim.updated_at = now
+        self.repository.update_claim(claim)
+        self._sync_memory_validation(claim.memory_id)
+
+        return verdicts
+
+    def list_verdicts_for_claim(self, claim_id: str) -> list[SentinelVerdict]:
+        return self.repository.list_verdicts_for_claim(claim_id)
+
+    def list_verdicts(self, limit: int = 100, decision: str | None = None) -> list[SentinelVerdict]:
+        return self.repository.list_verdicts(limit, decision)
 
     def register_agent(
         self,
