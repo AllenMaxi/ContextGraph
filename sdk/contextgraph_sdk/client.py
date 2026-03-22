@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 class Transport(Protocol):
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_agent_defaults(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_agents(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def agent_trust(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_agent_profile(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -43,9 +44,11 @@ class Transport(Protocol):
     def job_status(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_jobs(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def list_claims(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
-    def notifications(self, agent_id: str) -> list[dict[str, Any]]: ...
+    def get_claim(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def notifications(self, agent_id: str, mark_delivered: bool = False) -> list[dict[str, Any]]: ...
     def review_claim(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def review_queue(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def health(self) -> dict[str, Any]: ...
     def operator_summary(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def expire_claims(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def suspend_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -119,6 +122,9 @@ class HttpTransport:
             if key in {"default_visibility", "default_access_list", "default_price"} and value is not None
         }
         return self._request("PATCH", f"/v1/agents/{agent_id}/defaults", body)
+
+    def list_agents(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._request("GET", "/v1/agents")
 
     def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("GET", f"/v1/agents/{payload['agent_id']}")
@@ -237,14 +243,23 @@ class HttpTransport:
             path = f"{path}?{urlencode(query_params)}"
         return self._request("GET", path)
 
-    def notifications(self, agent_id: str) -> list[dict[str, Any]]:
-        return self._request("GET", f"/v1/notifications/{agent_id}")
+    def get_claim(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("GET", f"/v1/claims/{payload['claim_id']}")
+
+    def notifications(self, agent_id: str, mark_delivered: bool = False) -> list[dict[str, Any]]:
+        path = f"/v1/notifications/{agent_id}"
+        if mark_delivered:
+            path = f"{path}?mark_delivered=true"
+        return self._request("GET", path)
 
     def review_claim(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/claims/review", payload)
 
     def review_queue(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return self._request("GET", "/v1/review-queue")
+
+    def health(self) -> dict[str, Any]:
+        return self._request("GET", "/health")
 
     def operator_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("GET", "/v1/operator/summary")
@@ -338,6 +353,9 @@ class ContextGraph:
                 "default_price": default_price,
             }
         )
+
+    def agents(self, requester_agent_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_agents({"requester_agent_id": requester_agent_id})
 
     def agent(self, requester_agent_id: str, agent_id: str) -> dict[str, Any]:
         return self.transport.get_agent({"requester_agent_id": requester_agent_id, "agent_id": agent_id})
@@ -500,7 +518,7 @@ class ContextGraph:
         query: str,
         name: str | None = None,
         delivery_mode: str = "pull",
-        filters: dict[str, str] | None = None,
+        filters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self.transport.watch(
             {
@@ -562,8 +580,8 @@ class ContextGraph:
             }
         )
 
-    def notifications(self, agent_id: str) -> list[dict[str, Any]]:
-        return self.transport.notifications(agent_id)
+    def notifications(self, agent_id: str, mark_delivered: bool = False) -> list[dict[str, Any]]:
+        return self.transport.notifications(agent_id, mark_delivered=mark_delivered)
 
     def jobs(self, requester_agent_id: str) -> list[dict[str, Any]]:
         return self.transport.list_jobs({"requester_agent_id": requester_agent_id})
@@ -581,6 +599,14 @@ class ContextGraph:
                 "validation_status": validation_status,
                 "only_needing_review": only_needing_review,
                 "limit": limit,
+            }
+        )
+
+    def claim(self, requester_agent_id: str, claim_id: str) -> dict[str, Any]:
+        return self.transport.get_claim(
+            {
+                "requester_agent_id": requester_agent_id,
+                "claim_id": claim_id,
             }
         )
 
@@ -602,6 +628,9 @@ class ContextGraph:
 
     def review_queue(self, requester_agent_id: str) -> list[dict[str, Any]]:
         return self.transport.review_queue({"requester_agent_id": requester_agent_id})
+
+    def health(self) -> dict[str, Any]:
+        return self.transport.health()
 
     def operator_summary(self, requester_agent_id: str) -> dict[str, Any]:
         return self.transport.operator_summary({"requester_agent_id": requester_agent_id})

@@ -2,8 +2,8 @@
 
 Usage: cg <command> [options]
 
-All HTTP communication goes through ``contextgraph_sdk.client.HttpTransport``.
-Config is stored as JSON at ``~/.contextgraph/config.json``.
+All HTTP communication goes through the public ``contextgraph_sdk.ContextGraph``
+client API. Config is stored as JSON at ``~/.contextgraph/config.json``.
 """
 
 from __future__ import annotations
@@ -79,20 +79,20 @@ def _save_config(cfg: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Transport factory
+# Client factory
 # ---------------------------------------------------------------------------
 
 
 def _make_client() -> Any:
-    """Return an ``HttpTransport`` configured from the saved config."""
-    from contextgraph_sdk.client import HttpTransport
+    """Return a ``ContextGraph`` client configured from the saved config."""
+    from contextgraph_sdk import ContextGraph
 
     cfg = _load_config()
     server_url = cfg.get("server_url")
     if not server_url:
         _err("Not authenticated. Run 'cg auth login' first.")
     api_key = cfg.get("api_key")
-    return HttpTransport(base_url=server_url, api_key=api_key or None)
+    return ContextGraph.http(base_url=server_url, api_key=api_key or None)
 
 
 def _agent_id() -> str:
@@ -179,38 +179,30 @@ def cmd_store(args: argparse.Namespace, client: Any) -> None:
         _err("Provide content as a positional argument or via --file <path>.")
 
     result = client.store(
-        {
-            "agent_id": _agent_id(),
-            "content": content,
-            "visibility": args.visibility,
-            "license": args.license or "internal",
-            "metadata": {},
-        }
+        agent_id=_agent_id(),
+        content=content,
+        visibility=args.visibility,
+        license=args.license or "internal",
+        metadata={},
     )
 
     if args.json:
         _json_out(result)
         return
 
-    memory_id = result.get("memory_id", "")
+    memory_id = result.get("memory", {}).get("memory_id", result.get("memory_id", ""))
     claims = result.get("claims", [])
     _ok(f"Stored memory {CYAN}{memory_id}{RESET}{GREEN}")
     if claims:
         print(f"  {_bold('Claims extracted:')} {len(claims)}")
         for c in claims[:10]:
             cid = c.get("claim_id", "")
-            text = c.get("claim_text", c.get("text", ""))
+            text = c.get("statement", c.get("claim_text", c.get("text", "")))
             print(f"    {CYAN}{cid}{RESET}  {text}")
 
 
 def cmd_recall(args: argparse.Namespace, client: Any) -> None:
-    result = client.recall(
-        {
-            "agent_id": _agent_id(),
-            "query": args.query,
-            "limit": args.limit,
-        }
-    )
+    result = client.recall(_agent_id(), args.query, limit=args.limit)
 
     if args.json:
         _json_out(result)
@@ -222,10 +214,11 @@ def cmd_recall(args: argparse.Namespace, client: Any) -> None:
 
     print(_bold(f"Found {len(result)} result(s):\n"))
     for hit in result:
+        claim = hit.get("claim", {})
         score = hit.get("score", hit.get("similarity", ""))
-        claim_text = hit.get("claim_text", hit.get("text", ""))
-        claim_id = hit.get("claim_id", "")
-        status = hit.get("validation_status", "")
+        claim_text = claim.get("statement", hit.get("claim_text", hit.get("text", "")))
+        claim_id = claim.get("claim_id", hit.get("claim_id", ""))
+        status = claim.get("validation_status", hit.get("validation_status", ""))
         color = GREEN if status == "attested" else RED if status == "challenged" else YELLOW
         print(f"  {CYAN}{claim_id}{RESET}  {_dim(f'score={score}')}")
         print(f"    {claim_text}")
@@ -234,14 +227,7 @@ def cmd_recall(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_relate(args: argparse.Namespace, client: Any) -> None:
-    result = client.relate(
-        {
-            "agent_id": _agent_id(),
-            "entity_a": args.entity_a,
-            "entity_b": args.entity_b,
-            "max_depth": args.max_depth,
-        }
-    )
+    result = client.relate(_agent_id(), args.entity_a, args.entity_b, max_depth=args.max_depth)
 
     if args.json:
         _json_out(result)
@@ -253,11 +239,10 @@ def cmd_relate(args: argparse.Namespace, client: Any) -> None:
 
     print(_bold(f"Found {len(result)} path(s):\n"))
     for path in result:
-        hops = path.get("hops", path.get("path", []))
+        hops = path.get("entities", path.get("hops", path.get("path", [])))
         print(f"  {CYAN}{' -> '.join(str(h) for h in hops)}{RESET}")
-        if path.get("claims"):
-            for c in path["claims"]:
-                print(f"    {DIM}{c.get('claim_text', c)}{RESET}")
+        for statement in path.get("statements", []):
+            print(f"    {DIM}{statement}{RESET}")
         print()
 
 
@@ -267,7 +252,7 @@ def cmd_relate(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_agents_list(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", "/v1/agents")
+    result = client.agents(_agent_id())
 
     if args.json:
         _json_out(result)
@@ -288,16 +273,12 @@ def cmd_agents_list(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_agents_me(args: argparse.Namespace, client: Any) -> None:
-    agents = client._request("GET", "/v1/agents")
     me = _agent_id()
-    agent = next((a for a in agents if a.get("agent_id") == me), None)
+    agent = client.agent(me, me)
 
     if args.json:
         _json_out(agent)
         return
-
-    if not agent:
-        _err(f"Agent {me} not found in server agent list.")
 
     print(_bold("Agent Profile"))
     print(f"  {_bold('ID:')}          {CYAN}{agent.get('agent_id')}{RESET}")
@@ -307,13 +288,16 @@ def cmd_agents_me(args: argparse.Namespace, client: Any) -> None:
     caps = agent.get("capabilities", [])
     if caps:
         print(f"  {_bold('Capabilities:')} {', '.join(caps)}")
-    vis = agent.get("default_visibility", "")
-    if vis:
-        print(f"  {_bold('Visibility:')}  {vis}")
+    profile_visibility = agent.get("profile_visibility", "")
+    if profile_visibility:
+        print(f"  {_bold('Profile:')}     {profile_visibility}")
+    default_visibility = agent.get("default_visibility", "")
+    if default_visibility:
+        print(f"  {_bold('Memory default:')} {default_visibility}")
 
 
 def cmd_agents_show(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", f"/v1/agents/{args.agent_id}")
+    result = client.agent(_agent_id(), args.agent_id)
 
     if args.json:
         _json_out(result)
@@ -350,7 +334,7 @@ def cmd_agents_profile(args: argparse.Namespace, client: Any) -> None:
             args.link,
         ]
     ):
-        result = client._request("GET", f"/v1/agents/{me}")
+        result = client.agent(me, me)
     else:
         links: dict[str, str] | None = None
         if args.link:
@@ -373,7 +357,14 @@ def cmd_agents_profile(args: argparse.Namespace, client: Any) -> None:
             payload["profile_access_list"] = [item.strip() for item in args.access_list.split(",") if item.strip()]
         if links is not None:
             payload["profile_links"] = links
-        result = client._request("PATCH", f"/v1/agents/{me}/profile", payload)
+        result = client.update_agent_profile(
+            requester_agent_id=me,
+            agent_id=me,
+            profile_visibility=payload.get("profile_visibility"),
+            profile_access_list=payload.get("profile_access_list"),
+            profile_summary=payload.get("profile_summary"),
+            profile_links=payload.get("profile_links"),
+        )
 
     if args.json:
         _json_out(result)
@@ -396,7 +387,7 @@ def cmd_agents_profile(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_agents_trust(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", f"/v1/agents/{args.agent_id}/trust")
+    result = client.agent_trust(_agent_id(), args.agent_id)
 
     if args.json:
         _json_out(result)
@@ -414,28 +405,17 @@ def cmd_agents_trust(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_discover(args: argparse.Namespace, client: Any) -> None:
-    params: dict[str, Any] = {
-        "limit": args.limit,
-        "offset": args.offset,
-        "sort_by": args.sort,
-    }
-    if args.query:
-        params["q"] = args.query
-    if args.status:
-        params["status"] = args.status
-    if args.org:
-        params["org_id"] = args.org
-    if args.visibility:
-        params["visibility"] = args.visibility
-    if args.min_rep is not None:
-        params["min_reputation"] = args.min_rep
-
-    path = "/v1/agents/discover"
-    if params:
-        from urllib.parse import urlencode
-
-        path = f"{path}?{urlencode(params)}"
-    result = client._request("GET", path)
+    result = client.discover(
+        requester_agent_id=_agent_id(),
+        q=args.query,
+        status=args.status,
+        min_reputation=args.min_rep,
+        org_id=args.org,
+        visibility=args.visibility,
+        sort_by=args.sort,
+        limit=args.limit,
+        offset=args.offset,
+    )
 
     if args.json:
         _json_out(result)
@@ -467,13 +447,12 @@ def cmd_discover(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_claims_list(args: argparse.Namespace, client: Any) -> None:
-    params: dict[str, Any] = {"limit": args.limit}
-    if args.status:
-        params["validation_status"] = args.status
-    if args.needs_review:
-        params["only_needing_review"] = True
-
-    result = client.list_claims(params)
+    result = client.claims(
+        requester_agent_id=_agent_id(),
+        validation_status=args.status,
+        only_needing_review=args.needs_review,
+        limit=args.limit,
+    )
 
     if args.json:
         _json_out(result)
@@ -488,13 +467,13 @@ def cmd_claims_list(args: argparse.Namespace, client: Any) -> None:
     for c in result:
         cid = c.get("claim_id", "")
         status = c.get("validation_status", "unknown")
-        text = (c.get("claim_text", "") or "")[:60]
+        text = (c.get("statement", c.get("claim_text", "")) or "")[:60]
         color = GREEN if status == "attested" else RED if status == "challenged" else YELLOW
         print(f"  {CYAN}{cid:<38}{RESET} {color}{status:<14}{RESET} {text}")
 
 
 def cmd_claims_show(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", f"/v1/claims/{args.claim_id}")
+    result = client.claim(_agent_id(), args.claim_id)
 
     if args.json:
         _json_out(result)
@@ -502,11 +481,11 @@ def cmd_claims_show(args: argparse.Namespace, client: Any) -> None:
 
     print(_bold("Claim Details"))
     print(f"  {_bold('ID:')}          {CYAN}{result.get('claim_id')}{RESET}")
-    print(f"  {_bold('Text:')}        {result.get('claim_text', '')}")
+    print(f"  {_bold('Text:')}        {result.get('statement', result.get('claim_text', ''))}")
     status = result.get("validation_status", "")
     color = GREEN if status == "attested" else RED if status == "challenged" else YELLOW
     print(f"  {_bold('Status:')}      {color}{status}{RESET}")
-    print(f"  {_bold('Confidence:')}  {result.get('confidence_score', 'N/A')}")
+    print(f"  {_bold('Confidence:')}  {result.get('confidence', result.get('confidence_score', 'N/A'))}")
     print(f"  {_bold('Source:')}      {_dim(result.get('source_agent_id', ''))}")
     print(f"  {_bold('Memory ID:')}   {_dim(result.get('memory_id', ''))}")
     ts = result.get("created_at", "")
@@ -524,21 +503,15 @@ def cmd_claims_review(args: argparse.Namespace, client: Any) -> None:
         _err("Specify --attest or --challenge.")
 
     decision = "attest" if args.attest else "challenge"
-    result = client.review_claim(
-        {
-            "reviewer_agent_id": _agent_id(),
-            "claim_id": args.claim_id,
-            "decision": decision,
-            "reason": args.reason or "",
-        }
-    )
+    result = client.review_claim(_agent_id(), args.claim_id, decision, reason=args.reason or "")
 
     if args.json:
         _json_out(result)
         return
 
     color = GREEN if decision == "attest" else RED
-    _ok(f"Claim {CYAN}{args.claim_id}{RESET}{GREEN} marked as {color}{decision}d{RESET}")
+    past_tense = "attested" if decision == "attest" else "challenged"
+    _ok(f"Claim {CYAN}{args.claim_id}{RESET}{GREEN} marked as {color}{past_tense}{RESET}")
 
 
 # ---------------------------------------------------------------------------
@@ -547,21 +520,19 @@ def cmd_claims_review(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_watch_create(args: argparse.Namespace, client: Any) -> None:
-    payload: dict[str, Any] = {
-        "agent_id": _agent_id(),
-        "query": args.query or "",
-        "delivery_mode": "pull",
-    }
+    filters: dict[str, Any] | None = None
     if args.pattern:
         try:
             filters = json.loads(args.pattern)
         except json.JSONDecodeError:
             _err("Invalid JSON in --pattern.")
-        payload["filters"] = filters
-    if args.name:
-        payload["name"] = args.name
-
-    result = client.watch(payload)
+    result = client.watch(
+        agent_id=_agent_id(),
+        query=args.query or "",
+        name=args.name,
+        delivery_mode="pull",
+        filters=filters,
+    )
 
     if args.json:
         _json_out(result)
@@ -572,12 +543,7 @@ def cmd_watch_create(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_watch_list(args: argparse.Namespace, client: Any) -> None:
-    result = client.list_watches(
-        {
-            "requester_agent_id": _agent_id(),
-            "include_inactive": args.all,
-        }
-    )
+    result = client.watches(_agent_id(), include_inactive=args.all)
 
     if args.json:
         _json_out(result)
@@ -591,20 +557,16 @@ def cmd_watch_list(args: argparse.Namespace, client: Any) -> None:
     print(DIM + "-" * 90 + RESET)
     for w in result:
         qid = w.get("query_id", w.get("standing_query_id", ""))
-        active = w.get("is_active", True)
+        status = w.get("status", "active")
+        active = w.get("is_active", status == "active")
         query = w.get("query", "")
         color = GREEN if active else DIM
-        status = "active" if active else "inactive"
-        print(f"  {CYAN}{qid:<38}{RESET} {color}{status:<12}{RESET} {query}")
+        rendered_status = "active" if active else "inactive"
+        print(f"  {CYAN}{qid:<38}{RESET} {color}{rendered_status:<12}{RESET} {query}")
 
 
 def cmd_watch_delete(args: argparse.Namespace, client: Any) -> None:
-    result = client.deactivate_watch(
-        {
-            "requester_agent_id": _agent_id(),
-            "query_id": args.query_id,
-        }
-    )
+    result = client.deactivate_watch(_agent_id(), args.query_id)
 
     if args.json:
         _json_out(result)
@@ -619,10 +581,7 @@ def cmd_watch_delete(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_feed(args: argparse.Namespace, client: Any) -> None:
-    limit = args.limit
-    offset = args.offset
-    path = f"/v1/feed?limit={limit}&offset={offset}"
-    result = client._request("GET", path)
+    result = client.feed(_agent_id(), limit=args.limit, offset=args.offset)
 
     if args.json:
         _json_out(result)
@@ -656,14 +615,7 @@ def cmd_follow(args: argparse.Namespace, client: Any) -> None:
     if args.target_type not in valid_types:
         _err(f"target_type must be one of: {', '.join(valid_types)}")
 
-    result = client._request(
-        "POST",
-        "/v1/follow",
-        {
-            "target_type": args.target_type,
-            "target_id": args.id,
-        },
-    )
+    result = client.follow(_agent_id(), args.target_type, args.id)
 
     if args.json:
         _json_out(result)
@@ -674,7 +626,7 @@ def cmd_follow(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_following(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", "/v1/following")
+    result = client.following(_agent_id())
 
     if args.json:
         _json_out(result)
@@ -694,7 +646,7 @@ def cmd_following(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_followers(args: argparse.Namespace, client: Any) -> None:
-    result = client._request("GET", "/v1/followers")
+    result = client.followers(_agent_id())
 
     if args.json:
         _json_out(result)
@@ -719,11 +671,7 @@ def cmd_followers(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_notifications(args: argparse.Namespace, client: Any) -> None:
-    aid = _agent_id()
-    path = f"/v1/notifications/{aid}"
-    if args.mark_read:
-        path += "?mark_delivered=true"
-    result = client._request("GET", path)
+    result = client.notifications(_agent_id(), mark_delivered=args.mark_read)
 
     if args.json:
         _json_out(result)
@@ -735,7 +683,7 @@ def cmd_notifications(args: argparse.Namespace, client: Any) -> None:
 
     print(_bold("Notifications\n"))
     for n in result:
-        ntype = n.get("notification_type", n.get("type", ""))
+        ntype = n.get("event_type", n.get("notification_type", n.get("type", "")))
         ts = n.get("created_at", n.get("timestamp", ""))
         msg = n.get("message", n.get("summary", ""))
         print(f"  {BOLD}{ntype}{RESET}  {_dim(str(ts))}")
@@ -753,14 +701,14 @@ def cmd_notifications(args: argparse.Namespace, client: Any) -> None:
 
 
 def cmd_status(args: argparse.Namespace, client: Any) -> None:
-    health = client._request("GET", "/health")
+    health = client.health()
 
     # Try to get operator summary; may fail for non-operator agents
     import contextlib
 
     summary: dict[str, Any] | None = None
     with contextlib.suppress(Exception):
-        summary = client._request("GET", "/v1/operator/summary")
+        summary = client.operator_summary(_agent_id())
 
     if args.json:
         _json_out({"health": health, "summary": summary})

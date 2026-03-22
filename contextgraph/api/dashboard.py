@@ -36,20 +36,6 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
     # Auth routes
     # ------------------------------------------------------------------
 
-    @app.get("/dashboard", response_class=HTMLResponse)
-    async def dashboard_index(request: Request) -> Any:
-        agent = _get_agent(request)
-        if agent is None:
-            return HTMLResponse(_render_login())
-        return HTMLResponse(_render_app(graph, agent, page="overview", params=dict(request.query_params)))
-
-    @app.get("/dashboard/{page}", response_class=HTMLResponse)
-    async def dashboard_page(page: str, request: Request) -> Any:
-        agent = _get_agent(request)
-        if agent is None:
-            return HTMLResponse(_render_login())
-        return HTMLResponse(_render_app(graph, agent, page=page, params=dict(request.query_params)))
-
     @app.get("/dashboard/agents/{agent_id}", response_class=HTMLResponse)
     async def dashboard_agent_detail(agent_id: str, request: Request) -> Any:
         agent = _get_agent(request)
@@ -65,6 +51,20 @@ def register_dashboard_routes(app: Any, graph: ContextGraphService) -> None:
         if agent is None:
             return HTMLResponse(_render_login())
         return HTMLResponse(_render_app(graph, agent, page="claim-detail", detail_id=claim_id))
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard_index(request: Request) -> Any:
+        agent = _get_agent(request)
+        if agent is None:
+            return HTMLResponse(_render_login())
+        return HTMLResponse(_render_app(graph, agent, page="overview", params=dict(request.query_params)))
+
+    @app.get("/dashboard/{page}", response_class=HTMLResponse)
+    async def dashboard_page(page: str, request: Request) -> Any:
+        agent = _get_agent(request)
+        if agent is None:
+            return HTMLResponse(_render_login())
+        return HTMLResponse(_render_app(graph, agent, page=page, params=dict(request.query_params)))
 
     @app.post("/dashboard/login")
     async def dashboard_login(request: Request) -> Any:

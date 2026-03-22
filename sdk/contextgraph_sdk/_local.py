@@ -19,6 +19,9 @@ class LocalTransport:
         local_payload["requester_agent_id"] = local_payload["agent_id"]
         return to_jsonable(self.service.update_agent_defaults(**local_payload))
 
+    def list_agents(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(self.service.list_agents(requester_agent_id=payload["requester_agent_id"]))
+
     def get_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(
             self.service.get_agent_profile(
@@ -117,14 +120,25 @@ class LocalTransport:
     def list_claims(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.list_claims(**payload))
 
-    def notifications(self, agent_id: str) -> list[dict[str, Any]]:
-        return to_jsonable(self.service.get_notifications(agent_id=agent_id))
+    def get_claim(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_claim_for_agent(
+                requester_agent_id=payload["requester_agent_id"],
+                claim_id=payload["claim_id"],
+            )
+        )
+
+    def notifications(self, agent_id: str, mark_delivered: bool = False) -> list[dict[str, Any]]:
+        return to_jsonable(self.service.get_notifications(agent_id=agent_id, mark_delivered=mark_delivered))
 
     def review_claim(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.review_claim(**payload))
 
     def review_queue(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.list_review_queue(**payload))
+
+    def health(self) -> dict[str, Any]:
+        return to_jsonable(self.service.health())
 
     def operator_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.operator_snapshot(**payload))

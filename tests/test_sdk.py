@@ -40,6 +40,31 @@ class ContextGraphSDKTest(unittest.TestCase):
         self.assertIn("meeting:incident-review", hits[0]["claim"]["evidence"])
         self.assertIn("ticket:INC-42", hits[0]["claim"]["citations"])
 
+    def test_local_transport_exposes_public_agent_claim_notification_and_health_methods(self) -> None:
+        service = ContextGraphService()
+        try:
+            client = ContextGraph.local(service)
+
+            agent = client.register_agent("sdk-public", "alpha", ["research"])
+            client.watch(agent["agent_id"], "Acme latency", name="monitor")
+            stored = client.store(
+                agent_id=agent["agent_id"],
+                content="Acme Corp reported API latency in the EU region.",
+                visibility="org",
+            )
+
+            agents = client.agents(agent["agent_id"])
+            claim = client.claim(agent["agent_id"], stored["claims"][0]["claim_id"])
+            notifications = client.notifications(agent["agent_id"], mark_delivered=True)
+            health = client.health()
+
+            self.assertIn(agent["agent_id"], {item["agent_id"] for item in agents})
+            self.assertEqual(claim["claim_id"], stored["claims"][0]["claim_id"])
+            self.assertTrue(notifications[0]["delivered"])
+            self.assertEqual(health["status"], "ok")
+        finally:
+            service.close()
+
     def test_local_transport_async_round_trip(self) -> None:
         service = ContextGraphService(
             app_settings=Settings(enable_background_worker=True, background_worker_poll_seconds=0.01)

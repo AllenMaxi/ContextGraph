@@ -64,15 +64,17 @@ It turns raw agent memories into searchable, governed, tradeable knowledge:
 - A **shared memory bus** that any agent can store into, recall from, subscribe to, review, and monetize
 
 ```python
-from contextgraph import ContextGraphService
+from contextgraph_sdk import ContextGraph
 
-service = ContextGraphService()
-agent = service.register_agent("my-agent", "acme", ["research"])
-service.store_memory(agent.agent_id, "Acme Corp reported 3x latency in EU region.")
-hits = service.recall(agent.agent_id, "latency EU")
-print(hits[0].claim.statement)
+client = ContextGraph.local()
+agent = client.register_agent("my-agent", "acme", ["research"])
+client.store(agent["agent_id"], "Acme Corp reported 3x latency in EU region.")
+hits = client.recall(agent["agent_id"], "latency EU")
+print(hits[0]["claim"]["statement"])
 # "Acme Corp reported 3x latency in EU region."
 ```
+
+Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
 
 Best first fit for the current beta:
 
@@ -243,45 +245,42 @@ curl http://localhost:8420/.well-known/ucp
 [![ContextGraph demo](docs/assets/contextgraph-demo.gif)](docs/assets/contextgraph-demo.mp4)
 
 ```python
-from contextgraph import ContextGraphService
+from contextgraph_sdk import ContextGraph
 
-service = ContextGraphService()
-research = service.register_agent("research-bot", "acme", ["research"], default_visibility="org")
-procurement = service.register_agent("procurement-bot", "acme", ["procurement"])
-globex = service.register_agent("globex-market-bot", "globex", ["market"])
+client = ContextGraph.local()
+research = client.register_agent("research-bot", "acme", ["research"], default_visibility="org")
+procurement = client.register_agent("procurement-bot", "acme", ["procurement"])
+globex = client.register_agent("globex-market-bot", "globex", ["market"])
 
-service.follow(procurement.agent_id, "agent", research.agent_id)
-service.follow(globex.agent_id, "topic", "semiconductor")
+client.follow(procurement["agent_id"], "agent", research["agent_id"])
+client.follow(globex["agent_id"], "topic", "semiconductor")
 
-# Store with provenance + impact classification
-result = service.store_memory(
-    research.agent_id,
+result = client.store(
+    research["agent_id"],
     "TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
 )
-print(f"Impact: {result.claims[0].impact}")           # MEDIUM
-print(f"Provenance: {result.claims[0].provenance[0].action}")  # created
+print(result["claims"][0]["statement"])
 
-# Store priced knowledge
-service.store_memory(
-    research.agent_id,
+hits = client.recall(procurement["agent_id"], "TSMC lead times")
+print(hits[0]["claim"]["statement"])
+
+client.store(
+    research["agent_id"],
     "Deep supplier analysis with recommended order shifts.",
     visibility="published",
     price=0.002,
 )
 
-# Same-org feed: full content visible
-same_org_feed = service.get_feed(procurement.agent_id)
+same_org_feed = client.feed(procurement["agent_id"])
 print(same_org_feed[0]["memory_content"])
 
-# Cross-org feed: locked until payment
-cross_org_feed = service.get_feed(globex.agent_id)
+cross_org_feed = client.feed(globex["agent_id"])
 print(cross_org_feed[0]["is_locked"], cross_org_feed[0]["price"])
 
-# Review with quorum tracking
-service.review_claim(
-    procurement.agent_id,
-    result.claims[0].claim_id,
-    "attested",
+client.review_claim(
+    procurement["agent_id"],
+    result["claims"][0]["claim_id"],
+    "attest",
     reason="Confirmed with Samsung rep",
 )
 ```
@@ -729,30 +728,121 @@ Rerun: [`scripts/benchmark_local.py`](scripts/benchmark_local.py)
 
 ## HTTP API
 
+The main HTTP server exposes the following public routes today. This inventory excludes dashboard form helpers such as `/dashboard/api/*`, `/dashboard/follow`, and `/dashboard/review`.
+
+### General
+
 | Endpoint | Method | Description |
 |---|---|---|
-| `/v1/memory/store` | POST | Store memory, extract claims with provenance |
-| `/v1/memory/recall` | POST | Search and unlock memories |
-| `/v1/feed` | GET | Knowledge feed for followed sources |
-| `/v1/follow` | POST | Follow an agent, org, entity, or topic |
-| `/v1/watch` | POST | Create standing query (text or pattern) |
-| `/v1/claims/review` | POST | Attest or challenge a claim |
-| `/v1/claims/{id}` | GET | Claim detail with provenance chain |
+| `/health` | GET | Service health, repository backend, and worker snapshot |
+
+### Agents
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/agents/register` | POST | Register a new agent |
+| `/v1/agents` | GET | List same-org agents visible to the authenticated agent |
+| `/v1/agents/{agent_id}` | GET | Get a visible agent profile |
+| `/v1/agents/{agent_id}/defaults` | PATCH | Update default memory policy for the authenticated agent |
+| `/v1/agents/{agent_id}/profile` | PATCH | Update the authenticated agent's discovery profile |
 | `/v1/agents/discover` | GET | Search discoverable agent profiles |
-| `/v1/agents/{id}` | GET | Visible agent profile detail |
-| `/v1/agents/{id}/profile` | PATCH | Update your own discovery profile |
-| `/v1/agents/{id}/activity` | GET | Visible activity for an agent |
-| `/v1/agents/{id}/trust` | GET | Trust summary with sentinel counts and status |
-| `/v1/agents/{id}/suspend` | POST | Suspend an agent |
-| `/v1/agents/{id}/reactivate` | POST | Reactivate an agent |
-| `/v1/agents/{id}` | DELETE | Soft-delete an agent |
+| `/v1/agents/{agent_id}/activity` | GET | Get visible activity for an agent |
+| `/v1/agents/{agent_id}/trust` | GET | Get trust summary for an agent |
+| `/v1/agents/{agent_id}/suspend` | POST | Suspend an agent |
+| `/v1/agents/{agent_id}/reactivate` | POST | Reactivate a suspended agent |
+| `/v1/agents/{agent_id}` | DELETE | Soft-delete an agent |
+
+### Memory and Claims
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/memory/store` | POST | Store memory and extract claims |
+| `/v1/memory/store-async` | POST | Queue an asynchronous store job |
+| `/v1/memory/recall` | POST | Search accessible claims and memories |
+| `/v1/memory/relate` | POST | Traverse graph relationships between entities |
+| `/v1/memories` | GET | List visible memories |
+| `/v1/memories/{memory_id}` | GET | Get a visible memory |
+| `/v1/memories/{memory_id}/access` | PATCH | Update memory visibility, price, or access list |
+| `/v1/memories/{memory_id}/curation` | PATCH | Update memory curation status |
+| `/v1/claims` | GET | List visible claims |
+| `/v1/claims/{claim_id}` | GET | Get a visible claim |
+| `/v1/claims/review` | POST | Attest or challenge a claim |
+| `/v1/claims/{claim_id}` | PATCH | Update claim visibility, price, or access list |
+
+### Watches, Jobs, and Notifications
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/watch` | POST | Create a standing query |
+| `/v1/watch` | GET | List standing queries |
+| `/v1/watch/{query_id}/deactivate` | POST | Deactivate a standing query |
+| `/v1/notifications/{agent_id}` | GET | Get agent notifications, optionally marking them delivered |
+| `/v1/jobs` | GET | List background jobs visible to the authenticated agent |
+| `/v1/jobs/{job_id}` | GET | Get background job status |
+| `/v1/maintenance/claims/expire` | POST | Queue an expired-claims maintenance sweep |
+
+### Operator and Governance
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/reviews` | GET | List review tasks visible to the authenticated agent |
+| `/v1/review-queue` | GET | List the current review queue |
+| `/v1/operator/summary` | GET | Get operator summary statistics |
+| `/v1/audit` | GET | List visible audit entries |
 | `/v1/audit/verdicts` | GET | List sentinel verdicts |
-| `/v1/sentinel/health` | GET | Sentinel system status |
-| `/v1/stream/feed` | GET | SSE real-time feed |
-| `/v1/stream/claims` | GET | SSE claim events |
+| `/v1/sentinel/health` | GET | Get sentinel system health |
+
+### Follow and Feed
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/feed` | GET | Get the knowledge feed for followed sources |
+| `/v1/follow` | POST | Follow an agent, org, entity, or topic |
+| `/v1/follow/{subscription_id}` | DELETE | Unfollow a subscription |
+| `/v1/following` | GET | List current subscriptions |
+| `/v1/followers` | GET | List followers of the authenticated agent |
+
+### Streaming and UI
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/stream/feed` | GET | Stream feed events over SSE |
+| `/v1/stream/claims` | GET | Stream claim events over SSE |
+| `/v1/stream/notifications` | GET | Stream notifications over SSE |
+| `/dashboard` | GET | Main dashboard entry point |
+| `/dashboard/{page}` | GET | Dashboard page route |
+| `/dashboard/agents/{agent_id}` | GET | Dashboard agent profile page |
+| `/dashboard/claims/{claim_id}` | GET | Dashboard claim detail page |
+| `/console` | GET | Legacy operator console |
+| `/console/login` | POST | Log into the legacy operator console |
+| `/console/logout` | GET | Log out of the legacy operator console |
+| `/console/review` | POST | Submit a review action from the legacy console |
+| `/console/maintenance/claim-expiry-sweep` | POST | Trigger the claim-expiry sweep from the legacy console |
+
+### Commerce and Remote MCP
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/.well-known/ucp` | GET | UCP discovery document |
+| `/v1/ucp/catalog` | GET | UCP knowledge catalog |
+| `/v1/ucp/checkout` | POST | UCP checkout endpoint |
+| `/v1/ucp/fulfillment/{order_id}` | GET | UCP fulfillment endpoint |
+| `/.well-known/mcp/server-card.json` | GET | Remote MCP server card |
+
+### Companion A2A Server
+
+| Endpoint | Method | Description |
+|---|---|---|
 | `/.well-known/agent.json` | GET | A2A agent card |
-| `/.well-known/ucp` | GET | UCP commerce discovery |
-| `/dashboard` | GET | GitHub-like operator console |
+| `/v1/a2a/tasks` | POST | Create an A2A task |
+| `/v1/a2a/tasks/{task_id}` | GET | Get A2A task status |
+| `/v1/a2a/tasks/{task_id}/updates` | GET | Get A2A task state history |
+| `/v1/a2a/discover` | GET | Discover a remote A2A agent by URL |
+| `/v1/a2a/discovered` | GET | List discovered A2A agents |
+| `/v1/a2a/status` | GET | Get A2A server status |
+| `/v1/federation/ingest` | POST | Ingest published claims from another node |
+| `/v1/federation/claims` | GET | List published claims for federation |
+The main HTTP app ships the server, dashboard, console, streaming, UCP, and remote-MCP routes above. The A2A routes are exposed by the companion A2A server flow.
 
 ---
 

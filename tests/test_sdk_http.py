@@ -241,6 +241,111 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertEqual(captured["url"], "http://localhost:8420/v1/follow/sub_123")
         self.assertEqual(captured["method"], "DELETE")
 
+    def test_http_transport_agents_uses_agents_endpoint(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"[]"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.agents("agt_test")
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/agents")
+        self.assertEqual(captured["method"], "GET")
+
+    def test_http_transport_claim_uses_claim_detail_endpoint(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.claim("agt_test", "clm_123")
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/claims/clm_123")
+        self.assertEqual(captured["method"], "GET")
+
+    def test_http_transport_notifications_supports_mark_delivered(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"[]"
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.notifications("agt_test", mark_delivered=True)
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/notifications/agt_test?mark_delivered=true")
+        self.assertEqual(captured["method"], "GET")
+
+    def test_http_transport_health_uses_health_endpoint(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"status":"ok"}'
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            result = client.health()
+
+        self.assertEqual(captured["url"], "http://localhost:8420/health")
+        self.assertEqual(captured["method"], "GET")
+        self.assertEqual(result["status"], "ok")
+
 
 if __name__ == "__main__":
     unittest.main()
