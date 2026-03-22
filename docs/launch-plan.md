@@ -46,6 +46,7 @@ Best first design partners:
 - publish one support-memory walkthrough
 - publish one research/market-intel walkthrough
 - record short demo clips for CLI plus dashboard discover/trust flow
+- align all public posting assets with [`docs/launch-assets.md`](./launch-assets.md) and [`docs/articles/shared-memory-launch-posts.md`](./articles/shared-memory-launch-posts.md)
 
 ### Week 3: Production trust
 

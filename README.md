@@ -63,6 +63,8 @@ The fastest path through the beta is:
 - research handoff flow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
 - production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
 - comparison guide: [`docs/contextgraph-vs-vector-memory.md`](docs/contextgraph-vs-vector-memory.md)
+- launch asset guide: [`docs/launch-assets.md`](docs/launch-assets.md)
+- professional post templates: [`docs/articles/shared-memory-launch-posts.md`](docs/articles/shared-memory-launch-posts.md)
 
 Primary CTA flow:
 

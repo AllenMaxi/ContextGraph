@@ -20,6 +20,8 @@ Supporting launch docs now available in-repo:
 
 - release notes: [`docs/releases/0.4.0.md`](./releases/0.4.0.md)
 - beta plan: [`docs/launch-plan.md`](./launch-plan.md)
+- launch asset guide: [`docs/launch-assets.md`](./launch-assets.md)
+- social copy: [`docs/articles/shared-memory-launch-posts.md`](./articles/shared-memory-launch-posts.md)
 - production guide: [`docs/production-readiness.md`](./production-readiness.md)
 - design partner program: [`docs/design-partner-program.md`](./design-partner-program.md)
 
