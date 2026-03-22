@@ -356,6 +356,10 @@ The promo demo shows:
 - sub-agent delegation through the `task` tool
 - MCP registry loading and MCP tool invocation
 
+Current scope: the runtime pieces are in place and working well. The main gap
+remaining is a broader first-party connector or MCP catalog and a larger
+library of packaged skills.
+
 Run the deterministic local demo:
 
 ```bash
