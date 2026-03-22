@@ -5,9 +5,9 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>Developer Beta: governed shared memory and discovery for AI agents.</strong><br>
-  Best first fit: multi-agent support and research systems that need provenance, review, trust, and controlled cross-org sharing.<br>
-  Ships with a dashboard, CLI, SDK, MCP server, lifecycle governance, and cross-org discovery.
+  <strong>Developer Beta: governed shared memory for AI agents.</strong><br>
+  Best current fit: support operations, research handoffs, and internal agent platforms that need provenance, review, freshness, and controlled sharing.<br>
+  Ships with a dashboard, CLI, SDK, MCP server, and self-hosted governance workflow.
 </p>
 
 <p align="center">
@@ -37,31 +37,62 @@
 
 ## What It Is
 
-ContextGraph is the **knowledge and governance layer** for agents that need to share memory safely.
+ContextGraph is the **shared-memory layer** for teams running multiple agents.
 
-If your agents need to:
+When one agent learns something important, other agents can reuse it without losing:
 
-- store information once and let other agents reuse it
-- know where a memory came from
-- decide whether a memory is trustworthy
-- control who can discover or access it
+- where it came from
+- whether it was reviewed
+- how fresh it is
+- who is allowed to see it
 
-this repo is built for that.
+This repo is built for teams that need to:
 
-ContextGraph sits in the AI agent infrastructure stack here:
+- store operational or research context once and reuse it across agents
+- attach provenance, evidence, and citations to what gets recalled
+- review risky claims before another agent acts on them
+- enforce org, partner-share, and published visibility at retrieval time
+- inspect why a memory was returned or filtered without guessing from prompts
 
-```
-Identity    (ERC-8004)     Who is this agent?
-Payments    (x402)         How do agents pay each other?
-Communication (A2A/MCP)   How do agents talk?
-Knowledge   (ContextGraph) What do agents know? <-- THIS
-```
+## Start Here
 
-It turns raw agent memories into searchable, governed, tradeable knowledge:
+The fastest path through the beta is:
 
-- **Not** another vector database
-- **Not** a single-agent scratchpad
-- A **shared memory bus** that any agent can store into, recall from, subscribe to, review, and monetize
+- 2-minute local aha: [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
+- flagship support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
+- research handoff flow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
+- production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
+- comparison guide: [`docs/contextgraph-vs-vector-memory.md`](docs/contextgraph-vs-vector-memory.md)
+
+Primary CTA flow:
+
+1. run the quickstart
+2. run the support workflow
+3. read the production guide
+
+Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
+
+## Best Fit
+
+- multi-agent support and incident operations
+- research and analyst handoffs
+- internal agent platforms where wrong context is expensive
+
+## Why Teams Switch From Vector-Memory Setups
+
+Most teams do not switch because they want "more memory." They switch because they keep hitting:
+
+1. **Stale context**: vector memory can return relevant text, but it usually does not tell an agent whether the memory is fresh enough to trust.
+2. **No provenance**: teams need source agent, evidence, and citations before they let another agent act on recalled context.
+3. **No policy**: memory reuse without org, partner-share, and published visibility controls quickly turns into leakage or duplicated prompt glue.
+
+ContextGraph keeps freshness, trust, and visibility in the memory layer itself instead of leaving those decisions to every individual agent prompt.
+
+## Not For You If
+
+- you only need personal memory for one chatbot
+- you want a hosted agent runtime or enterprise IAM today
+- you mainly want a vector database or generic RAG pipeline
 
 ```python
 from contextgraph_sdk import ContextGraph
@@ -74,24 +105,40 @@ print(hits[0]["claim"]["statement"])
 # "Acme Corp reported 3x latency in EU region."
 ```
 
-Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
+## What Ships Today
 
-Best first fit for the current beta:
+- shared memory store/recall with claim-level provenance
+- explainable recall with score breakdowns and filtered-reason traces
+- review, trust, and freshness signals
+- follow/feed/discovery workflows
+- dashboard, CLI, Python SDK, and MCP server
+- in-memory indexed search and Neo4j-backed self-hosted beta path
 
-- multi-agent support operations
-- market and research analyst teams
-
-Start here:
-
-- 10-minute path: [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
-- support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
-- research workflow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
-- production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
-- release notes: [`docs/releases/0.4.0.md`](docs/releases/0.4.0.md)
+Broader roadmap note: federation, payments, and protocol positioning remain part of the long-term direction, but the current beta is focused on governed shared memory inside real team workflows.
 
 ---
 
 ## What's New in v0.4.0
+
+### Explainable Recall + Repository-Native Retrieval
+Recall now exposes a first-class explanation path and uses repository-backed candidate retrieval instead of scanning the full claim set on every query.
+
+- **Explainable recall**: inspect hits, score breakdowns, and filtered reasons via `client.explain_recall(...)` or `POST /v1/memory/recall/explain`
+- **Repository-native candidate search**: recall pulls a ranked candidate set from the backend before applying final trust, freshness, and payment checks
+- **Neo4j hot path**: the Neo4j backend now uses full-text claim retrieval with ACL-aware pruning and payment-aware ordering
+- **Operational trust**: explain mode keeps the broader candidate view so operators can still understand why a claim was filtered
+
+```python
+from contextgraph_sdk import ContextGraph
+
+client = ContextGraph.local()
+agent = client.register_agent("ops-bot", "acme", ["support"])
+client.store(agent["agent_id"], "Acme Corp reported API latency due to connection pool exhaustion.")
+
+explanation = client.explain_recall(agent["agent_id"], "Acme latency")
+print(explanation["hits"][0]["claim"]["statement"])
+print(explanation["decisions"][0]["score_breakdown"]["final_score"])
+```
 
 ### Agent Lifecycle + Sentinel Governance
 ContextGraph now ships operator-facing lifecycle controls and built-in sentinel agents for automated claim validation.
@@ -240,49 +287,38 @@ curl http://localhost:8420/.well-known/ucp
 
 ## Demo
 
-### Terminal Demo
+### Governed Memory Walkthrough
 
 [![ContextGraph demo](docs/assets/contextgraph-demo.gif)](docs/assets/contextgraph-demo.mp4)
 
-```python
-from contextgraph_sdk import ContextGraph
+The beta is easiest to understand through the runnable local workflows:
 
-client = ContextGraph.local()
-research = client.register_agent("research-bot", "acme", ["research"], default_visibility="org")
-procurement = client.register_agent("procurement-bot", "acme", ["procurement"])
-globex = client.register_agent("globex-market-bot", "globex", ["market"])
+```bash
+python3 examples/beta_quickstart.py
+python3 examples/support_memory_workflow.py
+```
 
-client.follow(procurement["agent_id"], "agent", research["agent_id"])
-client.follow(globex["agent_id"], "topic", "semiconductor")
+What you should see:
 
-result = client.store(
-    research["agent_id"],
-    "TSMC lead times are extending 3-5 weeks in Q3. Shift flexible orders to Samsung.",
-)
-print(result["claims"][0]["statement"])
+```text
+1) Stored one governed memory
+2) Added a trust signal
+3) Recalled it from another agent
+```
 
-hits = client.recall(procurement["agent_id"], "TSMC lead times")
-print(hits[0]["claim"]["statement"])
+The flagship support workflow then shows the full wedge:
 
-client.store(
-    research["agent_id"],
-    "Deep supplier analysis with recommended order shifts.",
-    visibility="published",
-    price=0.002,
-)
+- an internal incident memory becomes reviewed and trustworthy
+- a partner handoff stays visible only to the intended org
+- a paid published note stays locked cross-org
+- recall returns the reviewed memory with citation and visibility metadata
 
-same_org_feed = client.feed(procurement["agent_id"])
-print(same_org_feed[0]["memory_content"])
+Reference workflows:
 
-cross_org_feed = client.feed(globex["agent_id"])
-print(cross_org_feed[0]["is_locked"], cross_org_feed[0]["price"])
-
-client.review_claim(
-    procurement["agent_id"],
-    result["claims"][0]["claim_id"],
-    "attest",
-    reason="Confirmed with Samsung rep",
-)
+```bash
+python3 examples/beta_quickstart.py
+python3 examples/support_memory_workflow.py
+python3 examples/research_memory_workflow.py
 ```
 
 ### Dashboard Demo
@@ -318,7 +354,30 @@ source .venv/bin/activate
 pip install -e ".[server,mcp,dev]"
 ```
 
+### 2-Minute Local Quickstart
+
+```bash
+python3 examples/beta_quickstart.py
+```
+
+That gives you the shortest possible proof that ContextGraph can:
+
+- store one governed memory
+- add a review/trust signal
+- recall it from another agent with provenance and policy context
+
+### 10-Minute Evaluation Path
+
+```bash
+python3 examples/support_memory_workflow.py
+python3 examples/research_memory_workflow.py
+```
+
+Use the support workflow as the primary product story when evaluating the repo with a team.
+
 ### Start the Server
+
+If you want the dashboard or HTTP API experience after the local quickstart:
 
 ```bash
 contextgraph-server
@@ -327,60 +386,11 @@ contextgraph-server
 # API docs: http://localhost:8420/docs
 ```
 
-### 10-Minute Beta Path
-
-If you want to feel the product quickly, run this local in-process flow first:
-
-```python
-from contextgraph_sdk import ContextGraph
-
-cg = ContextGraph.local()
-
-research = cg.register_agent("research-bot", "acme", ["research"], default_visibility="org")
-ops = cg.register_agent("ops-bot", "acme", ["operations"])
-partner = cg.register_agent("partner-analyst", "globex", ["analysis"])
-
-cg.update_agent_profile(
-    requester_agent_id=partner["agent_id"],
-    agent_id=partner["agent_id"],
-    profile_visibility="published",
-    profile_summary="Cross-org market analyst",
-    profile_links={"orchestrator": "https://agents.example.com/partner-analyst"},
-)
-
-cg.follow(ops["agent_id"], "agent", research["agent_id"])
-
-cg.store(
-    agent_id=research["agent_id"],
-    content="TSMC lead times are extending 3-5 weeks in Q3.",
-)
-
-discovered = cg.discover(requester_agent_id=ops["agent_id"], visibility="published")
-hits = cg.recall(agent_id=ops["agent_id"], query="TSMC lead times")
-
-print(discovered["items"][0]["name"])
-print(hits[0]["claim"]["statement"])
-```
-
-That validates the core memory, follow, discovery, and recall loop with zero extra setup.
-
-If you want the dashboard experience, run `contextgraph-server` and then open `http://localhost:8420/dashboard`.
-
 ### Docker
 
 ```bash
 docker compose up -d
 # Starts ContextGraph + Neo4j
-```
-
-### Runnable Reference Workflows
-
-Use these when evaluating the product story with a team:
-
-```bash
-python3 examples/beta_quickstart.py
-python3 examples/support_memory_workflow.py
-python3 examples/research_memory_workflow.py
 ```
 
 ### Production Guide

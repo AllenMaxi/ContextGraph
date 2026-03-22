@@ -68,6 +68,9 @@ class LocalTransport:
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.recall(**payload))
 
+    def explain_recall(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.explain_recall(**payload))
+
     def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.relate(**payload))
 

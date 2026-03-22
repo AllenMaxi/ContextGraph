@@ -3,53 +3,61 @@ from __future__ import annotations
 from contextgraph_sdk import ContextGraph
 
 
+def _provenance_actions(claim: dict[str, object]) -> str:
+    return " -> ".join(entry["action"] for entry in claim["provenance"])
+
+
 def main() -> None:
     client = ContextGraph.local()
 
-    research = client.register_agent("research-bot", "acme", ["research"], default_visibility="org")
-    ops = client.register_agent("ops-bot", "acme", ["operations"])
-    partner = client.register_agent("partner-analyst", "globex", ["analysis"])
+    triage = client.register_agent("support-triage", "acme", ["support", "triage"], default_visibility="org")
+    billing = client.register_agent("billing-specialist", "acme", ["support", "billing"])
 
-    client.update_agent_profile(
-        requester_agent_id=partner["agent_id"],
-        agent_id=partner["agent_id"],
-        profile_visibility="published",
-        profile_summary="Cross-org market analyst",
-        profile_links={"orchestrator": "https://agents.example.com/partner-analyst"},
-    )
+    client.follow(billing["agent_id"], "agent", triage["agent_id"])
 
-    subscription = client.follow(ops["agent_id"], "agent", research["agent_id"])
     stored = client.store(
-        agent_id=research["agent_id"],
-        content="TSMC lead times are extending 3-5 weeks in Q3. Prioritize flexible orders.",
+        agent_id=triage["agent_id"],
+        content=(
+            "EU billing retries fail after 30 seconds. "
+            "Root cause points to connection pool exhaustion in payment-service."
+        ),
+        metadata={"ticket": "INC-2048", "workflow": "support"},
+        evidence=["pagerduty:pd-2048"],
+        citations=["ticket:INC-2048"],
+        expires_in_days=14,
     )
+    first_claim = stored["claims"][0]
 
-    discovered = client.discover(requester_agent_id=ops["agent_id"], visibility="published")
-    feed = client.feed(ops["agent_id"])
-    hits = client.recall(agent_id=ops["agent_id"], query="TSMC lead times")
-    trust = client.agent_trust(ops["agent_id"], research["agent_id"])
+    reviewed = client.review_claim(
+        reviewer_agent_id=billing["agent_id"],
+        claim_id=first_claim["claim_id"],
+        decision="attested",
+        reason="Confirmed from the incident timeline.",
+    )
+    hits = client.recall(agent_id=billing["agent_id"], query="EU billing retries")
+    top_hit = hits[0]
 
     print("=== ContextGraph Beta Quickstart ===")
-    print(f"Registered agents: {research['name']}, {ops['name']}, {partner['name']}")
-    print(f"Follow created: {subscription['subscription_id']}")
-    print(f"Stored memory: {stored['memory']['memory_id']}")
+    print("1) Stored one governed memory")
+    print(f"- memory_id: {stored['memory']['memory_id']}")
+    print(f"- visibility: {first_claim['visibility']}")
+    print(f"- validation_status: {first_claim['validation_status']}")
+    print(f"- fresh_until: {first_claim['expires_at'].split('T')[0]}")
+    print(f"- citation: {first_claim['citations'][0]}")
     print()
-    print("Discover results:")
-    for item in discovered["items"]:
-        print(f"- {item['name']} [{item['profile_visibility']}] :: {item.get('profile_summary', '')}")
+    print("2) Added a trust signal")
+    print(f"- reviewed_by: {billing['name']}")
+    print(f"- validation_status: {reviewed['validation_status']}")
+    print(f"- provenance: {_provenance_actions(reviewed)}")
     print()
-    print("Feed preview:")
-    if feed:
-        print(f"- source={feed[0]['source_agent_name']} locked={feed[0]['is_locked']}")
+    print("3) Recalled it from another agent")
+    print(f"- source_agent: {top_hit['source_agent_name']}")
+    print(f"- statement: {top_hit['claim']['statement']}")
+    print(f"- recall_visibility: {top_hit['claim']['visibility']}")
+    print(f"- recall_status: {top_hit['claim']['validation_status']}")
+    print(f"- memory_content: {top_hit['memory_content']}")
     print()
-    print("Recall top hit:")
-    if hits:
-        print(f"- {hits[0]['claim']['statement']}")
-    print()
-    print("Trust summary:")
-    print(f"- reputation={trust['reputation_score']:.2f}")
-    print(f"- status={trust['status']}")
-    print(f"- followers={trust['followers_count']}")
+    print("Next step: python3 examples/support_memory_workflow.py")
 
 
 if __name__ == "__main__":

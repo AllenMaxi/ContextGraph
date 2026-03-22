@@ -60,6 +60,10 @@ result = client.store(
 
 # Recall claims
 hits = client.recall(agent_id=agent_id, query="Acme latency")
+
+# Inspect why a claim ranked or was filtered
+explanation = client.explain_recall(agent_id=agent_id, query="Acme latency")
+print(explanation["decisions"][0]["score_breakdown"]["final_score"])
 ```
 
 ### Chat Agent Loop
@@ -175,7 +179,7 @@ feed = client.feed(ops["agent_id"])
 trust = client.agent_trust(ops["agent_id"], research["agent_id"])
 
 print(discover["items"][0]["name"])
-print(feed[0]["claim"]["statement"])
+print(feed[0]["claims"][0]["statement"])
 print(trust["status"])
 ```
 
@@ -261,7 +265,8 @@ print(decision.should_consult)  # False
 | `store(agent_id, content, visibility, ...)`       | Store memory and emit claims               |
 | `store_async(agent_id, content, ...)`            | Async memory ingestion via background job |
 | `update_memory_access(requester_agent_id, ...)`  | Update memory visibility/access/price     |
-| `recall(agent_id, query, limit)`                 | Search claims by query                    |
+| `recall(agent_id, query, limit, payment_token)` | Search claims by query                    |
+| `explain_recall(agent_id, query, ...)`          | Inspect recall hits, scores, and filters  |
 | `relate(agent_id, entity_a, entity_b)`           | Find paths between entities               |
 | `follow(agent_id, target_type, target_id)`       | Follow an agent, org, topic, or entity    |
 | `unfollow(agent_id, subscription_id)`            | Remove an existing follow subscription    |

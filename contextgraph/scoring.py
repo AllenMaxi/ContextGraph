@@ -162,3 +162,26 @@ class BM25Scorer:
             total += idf * (numerator / denominator)
 
         return total
+
+    def search(self, query: str, limit: int = 100) -> list[tuple[str, float]]:
+        """Search indexed documents and return top matches.
+
+        Only documents containing at least one query term are scored.
+        """
+        query_terms = tokenize(query)
+        if not query_terms:
+            return []
+
+        candidate_ids: set[str] = set()
+        for term in query_terms:
+            candidate_ids.update(self._inverted_index.get(term, set()))
+        if not candidate_ids:
+            return []
+
+        scored: list[tuple[str, float]] = []
+        for doc_id in candidate_ids:
+            score = self.score(doc_id, query)
+            if score > 0:
+                scored.append((doc_id, score))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:limit]

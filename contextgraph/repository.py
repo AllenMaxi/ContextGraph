@@ -6,6 +6,7 @@ from .models import (
     Agent,
     AuditEntry,
     Claim,
+    ClaimSearchResult,
     Entity,
     Memory,
     Notification,
@@ -34,6 +35,15 @@ class Repository(Protocol):
     def update_claim(self, claim: Claim) -> Claim: ...
     def get_claim(self, claim_id: str) -> Claim | None: ...
     def list_claims(self) -> list[Claim]: ...
+    def list_claims_for_memory(self, memory_id: str) -> list[Claim]: ...
+    def search_claims(
+        self,
+        query: str,
+        limit: int = 100,
+        requester_agent_id: str | None = None,
+        requester_org_id: str | None = None,
+        exclude_priced_cross_org: bool = False,
+    ) -> list[ClaimSearchResult]: ...
 
     def save_query(self, query: StandingQuery) -> StandingQuery: ...
     def get_query(self, query_id: str) -> StandingQuery | None: ...

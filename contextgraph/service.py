@@ -25,6 +25,7 @@ from .models import (
     BackgroundJob,
     Claim,
     ClaimImpact,
+    ClaimSearchResult,
     DeliveryMode,
     Entity,
     JobStatus,
@@ -34,7 +35,10 @@ from .models import (
     Notification,
     PatternFilter,
     ProvenanceEntry,
+    RecallDecision,
+    RecallExplanation,
     RecallHit,
+    RecallScoreBreakdown,
     RelationPath,
     ReviewQueueItem,
     ReviewStatus,
@@ -613,11 +617,7 @@ class ContextGraphService:
         memory = self.repository.get_memory(memory_id)
         if memory is None:
             return None
-        sibling_claims = (
-            claims
-            if claims is not None
-            else [claim for claim in self.repository.list_claims() if claim.memory_id == memory_id]
-        )
+        sibling_claims = claims if claims is not None else self.repository.list_claims_for_memory(memory_id)
         if not sibling_claims:
             memory.validation_status = ValidationStatus.UNREVIEWED
             memory.validated_at = None
@@ -960,47 +960,84 @@ class ContextGraphService:
     ) -> list[RecallHit]:
         requester = self.get_agent(agent_id)
         payment_gate = PaymentGate(enabled=self.settings.enable_payments, currency=self.settings.payment_currency)
-        all_claims = self._list_claims_with_normalized_policies()
-        self._sync_bm25_index(all_claims)
+        candidates = self._search_recall_candidates(
+            query=query,
+            candidate_limit=self._recall_candidate_limit(limit=limit),
+            requester=requester,
+        )
         hits: list[RecallHit] = []
         payment_blocked_error: PaymentRequiredError | None = None
-        for claim in all_claims:
-            if claim.validation_status == ValidationStatus.REJECTED:
-                continue
-            memory = self.repository.get_memory(claim.memory_id)
-            if memory is None or not self._memory_is_active(memory) or not self._can_access(requester, claim):
-                continue
-            score = self._score_claim(requester, query, claim)
-            if score <= 0:
-                continue
-            try:
-                self._check_memory_payment(
-                    requester=requester,
-                    memory=memory,
-                    payment_gate=payment_gate,
-                    payment_token=payment_token,
-                )
-            except PaymentRequiredError as exc:
-                if payment_blocked_error is None:
-                    payment_blocked_error = exc
-                continue
-            entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
-            source_agent = self.repository.get_agent(claim.source_agent_id)
-            hits.append(
-                RecallHit(
-                    claim=claim,
-                    score=round(score, 4),
-                    entities=[entity for entity in entities if entity is not None],
-                    memory_content=memory.content if memory else "",
-                    source_agent_name=source_agent.name if source_agent else "",
-                    source_reputation_score=source_agent.reputation_score if source_agent else 0.0,
-                )
+        for candidate in candidates:
+            _, hit, payment_error = self._evaluate_recall_candidate(
+                requester=requester,
+                query=query,
+                claim=candidate.claim,
+                payment_gate=payment_gate,
+                payment_token=payment_token,
+                text_score_raw=candidate.text_score_raw,
             )
+            if payment_blocked_error is None and payment_error is not None:
+                payment_blocked_error = payment_error
+            if hit is not None:
+                hits.append(hit)
         hits.sort(key=lambda item: item.score, reverse=True)
         self._audit("recall", actor_agent_id=agent_id, details={"query": query, "limit": str(limit)})
         if not hits and payment_blocked_error is not None:
             raise payment_blocked_error
         return hits[:limit]
+
+    def explain_recall(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 10,
+        payment_token: str | None = None,
+        decision_limit: int = 25,
+    ) -> RecallExplanation:
+        requester = self.get_agent(agent_id)
+        payment_gate = PaymentGate(enabled=self.settings.enable_payments, currency=self.settings.payment_currency)
+        candidates = self._search_recall_candidates(
+            query=query,
+            candidate_limit=self._recall_candidate_limit(limit=limit, decision_limit=decision_limit),
+        )
+
+        hits: list[RecallHit] = []
+        decisions: list[RecallDecision] = []
+        filtered_counts: dict[str, int] = {}
+
+        for candidate in candidates:
+            decision, hit, _ = self._evaluate_recall_candidate(
+                requester=requester,
+                query=query,
+                claim=candidate.claim,
+                payment_gate=payment_gate,
+                payment_token=payment_token,
+                text_score_raw=candidate.text_score_raw,
+            )
+            if hit is not None:
+                hits.append(hit)
+            if decision.outcome != "hit":
+                for reason in decision.reasons:
+                    filtered_counts[reason] = filtered_counts.get(reason, 0) + 1
+            if decision.reasons == ["access_denied"]:
+                continue
+            if len(decisions) < max(1, decision_limit):
+                decisions.append(decision)
+
+        hits.sort(key=lambda item: item.score, reverse=True)
+        decisions.sort(key=lambda item: (item.outcome == "hit", item.score), reverse=True)
+        self._audit(
+            "explain_recall",
+            actor_agent_id=agent_id,
+            details={"query": query, "limit": str(limit), "decision_limit": str(decision_limit)},
+        )
+        return RecallExplanation(
+            query=query,
+            total_claims=self.repository.snapshot().get("claims", len(candidates)),
+            hits=hits[:limit],
+            decisions=decisions,
+            filtered_counts=filtered_counts,
+        )
 
     def relate(self, agent_id: str, entity_a: str, entity_b: str, max_depth: int = 2) -> list[RelationPath]:
         requester = self.get_agent(agent_id)
@@ -1555,10 +1592,7 @@ class ContextGraphService:
         source_org = self._memory_source_org(memory)
         if include_private_same_org and source_org == requester.org_id:
             return memory
-        representative_claim = next(
-            (claim for claim in self.repository.list_claims() if claim.memory_id == memory_id),
-            None,
-        )
+        representative_claim = next(iter(self.repository.list_claims_for_memory(memory_id)), None)
         if representative_claim is not None and self._can_access_claim(
             requester,
             representative_claim,
@@ -1856,6 +1890,52 @@ class ContextGraphService:
             self._normalize_memory_policy(memory_id)
         return self.repository.list_claims()
 
+    def _recall_candidate_limit(self, limit: int, decision_limit: int | None = None) -> int:
+        baseline = max(limit, decision_limit or 0, 25)
+        return min(max(baseline * 10, 50), 500)
+
+    def _search_recall_candidates(
+        self,
+        query: str,
+        candidate_limit: int,
+        requester: Agent | None = None,
+        exclude_priced_cross_org: bool = False,
+    ) -> list[ClaimSearchResult]:
+        search_fn = getattr(self.repository, "search_claims", None)
+        if callable(search_fn):
+            raw_candidates = search_fn(
+                query,
+                limit=candidate_limit,
+                requester_agent_id=requester.agent_id if requester is not None else None,
+                requester_org_id=requester.org_id if requester is not None else None,
+                exclude_priced_cross_org=exclude_priced_cross_org,
+            )
+        else:
+            all_claims = self._list_claims_with_normalized_policies()
+            self._sync_bm25_index(all_claims)
+            raw_candidates = []
+            for claim in all_claims:
+                score = self._bm25.score(claim.claim_id, query)
+                if score <= 0:
+                    continue
+                raw_candidates.append(ClaimSearchResult(claim=claim, text_score_raw=score))
+            raw_candidates.sort(key=lambda item: item.text_score_raw, reverse=True)
+            raw_candidates = raw_candidates[:candidate_limit]
+
+        for memory_id in {candidate.claim.memory_id for candidate in raw_candidates}:
+            self._normalize_memory_policy(memory_id)
+
+        refreshed_candidates: list[ClaimSearchResult] = []
+        for candidate in raw_candidates:
+            refreshed_claim = self.repository.get_claim(candidate.claim.claim_id) or candidate.claim
+            refreshed_candidates.append(
+                ClaimSearchResult(
+                    claim=refreshed_claim,
+                    text_score_raw=candidate.text_score_raw,
+                )
+            )
+        return refreshed_candidates
+
     def _get_memory_with_normalized_policy(self, memory_id: str) -> Memory | None:
         memory = self.repository.get_memory(memory_id)
         if memory is None:
@@ -1867,7 +1947,7 @@ class ContextGraphService:
         memory = self.repository.get_memory(memory_id)
         if memory is None:
             return []
-        claims = [claim for claim in self.repository.list_claims() if claim.memory_id == memory_id]
+        claims = self.repository.list_claims_for_memory(memory_id)
         if not claims:
             self._normalized_memory_policies.add(memory_id)
             return []
@@ -1980,20 +2060,41 @@ class ContextGraphService:
             claim_org=self._memory_source_org(memory),
         )
 
-    def _score_claim(self, requester: Agent, query: str, claim: Claim) -> float:
-        # Use BM25 if the claim is indexed; fall back to Jaccard otherwise
-        if self._bm25.has_document(claim.claim_id):
-            text_score = self._bm25.score(claim.claim_id, query)
-        else:
-            text_score = jaccard_similarity(query, claim.statement)
-
-        if text_score == 0:
+    def _score_claim(
+        self,
+        requester: Agent,
+        query: str,
+        claim: Claim,
+        text_score_raw: float | None = None,
+    ) -> float:
+        breakdown = self._score_claim_breakdown(requester, query, claim, text_score_raw=text_score_raw)
+        if breakdown is None:
             return 0.0
+        return breakdown.final_score
+
+    def _score_claim_breakdown(
+        self,
+        requester: Agent,
+        query: str,
+        claim: Claim,
+        text_score_raw: float | None = None,
+    ) -> RecallScoreBreakdown | None:
+        if text_score_raw is None:
+            # Use BM25 if the claim is indexed; fall back to Jaccard otherwise.
+            if self._bm25.has_document(claim.claim_id):
+                text_score_raw = self._bm25.score(claim.claim_id, query)
+            else:
+                text_score_raw = jaccard_similarity(query, claim.statement)
+
+        if text_score_raw == 0:
+            return None
 
         # Normalize BM25 score into roughly [0, 1] range for combination
         # with the other signals. Cap at 1.0.
-        if self._bm25.has_document(claim.claim_id):
-            text_score = min(text_score / (text_score + 1.0), 1.0)
+        if text_score_raw > 1.0 or self._bm25.has_document(claim.claim_id):
+            text_score = min(text_score_raw / (text_score_raw + 1.0), 1.0)
+        else:
+            text_score = text_score_raw
 
         freshness = self._freshness_factor(claim)
         validation_bonus = 0.0
@@ -2006,9 +2107,154 @@ class ContextGraphService:
         elif claim.validation_status in (ValidationStatus.EXPIRED, ValidationStatus.REJECTED):
             validation_bonus = -1.0
 
-        confidence = claim.confidence * 0.2
+        confidence_bonus = claim.confidence * 0.2
         context_bonus = self._visibility_preference_bonus(requester, claim)
-        return text_score * 0.55 + freshness * 0.1 + confidence + validation_bonus + context_bonus
+        final_score = text_score * 0.55 + freshness * 0.1 + confidence_bonus + validation_bonus + context_bonus
+        return RecallScoreBreakdown(
+            text_score_raw=round(text_score_raw, 4),
+            text_score=round(text_score, 4),
+            freshness=round(freshness, 4),
+            confidence_bonus=round(confidence_bonus, 4),
+            validation_bonus=round(validation_bonus, 4),
+            context_bonus=round(context_bonus, 4),
+            final_score=round(final_score, 4),
+        )
+
+    def _build_recall_hit(self, claim: Claim, memory: Memory, score: float) -> RecallHit:
+        entities = [self.repository.get_entity(entity_id) for entity_id in claim.entity_ids]
+        source_agent = self.repository.get_agent(claim.source_agent_id)
+        return RecallHit(
+            claim=claim,
+            score=round(score, 4),
+            entities=[entity for entity in entities if entity is not None],
+            memory_content=memory.content,
+            source_agent_name=source_agent.name if source_agent else "",
+            source_reputation_score=source_agent.reputation_score if source_agent else 0.0,
+        )
+
+    def _evaluate_recall_candidate(
+        self,
+        *,
+        requester: Agent,
+        query: str,
+        claim: Claim,
+        payment_gate: PaymentGate,
+        payment_token: str | None,
+        text_score_raw: float | None = None,
+    ) -> tuple[RecallDecision, RecallHit | None, PaymentRequiredError | None]:
+        if claim.validation_status == ValidationStatus.REJECTED:
+            return (
+                RecallDecision(
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    statement=claim.statement,
+                    visibility=claim.visibility,
+                    validation_status=claim.validation_status,
+                    outcome="filtered",
+                    reasons=["rejected_claim"],
+                ),
+                None,
+                None,
+            )
+
+        memory = self.repository.get_memory(claim.memory_id)
+        if memory is None:
+            return (
+                RecallDecision(
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    statement="",
+                    visibility=claim.visibility,
+                    validation_status=claim.validation_status,
+                    outcome="filtered",
+                    reasons=["missing_memory"],
+                ),
+                None,
+                None,
+            )
+        if not self._memory_is_active(memory):
+            return (
+                RecallDecision(
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    statement=claim.statement,
+                    visibility=claim.visibility,
+                    validation_status=claim.validation_status,
+                    outcome="filtered",
+                    reasons=["memory_inactive"],
+                ),
+                None,
+                None,
+            )
+        if not self._can_access(requester, claim):
+            return (
+                RecallDecision(
+                    claim_id="",
+                    memory_id="",
+                    statement="",
+                    visibility=Visibility.PRIVATE,
+                    validation_status=ValidationStatus.UNREVIEWED,
+                    outcome="filtered",
+                    reasons=["access_denied"],
+                ),
+                None,
+                None,
+            )
+
+        breakdown = self._score_claim_breakdown(requester, query, claim, text_score_raw=text_score_raw)
+        if breakdown is None or breakdown.final_score <= 0:
+            return (
+                RecallDecision(
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    statement=claim.statement,
+                    visibility=claim.visibility,
+                    validation_status=claim.validation_status,
+                    outcome="filtered",
+                    reasons=["no_text_match"],
+                ),
+                None,
+                None,
+            )
+        try:
+            self._check_memory_payment(
+                requester=requester,
+                memory=memory,
+                payment_gate=payment_gate,
+                payment_token=payment_token,
+            )
+        except PaymentRequiredError as exc:
+            return (
+                RecallDecision(
+                    claim_id=claim.claim_id,
+                    memory_id=claim.memory_id,
+                    statement=claim.statement,
+                    visibility=claim.visibility,
+                    validation_status=claim.validation_status,
+                    outcome="filtered",
+                    reasons=["payment_required"],
+                    score=breakdown.final_score,
+                    score_breakdown=breakdown,
+                ),
+                None,
+                exc,
+            )
+
+        hit = self._build_recall_hit(claim, memory, breakdown.final_score)
+        return (
+            RecallDecision(
+                claim_id=claim.claim_id,
+                memory_id=claim.memory_id,
+                statement=claim.statement,
+                visibility=claim.visibility,
+                validation_status=claim.validation_status,
+                outcome="hit",
+                score=breakdown.final_score,
+                score_breakdown=breakdown,
+            ),
+            hit,
+            None,
+        )
 
     def _visibility_preference_bonus(self, requester: Agent, claim: Claim) -> float:
         same_org = bool(claim.source_org_id and claim.source_org_id == requester.org_id)

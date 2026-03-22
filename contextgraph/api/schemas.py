@@ -100,6 +100,10 @@ class RecallRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
 
 
+class RecallExplainRequest(RecallRequest):
+    decision_limit: int = Field(default=25, ge=1, le=200)
+
+
 class RelateRequest(BaseModel):
     agent_id: str | None = None
     entity_a: str
@@ -237,6 +241,42 @@ class RecallHitResponse(BaseModel):
     memory_content: str = ""
     source_agent_name: str = ""
     source_reputation_score: float = 0.0
+
+
+class RecallScoreBreakdownResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    text_score_raw: float = 0.0
+    text_score: float = 0.0
+    freshness: float = 0.0
+    confidence_bonus: float = 0.0
+    validation_bonus: float = 0.0
+    context_bonus: float = 0.0
+    final_score: float = 0.0
+
+
+class RecallDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    claim_id: str
+    memory_id: str
+    statement: str
+    visibility: Visibility
+    validation_status: ValidationStatus
+    outcome: str
+    reasons: list[str] = Field(default_factory=list)
+    score: float = 0.0
+    score_breakdown: RecallScoreBreakdownResponse | None = None
+
+
+class RecallExplanationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    query: str
+    total_claims: int
+    hits: list[RecallHitResponse] = Field(default_factory=list)
+    decisions: list[RecallDecisionResponse] = Field(default_factory=list)
+    filtered_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class RelationPathResponse(BaseModel):

@@ -15,7 +15,7 @@ Launch with one clear wedge:
 
 Recommended short description:
 
-`Governed shared memory and discovery layer for AI agents.`
+`Governed shared memory for AI agents.`
 
 ## Ideal Early Users
 

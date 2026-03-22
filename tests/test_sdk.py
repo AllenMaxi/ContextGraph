@@ -40,6 +40,24 @@ class ContextGraphSDKTest(unittest.TestCase):
         self.assertIn("meeting:incident-review", hits[0]["claim"]["evidence"])
         self.assertIn("ticket:INC-42", hits[0]["claim"]["citations"])
 
+    def test_local_transport_explain_recall_round_trip(self) -> None:
+        service = ContextGraphService()
+        client = ContextGraph.local(service)
+
+        agent = client.register_agent("sdk-explain", "alpha", ["research"])
+        client.store(
+            agent_id=agent["agent_id"],
+            content="Acme Corp reported API latency due to overloaded connection pools.",
+            visibility="org",
+        )
+
+        explanation = client.explain_recall(agent["agent_id"], "Acme latency", decision_limit=10)
+
+        self.assertEqual(explanation["query"], "Acme latency")
+        self.assertGreaterEqual(len(explanation["hits"]), 1)
+        self.assertGreaterEqual(len(explanation["decisions"]), 1)
+        self.assertIn("score_breakdown", explanation["decisions"][0])
+
     def test_local_transport_exposes_public_agent_claim_notification_and_health_methods(self) -> None:
         service = ContextGraphService()
         try:

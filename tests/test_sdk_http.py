@@ -161,6 +161,44 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertIn('"citations": ["ticket:INC-42"]', captured["body"])
         self.assertIn('"expires_in_days": 14', captured["body"])
 
+    def test_http_transport_explain_recall_uses_explain_endpoint_and_payment_header(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b'{"query":"Acme latency","total_claims":1,"hits":[],"decisions":[],"filtered_counts":{}}'
+
+        captured = {}
+
+        def fake_urlopen(req):
+            captured["url"] = req.full_url
+            captured["method"] = req.get_method()
+            captured["body"] = req.data.decode("utf-8")
+            captured["headers"] = {key.lower(): value for key, value in req.header_items()}
+            return FakeResponse()
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.explain_recall(
+                "agt_test",
+                "Acme latency",
+                limit=5,
+                decision_limit=12,
+                payment_token="x402_test_token",
+            )
+
+        self.assertEqual(captured["url"], "http://localhost:8420/v1/memory/recall/explain")
+        self.assertEqual(captured["method"], "POST")
+        self.assertIn('"query": "Acme latency"', captured["body"])
+        self.assertIn('"limit": 5', captured["body"])
+        self.assertIn('"decision_limit": 12', captured["body"])
+        self.assertEqual(captured["headers"]["x-payment-token"], "x402_test_token")
+
     def test_http_transport_follow_uses_follow_endpoint(self) -> None:
         client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
 

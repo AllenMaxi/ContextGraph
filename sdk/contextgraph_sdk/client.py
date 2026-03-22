@@ -32,6 +32,7 @@ class Transport(Protocol):
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def explain_recall(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def watch(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_watches(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
@@ -63,12 +64,20 @@ class HttpTransport:
     base_url: str
     api_key: str | None = None
 
-    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> Any:
         url = f"{self.base_url.rstrip('/')}{path}"
         data = None
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["X-Agent-Key"] = self.api_key
+        if extra_headers:
+            headers.update(extra_headers)
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
         req = request.Request(url, data=data, headers=headers, method=method)
@@ -181,7 +190,18 @@ class HttpTransport:
         return self._request("PATCH", f"/v1/memories/{memory_id}/access", body)
 
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        return self._request("POST", "/v1/memory/recall", payload)
+        body = {key: value for key, value in payload.items() if key != "payment_token"}
+        extra_headers = {}
+        if payload.get("payment_token"):
+            extra_headers["X-Payment-Token"] = str(payload["payment_token"])
+        return self._request("POST", "/v1/memory/recall", body, extra_headers or None)
+
+    def explain_recall(self, payload: dict[str, Any]) -> dict[str, Any]:
+        body = {key: value for key, value in payload.items() if key != "payment_token"}
+        extra_headers = {}
+        if payload.get("payment_token"):
+            extra_headers["X-Payment-Token"] = str(payload["payment_token"])
+        return self._request("POST", "/v1/memory/recall/explain", body, extra_headers or None)
 
     def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return self._request("POST", "/v1/memory/relate", payload)
@@ -499,8 +519,39 @@ class ContextGraph:
             }
         )
 
-    def recall(self, agent_id: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        return self.transport.recall({"agent_id": agent_id, "query": query, "limit": limit})
+    def recall(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 10,
+        payment_token: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return self.transport.recall(
+            {
+                "agent_id": agent_id,
+                "query": query,
+                "limit": limit,
+                "payment_token": payment_token,
+            }
+        )
+
+    def explain_recall(
+        self,
+        agent_id: str,
+        query: str,
+        limit: int = 10,
+        decision_limit: int = 25,
+        payment_token: str | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.explain_recall(
+            {
+                "agent_id": agent_id,
+                "query": query,
+                "limit": limit,
+                "decision_limit": decision_limit,
+                "payment_token": payment_token,
+            }
+        )
 
     def relate(self, agent_id: str, entity_a: str, entity_b: str, max_depth: int = 2) -> list[dict[str, Any]]:
         return self.transport.relate(

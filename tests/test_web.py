@@ -173,6 +173,41 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertEqual(body["access_list"], ["partner-org"])
         self.assertEqual(body["price"], 0.002)
 
+    def test_recall_explain_endpoint_returns_hits_decisions_and_filtered_counts(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+        beta = self.client.post(
+            "/v1/agents/register",
+            json={"name": "beta-risk", "org_id": "beta", "capabilities": ["risk"]},
+        ).json()
+
+        self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme Corp reported API latency in an internal incident review.", "visibility": "org"},
+        )
+        self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={"content": "Acme Corp reported API latency in a public postmortem.", "visibility": "published"},
+        )
+
+        response = self.client.post(
+            "/v1/memory/recall/explain",
+            headers={"X-Agent-Key": beta["api_key"]},
+            json={"query": "Acme latency", "limit": 5, "decision_limit": 10},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["query"], "Acme latency")
+        self.assertGreaterEqual(len(body["hits"]), 1)
+        self.assertGreaterEqual(len(body["decisions"]), 1)
+        self.assertIn("score_breakdown", body["decisions"][0])
+        self.assertGreaterEqual(body["filtered_counts"].get("access_denied", 0), 1)
+
     def test_register_with_defaults_and_store_without_policy_uses_agent_defaults(self) -> None:
         alpha = self.client.post(
             "/v1/agents/register",

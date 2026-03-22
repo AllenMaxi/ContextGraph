@@ -303,6 +303,12 @@ class ReviewQueueItem:
 
 
 @dataclass(slots=True)
+class ClaimSearchResult:
+    claim: Claim
+    text_score_raw: float = 0.0
+
+
+@dataclass(slots=True)
 class RecallHit:
     claim: Claim
     score: float
@@ -310,6 +316,39 @@ class RecallHit:
     memory_content: str = ""
     source_agent_name: str = ""
     source_reputation_score: float = 0.0
+
+
+@dataclass(slots=True)
+class RecallScoreBreakdown:
+    text_score_raw: float = 0.0
+    text_score: float = 0.0
+    freshness: float = 0.0
+    confidence_bonus: float = 0.0
+    validation_bonus: float = 0.0
+    context_bonus: float = 0.0
+    final_score: float = 0.0
+
+
+@dataclass(slots=True)
+class RecallDecision:
+    claim_id: str
+    memory_id: str
+    statement: str
+    visibility: Visibility
+    validation_status: ValidationStatus
+    outcome: str
+    reasons: list[str] = field(default_factory=list)
+    score: float = 0.0
+    score_breakdown: RecallScoreBreakdown | None = None
+
+
+@dataclass(slots=True)
+class RecallExplanation:
+    query: str
+    total_claims: int
+    hits: list[RecallHit] = field(default_factory=list)
+    decisions: list[RecallDecision] = field(default_factory=list)
+    filtered_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

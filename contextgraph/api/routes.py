@@ -28,6 +28,8 @@ from .schemas import (
     MemoryStoreRequest,
     NotificationResponse,
     OperatorSummaryResponse,
+    RecallExplainRequest,
+    RecallExplanationResponse,
     RecallHitResponse,
     RecallRequest,
     RelateRequest,
@@ -222,6 +224,27 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 query=payload.query,
                 limit=payload.limit,
                 payment_token=x_payment_token,
+            )
+        )
+
+    @app.post("/v1/memory/recall/explain", response_model=RecallExplanationResponse)
+    def explain_recall(
+        payload: RecallExplainRequest,
+        authenticated: Any = Depends(authenticated_agent),
+        x_payment_token: str | None = Header(default=None, alias="X-Payment-Token"),
+    ) -> Any:
+        require_same_agent(
+            authenticated,
+            payload.agent_id,
+            "Authenticated agent does not match the requested agent_id.",
+        )
+        return to_jsonable(
+            graph.explain_recall(
+                agent_id=authenticated.agent_id,
+                query=payload.query,
+                limit=payload.limit,
+                payment_token=x_payment_token,
+                decision_limit=payload.decision_limit,
             )
         )
 

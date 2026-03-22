@@ -27,9 +27,9 @@ Supporting launch docs now available in-repo:
 
 Use this as the GitHub repository description:
 
-`Governed shared memory and discovery layer for AI agents.`
+`Governed shared memory for AI agents.`
 
-This wording is tighter for the current beta: memory, governance, and discovery are all real today.
+This wording is tighter for the current beta and keeps the lead message on the main wedge instead of the broader platform surface.
 
 ## Recommended Topics
 
@@ -74,7 +74,7 @@ If you prefer GitHub CLI and are authenticated:
 
 ```bash
 gh repo edit AllenMaxi/ContextGraph \
-  --description "Governed shared memory and discovery layer for AI agents." \
+  --description "Governed shared memory for AI agents." \
   --add-topic mcp \
   --add-topic model-context-protocol \
   --add-topic mcp-server \

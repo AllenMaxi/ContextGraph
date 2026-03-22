@@ -37,7 +37,7 @@ When the remote endpoint exists, the listing can follow the registry schema with
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.contextgraph/memory-bus",
-  "description": "Shared memory bus for MCP-compatible agents with permissions, subscriptions, and optional payments.",
+  "description": "Governed shared memory for MCP-compatible agents with provenance, review, and controlled visibility.",
   "repository": {
     "url": "https://github.com/AllenMaxi/ContextGraph",
     "source": "github"

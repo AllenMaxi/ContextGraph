@@ -9,6 +9,7 @@ from ..models import (
     AgentDiscoverability,
     AuditEntry,
     Claim,
+    ClaimSearchResult,
     DeliveryMode,
     Entity,
     Memory,
@@ -22,6 +23,7 @@ from ..models import (
     ValidationStatus,
     Visibility,
 )
+from ..utils import tokenize
 
 try:
     from neo4j import GraphDatabase
@@ -58,6 +60,7 @@ class Neo4jRepository:
             "CREATE CONSTRAINT audit_id_unique IF NOT EXISTS FOR (a:AuditEntry) REQUIRE a.audit_id IS UNIQUE",
             "CREATE INDEX claim_source_idx IF NOT EXISTS FOR (c:Claim) ON (c.source_agent_id)",
             "CREATE INDEX claim_visibility_idx IF NOT EXISTS FOR (c:Claim) ON (c.visibility)",
+            "CREATE FULLTEXT INDEX claim_statement_fulltext IF NOT EXISTS FOR (c:Claim) ON EACH [c.statement]",
         ]
         with self._driver.session() as session:
             for statement in statements:
@@ -205,6 +208,139 @@ class Neo4jRepository:
         """
         records = self._fetch_all(query)
         return [self._claim_from_record(record) for record in records]
+
+    def list_claims_for_memory(self, memory_id: str) -> list[Claim]:
+        query = """
+        MATCH (:Memory {memory_id: $memory_id})-[:EMITS]->(c:Claim)
+        OPTIONAL MATCH (c)-[:SUBJECT]->(e:Entity)
+        RETURN c, collect(e.entity_id) AS entity_ids
+        ORDER BY c.created_at ASC
+        """
+        records = self._fetch_all(query, {"memory_id": memory_id})
+        return [self._claim_from_record(record) for record in records]
+
+    def search_claims(
+        self,
+        query: str,
+        limit: int = 100,
+        requester_agent_id: str | None = None,
+        requester_org_id: str | None = None,
+        exclude_priced_cross_org: bool = False,
+    ) -> list[ClaimSearchResult]:
+        terms = tokenize(query)
+        if not terms:
+            return []
+
+        def _build_params() -> dict[str, Any]:
+            return {
+                "query": " ".join(terms),
+                "terms": terms,
+                "limit": limit,
+                "requester_agent_id": requester_agent_id,
+                "requester_org_id": requester_org_id,
+                "apply_access_filter": requester_agent_id is not None and requester_org_id is not None,
+                "exclude_priced_cross_org": exclude_priced_cross_org,
+            }
+
+        try:
+            records = self._fetch_all(
+                """
+                CALL db.index.fulltext.queryNodes('claim_statement_fulltext', $query) YIELD node, score
+                MATCH (m:Memory)-[:EMITS]->(node)
+                WHERE coalesce(m.curation_status, 'active') = 'active'
+                  AND (
+                    NOT $apply_access_filter
+                    OR node.source_agent_id = $requester_agent_id
+                    OR (node.visibility = 'org' AND node.source_org_id = $requester_org_id)
+                    OR (
+                        node.visibility = 'shared'
+                        AND any(item IN coalesce(node.access_list, []) WHERE item IN [$requester_agent_id, $requester_org_id])
+                    )
+                    OR node.visibility = 'published'
+                  )
+                  AND (
+                    NOT $exclude_priced_cross_org
+                    OR coalesce(node.price, 0.0) <= 0.0
+                    OR node.source_agent_id = $requester_agent_id
+                    OR coalesce(node.source_org_id, '') = $requester_org_id
+                  )
+                OPTIONAL MATCH (node)-[:SUBJECT]->(e:Entity)
+                RETURN node AS c,
+                       collect(e.entity_id) AS entity_ids,
+                       score,
+                       CASE
+                         WHEN $apply_access_filter
+                           AND coalesce(node.price, 0.0) > 0.0
+                           AND node.source_agent_id <> $requester_agent_id
+                           AND coalesce(node.source_org_id, '') <> $requester_org_id
+                         THEN 1
+                         ELSE 0
+                       END AS locked_rank
+                ORDER BY locked_rank ASC, score DESC, c.created_at DESC
+                LIMIT $limit
+                """,
+                _build_params(),
+            )
+            if records:
+                return [
+                    ClaimSearchResult(
+                        claim=self._claim_from_record(record),
+                        text_score_raw=round(float(record["score"]), 4),
+                    )
+                    for record in records
+                    if float(record["score"]) > 0
+                ]
+        except Exception:
+            pass
+
+        records = self._fetch_all(
+            """
+            MATCH (c:Claim)
+            MATCH (m:Memory)-[:EMITS]->(c)
+            WITH c, [term IN $terms WHERE toLower(c.statement) CONTAINS term] AS matched_terms
+            WHERE size(matched_terms) > 0
+              AND coalesce(m.curation_status, 'active') = 'active'
+              AND (
+                NOT $apply_access_filter
+                OR c.source_agent_id = $requester_agent_id
+                OR (c.visibility = 'org' AND c.source_org_id = $requester_org_id)
+                OR (
+                    c.visibility = 'shared'
+                    AND any(item IN coalesce(c.access_list, []) WHERE item IN [$requester_agent_id, $requester_org_id])
+                )
+                OR c.visibility = 'published'
+              )
+              AND (
+                NOT $exclude_priced_cross_org
+                OR coalesce(c.price, 0.0) <= 0.0
+                OR c.source_agent_id = $requester_agent_id
+                OR coalesce(c.source_org_id, '') = $requester_org_id
+              )
+            OPTIONAL MATCH (c)-[:SUBJECT]->(e:Entity)
+            RETURN c,
+                   collect(e.entity_id) AS entity_ids,
+                   toFloat(size(matched_terms)) AS score,
+                   CASE
+                     WHEN $apply_access_filter
+                       AND coalesce(c.price, 0.0) > 0.0
+                       AND c.source_agent_id <> $requester_agent_id
+                       AND coalesce(c.source_org_id, '') <> $requester_org_id
+                     THEN 1
+                     ELSE 0
+                   END AS locked_rank
+            ORDER BY locked_rank ASC, score DESC, c.created_at DESC
+            LIMIT $limit
+            """,
+            _build_params(),
+        )
+        return [
+            ClaimSearchResult(
+                claim=self._claim_from_record(record),
+                text_score_raw=round(float(record["score"]), 4),
+            )
+            for record in records
+            if float(record["score"]) > 0
+        ]
 
     def save_query(self, query_obj: StandingQuery) -> StandingQuery:
         query = """

@@ -6,8 +6,10 @@ from .models import (
     Agent,
     AuditEntry,
     Claim,
+    ClaimSearchResult,
     Entity,
     Memory,
+    MemoryCurationStatus,
     Notification,
     ReviewTask,
     SentinelVerdict,
@@ -15,6 +17,9 @@ from .models import (
     Subscription,
     SubscriptionTarget,
 )
+from .permissions import can_access_claim
+from .scoring import BM25Scorer
+from .utils import tokenize
 
 
 class InMemoryRepository:
@@ -26,12 +31,14 @@ class InMemoryRepository:
         self._entities_by_alias: dict[str, str] = {}
         self._memories: dict[str, Memory] = {}
         self._claims: dict[str, Claim] = {}
+        self._claims_by_memory: dict[str, set[str]] = {}
         self._queries: dict[str, StandingQuery] = {}
         self._notifications: dict[str, Notification] = {}
         self._reviews: dict[str, ReviewTask] = {}
         self._audit_entries: dict[str, AuditEntry] = {}
         self._subscriptions: dict[str, Subscription] = {}
         self._sentinel_verdicts: dict[str, SentinelVerdict] = {}
+        self._claim_search = BM25Scorer(k1=1.5, b=0.75)
 
     def save_agent(self, agent: Agent) -> Agent:
         with self._lock:
@@ -92,12 +99,30 @@ class InMemoryRepository:
 
     def save_claim(self, claim: Claim) -> Claim:
         with self._lock:
+            existing = self._claims.get(claim.claim_id)
+            if existing is not None and existing.memory_id != claim.memory_id:
+                previous_ids = self._claims_by_memory.get(existing.memory_id)
+                if previous_ids is not None:
+                    previous_ids.discard(existing.claim_id)
+                    if not previous_ids:
+                        self._claims_by_memory.pop(existing.memory_id, None)
             self._claims[claim.claim_id] = claim
+            self._claims_by_memory.setdefault(claim.memory_id, set()).add(claim.claim_id)
+            self._claim_search.add_document(claim.claim_id, claim.statement)
             return claim
 
     def update_claim(self, claim: Claim) -> Claim:
         with self._lock:
+            existing = self._claims.get(claim.claim_id)
+            if existing is not None and existing.memory_id != claim.memory_id:
+                previous_ids = self._claims_by_memory.get(existing.memory_id)
+                if previous_ids is not None:
+                    previous_ids.discard(existing.claim_id)
+                    if not previous_ids:
+                        self._claims_by_memory.pop(existing.memory_id, None)
             self._claims[claim.claim_id] = claim
+            self._claims_by_memory.setdefault(claim.memory_id, set()).add(claim.claim_id)
+            self._claim_search.add_document(claim.claim_id, claim.statement)
             return claim
 
     def get_claim(self, claim_id: str) -> Claim | None:
@@ -107,6 +132,58 @@ class InMemoryRepository:
     def list_claims(self) -> list[Claim]:
         with self._lock:
             return list(self._claims.values())
+
+    def list_claims_for_memory(self, memory_id: str) -> list[Claim]:
+        with self._lock:
+            claim_ids = self._claims_by_memory.get(memory_id, set())
+            return [self._claims[claim_id] for claim_id in claim_ids if claim_id in self._claims]
+
+    def search_claims(
+        self,
+        query: str,
+        limit: int = 100,
+        requester_agent_id: str | None = None,
+        requester_org_id: str | None = None,
+        exclude_priced_cross_org: bool = False,
+    ) -> list[ClaimSearchResult]:
+        with self._lock:
+            if not tokenize(query):
+                return []
+            results = self._claim_search.search(query, limit=limit)
+            filtered: list[ClaimSearchResult] = []
+            for claim_id, score in results:
+                claim = self._claims.get(claim_id)
+                if claim is None:
+                    continue
+                memory = self._memories.get(claim.memory_id)
+                if memory is None or memory.curation_status != MemoryCurationStatus.ACTIVE:
+                    continue
+                if (
+                    requester_agent_id is not None
+                    and requester_org_id is not None
+                    and not can_access_claim(requester_agent_id, requester_org_id, claim)
+                ):
+                    continue
+                if (
+                    exclude_priced_cross_org
+                    and claim.price > 0
+                    and requester_agent_id is not None
+                    and requester_org_id is not None
+                    and claim.source_agent_id != requester_agent_id
+                    and claim.source_org_id != requester_org_id
+                ):
+                    continue
+                filtered.append(ClaimSearchResult(claim=claim, text_score_raw=round(score, 4)))
+            if requester_agent_id is not None and requester_org_id is not None:
+                filtered.sort(
+                    key=lambda item: (
+                        item.claim.price > 0
+                        and item.claim.source_agent_id != requester_agent_id
+                        and item.claim.source_org_id != requester_org_id,
+                        -item.text_score_raw,
+                    )
+                )
+            return filtered
 
     def save_query(self, query: StandingQuery) -> StandingQuery:
         with self._lock:
