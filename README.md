@@ -342,6 +342,31 @@ python3 examples/dashboard_demo_seed.py
 # Then open http://localhost:8420/dashboard
 ```
 
+### ContextClaw Runtime Demo
+
+[![ContextClaw promo demo](docs/assets/contextclaw-promo.gif)](docs/assets/contextclaw-promo.mp4)
+
+ContextClaw is the complementary runtime/orchestrator layer for ContextGraph.
+The promo demo shows:
+
+- role-specific agents
+- built-in plus deep-agent-style filesystem, web, shell, and planning tools
+- policy-gated execution with operator approval
+- session checkpoints for long-lived agents
+- sub-agent delegation through the `task` tool
+- MCP registry loading and MCP tool invocation
+
+Current scope: the runtime pieces are in place and working well. The main gap
+remaining is a broader first-party connector or MCP catalog and a larger
+library of packaged skills.
+
+Run the deterministic local demo:
+
+```bash
+python3 examples/contextclaw_promo.py
+python3 scripts/render_contextclaw_promo.py
+```
+
 ---
 
 ## Quickstart
