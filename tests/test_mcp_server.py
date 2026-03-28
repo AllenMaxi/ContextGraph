@@ -11,7 +11,7 @@ from contextgraph.mcp_server import TOOLS, _dispatch_tool
 
 class TestToolDefinitionsAreComplete(unittest.TestCase):
     def test_tool_definitions_are_complete(self) -> None:
-        self.assertEqual(len(TOOLS), 6)
+        self.assertEqual(len(TOOLS), 7)
         expected_names = {
             "contextgraph_store",
             "contextgraph_recall",
@@ -19,6 +19,7 @@ class TestToolDefinitionsAreComplete(unittest.TestCase):
             "contextgraph_watch",
             "contextgraph_notifications",
             "contextgraph_review",
+            "contextgraph_compile_context",
         }
         actual_names = {t["name"] for t in TOOLS}
         self.assertEqual(actual_names, expected_names)

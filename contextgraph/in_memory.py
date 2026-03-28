@@ -7,6 +7,7 @@ from .models import (
     AuditEntry,
     Claim,
     ClaimSearchResult,
+    ContextPack,
     Entity,
     Memory,
     MemoryCurationStatus,
@@ -38,6 +39,7 @@ class InMemoryRepository:
         self._audit_entries: dict[str, AuditEntry] = {}
         self._subscriptions: dict[str, Subscription] = {}
         self._sentinel_verdicts: dict[str, SentinelVerdict] = {}
+        self._context_packs: dict[str, ContextPack] = {}
         self._claim_search = BM25Scorer(k1=1.5, b=0.75)
 
     def save_agent(self, agent: Agent) -> Agent:
@@ -292,6 +294,15 @@ class InMemoryRepository:
         with self._lock:
             self._subscriptions.pop(subscription_id, None)
 
+    def save_context_pack(self, pack: ContextPack) -> ContextPack:
+        with self._lock:
+            self._context_packs[pack.pack_id] = pack
+            return pack
+
+    def get_context_pack(self, pack_id: str) -> ContextPack | None:
+        with self._lock:
+            return self._context_packs.get(pack_id)
+
     def snapshot(self) -> dict[str, int]:
         with self._lock:
             return {
@@ -305,6 +316,7 @@ class InMemoryRepository:
                 "audit_entries": len(self._audit_entries),
                 "subscriptions": len(self._subscriptions),
                 "sentinel_verdicts": len(self._sentinel_verdicts),
+                "context_packs": len(self._context_packs),
             }
 
     def close(self) -> None:

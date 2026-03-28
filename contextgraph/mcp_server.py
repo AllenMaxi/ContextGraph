@@ -213,6 +213,39 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["claim_id", "decision"],
         },
     },
+    {
+        "name": "contextgraph_compile_context",
+        "description": (
+            "Compile a governed, token-budgeted context pack from ContextGraph memories. "
+            "Returns a summary, included/conflicting claims, source provenance, "
+            "and explanations — all filtered by the requesting agent's access policies."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The query to compile context for.",
+                },
+                "token_budget": {
+                    "type": "integer",
+                    "description": "Maximum token budget for the compiled pack.",
+                    "default": 4000,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of claims to consider.",
+                    "default": 50,
+                },
+                "include_explanations": {
+                    "type": "boolean",
+                    "description": "Include detailed explanations of inclusion/exclusion decisions.",
+                    "default": False,
+                },
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -332,6 +365,16 @@ def _dispatch_tool(
             reason=arguments.get("reason", ""),
         )
         return _serialize(claim)
+
+    if tool_name == "contextgraph_compile_context":
+        pack = service.compile_context(
+            agent_id=agent_id,
+            query=arguments["query"],
+            token_budget=arguments.get("token_budget", 4000),
+            limit=arguments.get("limit", 50),
+            include_explanations=arguments.get("include_explanations", False),
+        )
+        return _serialize(pack)
 
     raise ValueError(f"Unknown tool: {tool_name}")
 

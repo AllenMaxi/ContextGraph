@@ -172,6 +172,12 @@ class Memory:
     curation_status: MemoryCurationStatus = MemoryCurationStatus.ACTIVE
     curation_reason: str = ""
     curated_at: datetime | None = None
+    # Memory OS v1 extensions — all optional, additive-only
+    source_type: str = ""  # e.g. "transcript", "document", "task_log", "handoff"
+    source_uri: str = ""  # external reference URI
+    source_label: str = ""  # human-readable source name
+    section_refs: list[str] = field(default_factory=list)  # section labels within content
+    ingest_metadata: dict[str, str] = field(default_factory=dict)  # ingestion-time metadata
 
 
 @dataclass(slots=True)
@@ -211,6 +217,8 @@ class Claim:
     # Provenance chain — immutable audit trail
     provenance: list[ProvenanceEntry] = field(default_factory=list)
     derived_from: list[str] = field(default_factory=list)
+    # Memory OS v1 — optional section-level provenance
+    source_memory_section: str = ""  # section label within the source memory
     # Quorum / consensus for high-impact claims
     impact: ClaimImpact = ClaimImpact.LOW
     quorum_required: int = 0
@@ -374,3 +382,65 @@ class Subscription:
     target_id: str
     created_at: datetime
     active: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Memory OS v1 — Context Pack types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ContextPackClaim:
+    """A claim included in a context pack with its relevance metadata."""
+
+    claim_id: str
+    statement: str
+    source_memory_id: str
+    source_agent_id: str
+    confidence: float
+    freshness_score: float
+    validation_status: str
+    score: float
+    source_memory_section: str = ""
+    source_label: str = ""
+    locked: bool = False  # True when paid claim not unlocked
+
+
+@dataclass(slots=True)
+class ContextPackSource:
+    """Source memory referenced by claims in a context pack."""
+
+    memory_id: str
+    agent_id: str
+    source_type: str = ""
+    source_label: str = ""
+    source_uri: str = ""
+    claim_count: int = 0
+
+
+@dataclass(slots=True)
+class ContextPackExplanation:
+    """Detailed explanation of why claims were included/excluded."""
+
+    included_reasons: dict[str, list[str]] = field(default_factory=dict)  # claim_id -> reasons
+    excluded_reasons: dict[str, list[str]] = field(default_factory=dict)  # claim_id -> reasons
+    conflict_pairs: list[tuple[str, str]] = field(default_factory=list)  # pairs of conflicting claim_ids
+    filter_counts: dict[str, int] = field(default_factory=dict)  # filter_name -> count
+
+
+@dataclass(slots=True)
+class ContextPack:
+    """Compiled, governed, token-budgeted context for an agent."""
+
+    pack_id: str
+    agent_id: str
+    query: str
+    included_claims: list[ContextPackClaim]
+    sources: list[ContextPackSource]
+    token_budget: int
+    tokens_used: int
+    generated_at: datetime
+    summary: str = ""
+    excluded_claims: list[ContextPackClaim] = field(default_factory=list)
+    conflicting_claims: list[ContextPackClaim] = field(default_factory=list)
+    explanation: ContextPackExplanation | None = None

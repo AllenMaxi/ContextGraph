@@ -185,6 +185,12 @@ class MemoryResponse(BaseModel):
     curation_status: MemoryCurationStatus = MemoryCurationStatus.ACTIVE
     curation_reason: str = ""
     curated_at: datetime | None = None
+    # Memory OS v1 extensions
+    source_type: str = ""
+    source_uri: str = ""
+    source_label: str = ""
+    section_refs: list[str] = Field(default_factory=list)
+    ingest_metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class ReviewTaskResponse(BaseModel):
@@ -455,3 +461,69 @@ class SentinelHealthResponse(BaseModel):
     sentinels_active: int
     total_verdicts: int
     last_canary_passed: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# Memory OS v1 — Context Pack schemas
+# ---------------------------------------------------------------------------
+
+
+class CompileContextRequest(BaseModel):
+    agent_id: str | None = None
+    query: str
+    token_budget: int = Field(default=4000, ge=1, le=128000)
+    limit: int = Field(default=50, ge=1, le=500)
+    include_explanations: bool = False
+
+
+class ContextPackClaimResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    claim_id: str
+    statement: str
+    source_memory_id: str
+    source_agent_id: str
+    confidence: float
+    freshness_score: float
+    validation_status: str
+    score: float
+    source_memory_section: str = ""
+    source_label: str = ""
+    locked: bool = False
+
+
+class ContextPackSourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    memory_id: str
+    agent_id: str
+    source_type: str = ""
+    source_label: str = ""
+    source_uri: str = ""
+    claim_count: int = 0
+
+
+class ContextPackExplanationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    included_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    excluded_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    conflict_pairs: list[list[str]] = Field(default_factory=list)
+    filter_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class ContextPackResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    pack_id: str
+    agent_id: str
+    query: str
+    summary: str = ""
+    included_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
+    conflicting_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
+    excluded_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
+    sources: list[ContextPackSourceResponse] = Field(default_factory=list)
+    token_budget: int
+    tokens_used: int
+    generated_at: datetime
+    explanation: ContextPackExplanationResponse | None = None

@@ -12,7 +12,7 @@ from typing import Any
 from .background import BackgroundWorker
 from .config import Settings, settings
 from .delivery import DeliveryRequest, NotificationDispatcher, WebhookNotificationDispatcher, validate_webhook_url
-from .errors import AuthenticationError, NotFoundError, PaymentRequiredError, PermissionDeniedError
+from .errors import AuthenticationError, ConflictError, NotFoundError, PaymentRequiredError, PermissionDeniedError
 from .extraction import Extractor, RuleBasedExtractor
 from .identity import AgentIdentity, IdentityVerifier
 from .in_memory import InMemoryRepository
@@ -26,6 +26,10 @@ from .models import (
     Claim,
     ClaimImpact,
     ClaimSearchResult,
+    ContextPack,
+    ContextPackClaim,
+    ContextPackExplanation,
+    ContextPackSource,
     DeliveryMode,
     Entity,
     JobStatus,
@@ -2855,3 +2859,294 @@ class ContextGraphService:
             timestamp=utcnow(),
         )
         self.repository.save_audit_entry(entry)
+
+    # ------------------------------------------------------------------
+    # Memory OS v1 — Context Compiler
+    # ------------------------------------------------------------------
+
+    _TOKENS_PER_WORD: float = 1.3
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count using word_count * 1.3."""
+        return max(1, int(len(text.split()) * self._TOKENS_PER_WORD))
+
+    def compile_context(
+        self,
+        agent_id: str,
+        query: str,
+        token_budget: int = 4000,
+        limit: int = 50,
+        include_explanations: bool = False,
+    ) -> ContextPack:
+        """Compile a governed, token-budgeted context pack for an agent.
+
+        Pipeline:
+        1. Retrieve candidate claims via repository-native search
+        2. Apply ACL, freshness, trust, curation, and payment filters
+        3. Score and rank candidates
+        4. Detect near-exact duplicates (Jaccard >= 0.88)
+        5. Detect conflicts using existing sentinel conflict signals
+        6. Group by source memory
+        7. Truncate to fit token budget
+        8. Build extractive summary from top claim statements
+        """
+        if token_budget <= 0:
+            token_budget = 1
+
+        requester = self.get_agent(agent_id)
+        now = utcnow()
+
+        # Step 1: Retrieve candidates
+        candidates = self._search_recall_candidates(
+            query=query,
+            candidate_limit=min(max(limit * 10, 50), 500),
+            requester=requester,
+        )
+
+        # Step 2-3: Filter and score
+        scored: list[tuple[Claim, float, Memory]] = []
+        excluded: list[tuple[Claim, list[str]]] = []
+        locked_claims: list[tuple[Claim, float]] = []
+
+        included_reasons: dict[str, list[str]] = {}
+        excluded_reasons: dict[str, list[str]] = {}
+
+        for candidate in candidates:
+            claim = candidate.claim
+
+            # Rejected claims
+            if claim.validation_status == ValidationStatus.REJECTED:
+                excluded.append((claim, ["rejected_claim"]))
+                if include_explanations:
+                    excluded_reasons[claim.claim_id] = ["rejected_claim"]
+                continue
+
+            # Memory must be active
+            memory = self.repository.get_memory(claim.memory_id)
+            if memory is None or not self._memory_is_active(memory):
+                excluded.append((claim, ["memory_inactive"]))
+                if include_explanations:
+                    excluded_reasons[claim.claim_id] = ["memory_inactive"]
+                continue
+
+            # ACL check
+            if not self._can_access(requester, claim):
+                excluded.append((claim, ["access_denied"]))
+                if include_explanations:
+                    excluded_reasons[claim.claim_id] = ["access_denied"]
+                continue
+
+            # Score
+            breakdown = self._score_claim_breakdown(requester, query, claim, text_score_raw=candidate.text_score_raw)
+            if breakdown is None or breakdown.final_score <= 0:
+                excluded.append((claim, ["no_text_match"]))
+                if include_explanations:
+                    excluded_reasons[claim.claim_id] = ["no_text_match"]
+                continue
+
+            # Payment gate — locked claims become references
+            is_locked = (
+                claim.price > 0
+                and claim.source_agent_id != requester.agent_id
+                and claim.source_org_id != requester.org_id
+            )
+
+            if is_locked:
+                locked_claims.append((claim, breakdown.final_score))
+            else:
+                scored.append((claim, breakdown.final_score, memory))
+                if include_explanations:
+                    reasons = [f"text_score={breakdown.text_score:.3f}"]
+                    if breakdown.validation_bonus > 0:
+                        reasons.append(f"validation_bonus={breakdown.validation_bonus:.3f}")
+                    if breakdown.freshness > 0.5:
+                        reasons.append(f"fresh={breakdown.freshness:.3f}")
+                    included_reasons[claim.claim_id] = reasons
+
+        # Sort by score descending
+        scored.sort(key=lambda item: item[1], reverse=True)
+        locked_claims.sort(key=lambda item: item[1], reverse=True)
+
+        # Step 4: Deduplicate near-exact matches (Jaccard >= 0.88)
+        deduped: list[tuple[Claim, float, Memory]] = []
+        seen_statements: list[str] = []
+        for claim, score, memory in scored:
+            is_dup = False
+            for seen in seen_statements:
+                if jaccard_similarity(claim.statement, seen) >= 0.88:
+                    is_dup = True
+                    if include_explanations:
+                        excluded_reasons[claim.claim_id] = ["near_duplicate"]
+                    break
+            if not is_dup:
+                deduped.append((claim, score, memory))
+                seen_statements.append(claim.statement)
+        scored = deduped
+
+        # Step 5: Detect conflicts using sentinel verdicts
+        conflict_pairs: list[tuple[str, str]] = []
+        conflicting_claim_ids: set[str] = set()
+        scored_ids = {claim.claim_id for claim, _, _ in scored}
+        for claim, _, _ in scored:
+            verdicts = self.repository.list_verdicts_for_claim(claim.claim_id)
+            for verdict in verdicts:
+                if (
+                    verdict.decision in (SentinelDecision.DISPUTE, SentinelDecision.REJECT)
+                    and verdict.conflicting_claim_id
+                    and verdict.conflicting_claim_id in scored_ids
+                ):
+                    pair = tuple(sorted([claim.claim_id, verdict.conflicting_claim_id]))
+                    if pair not in conflict_pairs:
+                        conflict_pairs.append(pair)
+                    conflicting_claim_ids.add(claim.claim_id)
+                    conflicting_claim_ids.add(verdict.conflicting_claim_id)
+
+        # Step 6-7: Truncate to token budget
+        # Reserve 20% of budget for summary
+        summary_budget = max(int(token_budget * 0.2), 10)
+        claims_budget = token_budget - summary_budget
+
+        included_pack_claims: list[ContextPackClaim] = []
+        conflicting_pack_claims: list[ContextPackClaim] = []
+        excluded_pack_claims: list[ContextPackClaim] = []
+        source_map: dict[str, ContextPackSource] = {}
+        tokens_used = 0
+
+        for claim, score, memory in scored:
+            claim_tokens = self._estimate_tokens(claim.statement)
+            if tokens_used + claim_tokens > claims_budget and included_pack_claims:
+                # Budget exceeded — remaining go to excluded
+                if include_explanations:
+                    excluded_reasons.setdefault(claim.claim_id, []).append("token_budget_exceeded")
+                excluded_pack_claims.append(self._build_context_pack_claim(claim, score, memory, locked=False))
+                continue
+
+            tokens_used += claim_tokens
+            pack_claim = self._build_context_pack_claim(claim, score, memory, locked=False)
+
+            if claim.claim_id in conflicting_claim_ids:
+                conflicting_pack_claims.append(pack_claim)
+            else:
+                included_pack_claims.append(pack_claim)
+
+            # Track source
+            if memory.memory_id not in source_map:
+                source_map[memory.memory_id] = ContextPackSource(
+                    memory_id=memory.memory_id,
+                    agent_id=memory.agent_id,
+                    source_type=memory.source_type,
+                    source_label=memory.source_label,
+                    source_uri=memory.source_uri,
+                    claim_count=0,
+                )
+            source_map[memory.memory_id].claim_count += 1
+
+        # Add locked claims as references (only when explanations are requested)
+        if include_explanations:
+            for claim, score in locked_claims:
+                if len(included_pack_claims) + len(conflicting_pack_claims) + len(excluded_pack_claims) >= limit:
+                    break
+                memory = self.repository.get_memory(claim.memory_id)
+                pack_claim = self._build_context_pack_claim(claim, score, memory, locked=True)
+                excluded_pack_claims.append(pack_claim)
+                excluded_reasons[claim.claim_id] = ["payment_required"]
+
+        # Step 8: Build extractive summary from top included claims
+        # Summary is extractive (stitched from claim statements), so it shares
+        # content with included claims. We cap total tokens_used at the budget.
+        summary_parts: list[str] = []
+        summary_tokens = 0
+        remaining_budget = max(0, token_budget - tokens_used)
+        effective_summary_budget = min(summary_budget, remaining_budget)
+        all_included = included_pack_claims + conflicting_pack_claims
+        for pc in all_included:
+            part_tokens = self._estimate_tokens(pc.statement)
+            if summary_tokens + part_tokens > effective_summary_budget and summary_parts:
+                break
+            summary_parts.append(pc.statement)
+            summary_tokens += part_tokens
+        summary = " ".join(summary_parts) if summary_parts else ""
+
+        tokens_used = min(tokens_used + summary_tokens, token_budget)
+
+        # Build explanation if requested
+        explanation = None
+        if include_explanations:
+            filter_counts: dict[str, int] = {}
+            for reasons in excluded_reasons.values():
+                for r in reasons:
+                    filter_counts[r] = filter_counts.get(r, 0) + 1
+            explanation = ContextPackExplanation(
+                included_reasons=included_reasons,
+                excluded_reasons=excluded_reasons,
+                conflict_pairs=conflict_pairs,
+                filter_counts=filter_counts,
+            )
+
+        pack = ContextPack(
+            pack_id=new_id("cpk"),
+            agent_id=agent_id,
+            query=query,
+            included_claims=included_pack_claims,
+            sources=list(source_map.values()),
+            token_budget=token_budget,
+            tokens_used=tokens_used,
+            generated_at=now,
+            summary=summary,
+            excluded_claims=excluded_pack_claims if include_explanations else [],
+            conflicting_claims=conflicting_pack_claims,
+            explanation=explanation,
+        )
+
+        self.repository.save_context_pack(pack)
+        self._audit(
+            "compile_context",
+            actor_agent_id=agent_id,
+            details={
+                "pack_id": pack.pack_id,
+                "query": query,
+                "token_budget": str(token_budget),
+                "included": str(len(included_pack_claims)),
+                "conflicts": str(len(conflicting_pack_claims)),
+            },
+        )
+        return pack
+
+    def get_context_pack(self, pack_id: str, requester_agent_id: str | None = None) -> ContextPack:
+        """Retrieve a previously compiled context pack."""
+        pack = self.repository.get_context_pack(pack_id)
+        if pack is None:
+            raise NotFoundError(f"Context pack '{pack_id}' not found.")
+        if requester_agent_id is not None and pack.agent_id != requester_agent_id:
+            raise PermissionDeniedError("Cannot access another agent's context pack.")
+        return pack
+
+    def explain_context_pack(self, pack_id: str, requester_agent_id: str | None = None) -> ContextPack:
+        """Retrieve a context pack with full explanation details."""
+        pack = self.get_context_pack(pack_id, requester_agent_id=requester_agent_id)
+        if pack.explanation is None:
+            raise ConflictError(
+                f"Context pack '{pack_id}' was compiled without explanations. Recompile with include_explanations=True."
+            )
+        return pack
+
+    def _build_context_pack_claim(
+        self,
+        claim: Claim,
+        score: float,
+        memory: Memory | None,
+        locked: bool,
+    ) -> ContextPackClaim:
+        return ContextPackClaim(
+            claim_id=claim.claim_id,
+            statement="" if locked else claim.statement,
+            source_memory_id=claim.memory_id,
+            source_agent_id=claim.source_agent_id,
+            confidence=claim.confidence,
+            freshness_score=self._freshness_factor(claim),
+            validation_status=claim.validation_status.value,
+            score=round(score, 4),
+            source_memory_section=claim.source_memory_section,
+            source_label=memory.source_label if memory else "",
+            locked=locked,
+        )

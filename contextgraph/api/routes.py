@@ -19,6 +19,8 @@ from .schemas import (
     BackgroundJobResponse,
     ClaimResponse,
     ClaimUpdateRequest,
+    CompileContextRequest,
+    ContextPackResponse,
     DiscoverAgentsResponse,
     FeedItemResponse,
     FollowRequest,
@@ -548,3 +550,34 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
             "total_verdicts": len(graph.repository.list_verdicts()),
             "last_canary_passed": None,
         }
+
+    # --- Memory OS v1 — Context Pack endpoints ---
+
+    @app.post("/v1/context/compile", response_model=ContextPackResponse)
+    def compile_context(
+        payload: CompileContextRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        if payload.agent_id:
+            require_same_agent(
+                authenticated,
+                payload.agent_id,
+                "Authenticated agent does not match the requested agent_id.",
+            )
+        return to_jsonable(
+            graph.compile_context(
+                agent_id=authenticated.agent_id,
+                query=payload.query,
+                token_budget=payload.token_budget,
+                limit=payload.limit,
+                include_explanations=payload.include_explanations,
+            )
+        )
+
+    @app.get("/v1/context/{pack_id}", response_model=ContextPackResponse)
+    def get_context_pack(pack_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.get_context_pack(pack_id, requester_agent_id=authenticated.agent_id))
+
+    @app.get("/v1/context/{pack_id}/explain", response_model=ContextPackResponse)
+    def explain_context_pack(pack_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.explain_context_pack(pack_id, requester_agent_id=authenticated.agent_id))

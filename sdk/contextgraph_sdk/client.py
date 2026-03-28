@@ -57,6 +57,9 @@ class Transport(Protocol):
     def delete_agent(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def sentinel_verdicts(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def sentinel_health(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def compile_context(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def get_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def explain_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(slots=True)
@@ -313,6 +316,17 @@ class HttpTransport:
 
     def sentinel_health(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("GET", "/v1/sentinel/health")
+
+    def compile_context(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/context/compile", payload)
+
+    def get_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pack_id = payload["pack_id"]
+        return self._request("GET", f"/v1/context/{pack_id}")
+
+    def explain_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pack_id = payload["pack_id"]
+        return self._request("GET", f"/v1/context/{pack_id}/explain")
 
 
 class ContextGraph:
@@ -703,3 +717,27 @@ class ContextGraph:
 
     def sentinel_health(self) -> dict[str, Any]:
         return self.transport.sentinel_health({})
+
+    def compile_context(
+        self,
+        agent_id: str,
+        query: str,
+        token_budget: int = 4000,
+        limit: int = 50,
+        include_explanations: bool = False,
+    ) -> dict[str, Any]:
+        return self.transport.compile_context(
+            {
+                "agent_id": agent_id,
+                "query": query,
+                "token_budget": token_budget,
+                "limit": limit,
+                "include_explanations": include_explanations,
+            }
+        )
+
+    def get_context_pack(self, pack_id: str) -> dict[str, Any]:
+        return self.transport.get_context_pack({"pack_id": pack_id})
+
+    def explain_context_pack(self, pack_id: str) -> dict[str, Any]:
+        return self.transport.explain_context_pack({"pack_id": pack_id})

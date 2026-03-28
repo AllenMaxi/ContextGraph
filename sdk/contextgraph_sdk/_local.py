@@ -187,3 +187,22 @@ class LocalTransport:
             "total_verdicts": len(self.service.repository.list_verdicts()),
             "last_canary_passed": None,
         }
+
+    def compile_context(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.compile_context(**payload))
+
+    def get_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_context_pack(
+                pack_id=payload["pack_id"],
+                requester_agent_id=payload.get("requester_agent_id"),
+            )
+        )
+
+    def explain_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.explain_context_pack(
+                pack_id=payload["pack_id"],
+                requester_agent_id=payload.get("requester_agent_id"),
+            )
+        )

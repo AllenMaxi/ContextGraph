@@ -5,9 +5,9 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>Developer Beta: governed shared memory for AI agents.</strong><br>
-  Best current fit: support operations, research handoffs, and internal agent platforms that need provenance, review, freshness, and controlled sharing.<br>
-  Ships with a dashboard, CLI, SDK, MCP server, and self-hosted governance workflow.
+  <strong>The first governed memory OS for AI agents.</strong><br>
+  Store, govern, and compile agent memory into trusted, token-budgeted context packs with provenance, freshness, and access control built in.<br>
+  Ships with a context compiler, dashboard, CLI, SDK, MCP server, and self-hosted governance workflow.
 </p>
 
 <p align="center">
@@ -18,8 +18,9 @@
 </p>
 
 <p align="center">
+  <a href="#context-compiler">Context Compiler</a> &middot;
   <a href="#demo">Demo</a> &middot;
-  <a href="#whats-new-in-v040">What's New</a> &middot;
+  <a href="#whats-new-in-v050">What's New</a> &middot;
   <a href="#quickstart">Quickstart</a> &middot;
   <a href="#python-sdk">SDK</a> &middot;
   <a href="#cli-tool">CLI</a> &middot;
@@ -59,6 +60,7 @@ This repo is built for teams that need to:
 The fastest path through the beta is:
 
 - 2-minute local aha: [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
+- context compiler demo: [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
 - flagship support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
 - research handoff flow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
 - production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
@@ -109,6 +111,7 @@ print(hits[0]["claim"]["statement"])
 
 ## What Ships Today
 
+- **context compiler**: compile governed, token-budgeted context packs from mixed agent memory
 - shared memory store/recall with claim-level provenance
 - explainable recall with score breakdowns and filtered-reason traces
 - review, trust, and freshness signals
@@ -117,6 +120,105 @@ print(hits[0]["claim"]["statement"])
 - in-memory indexed search and Neo4j-backed self-hosted beta path
 
 Broader roadmap note: federation, payments, and protocol positioning remain part of the long-term direction, but the current beta is focused on governed shared memory inside real team workflows.
+
+---
+
+## Context Compiler
+
+The context compiler is the hero feature of Memory OS v1. It takes many memories and claims across agents and orgs, and compiles a **governed, explainable, token-budgeted context pack** tailored to the requesting agent's permissions.
+
+```python
+from contextgraph_sdk import ContextGraph
+
+client = ContextGraph.local()
+agent = client.register_agent("ops-bot", "acme", ["operations"])
+
+# Store diverse memories
+client.store(agent["agent_id"], "Payment service migrating from REST to gRPC for Q2.")
+client.store(agent["agent_id"], "Incident: payment latency spike caused by connection pool exhaustion.")
+
+# Compile a context pack
+pack = client.compile_context(
+    agent_id=agent["agent_id"],
+    query="payment service issues",
+    token_budget=1000,
+    include_explanations=True,
+)
+
+print(f"Summary: {pack['summary']}")
+print(f"Claims: {len(pack['included_claims'])} included, {len(pack['conflicting_claims'])} conflicts")
+print(f"Tokens: {pack['tokens_used']} / {pack['token_budget']}")
+```
+
+**What the compiler does:**
+
+1. Retrieves candidate claims via repository-native BM25 search
+2. Applies ACL, freshness, trust, curation, and payment filters per agent
+3. Deduplicates near-exact claims (Jaccard >= 0.88)
+4. Detects conflicts using existing sentinel dispute signals
+5. Truncates to fit the token budget (word_count * 1.3 estimation)
+6. Builds an extractive summary from top claims
+7. Returns different packs to different agents from the same corpus
+
+**Three agents, same corpus, different packs:**
+
+```python
+# Alice (owner) sees private + org + published claims
+# Carol (same org) sees org + published claims
+# Bob (other org) sees only published claims
+alice_pack = client.compile_context(alice_id, "project status", 4000)
+carol_pack = client.compile_context(carol_id, "project status", 4000)
+bob_pack   = client.compile_context(bob_id,   "project status", 4000)
+# alice_pack has >= carol_pack has >= bob_pack claims
+```
+
+**Paid claims appear as locked references:**
+
+Cross-org priced claims appear in the pack with `locked=True` and empty statements. The agent knows the claim exists and can choose to purchase it, but content is not leaked.
+
+Run the full demo: `python3 examples/context_pack_demo.py`
+
+---
+
+## What's New in v0.5.0
+
+### Memory OS v1 — Context Compiler
+ContextGraph now ships a **context compiler** that assembles governed, token-budgeted context packs from mixed agent memory. This is the first release of the Memory OS vision: not a bigger vector DB, but the first governed memory OS for agents.
+
+- **`compile_context()`**: compile a context pack from all accessible memories, respecting ACL, freshness, trust, and payment gates
+- **Token budget enforcement**: packs are truncated to fit a caller-specified token budget using deterministic estimation (word_count * 1.3)
+- **Near-exact deduplication**: claims with Jaccard similarity >= 0.88 are deduplicated automatically
+- **Conflict detection**: claims with existing sentinel dispute/reject verdicts are separated into `conflicting_claims`
+- **Locked paid claims**: cross-org priced claims appear as references with `locked=True` and empty statements
+- **Extractive summaries**: top claim statements are stitched into a `summary` field within 20% of the token budget
+- **Full explanations**: `include_explanations=True` returns inclusion/exclusion reasons, conflict pairs, and filter counts
+- **Immutable snapshots**: compiled packs are persisted and retrievable via `get_context_pack()` and `explain_context_pack()`
+- **REST, SDK, and MCP**: available as `POST /v1/context/compile`, `client.compile_context()`, and `contextgraph_compile_context` MCP tool
+
+### Extended Memory Model
+- **Memory** gains optional `source_type`, `source_uri`, `source_label`, `section_refs`, and `ingest_metadata` fields for richer source tracking
+- **Claim** gains optional `source_memory_section` for section-level provenance
+- All extensions are additive-only with null defaults — no migration needed, existing data remains valid
+
+### New API Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/context/compile` | POST | Compile a governed context pack |
+| `/v1/context/{pack_id}` | GET | Retrieve a compiled context pack |
+| `/v1/context/{pack_id}/explain` | GET | Retrieve a pack with full explanation |
+
+```python
+# SDK
+pack = client.compile_context(agent_id, "query", token_budget=2000, include_explanations=True)
+retrieved = client.get_context_pack(pack["pack_id"])
+explained = client.explain_context_pack(pack["pack_id"])
+```
+
+```bash
+# MCP tool
+contextgraph_compile_context(query="deployment status", token_budget=4000)
+```
 
 ---
 
@@ -600,7 +702,7 @@ ContextGraph uses **memory-level** policy ownership.
 
 ### MCP (Model Context Protocol)
 
-ContextGraph ships as an MCP server. Tools exposed: `contextgraph_store`, `contextgraph_recall`, `contextgraph_relate`, `contextgraph_watch`.
+ContextGraph ships as an MCP server. Tools exposed: `contextgraph_store`, `contextgraph_recall`, `contextgraph_relate`, `contextgraph_watch`, `contextgraph_compile_context`.
 
 ```bash
 python -m contextgraph.mcp_server
@@ -710,15 +812,77 @@ HTTP/REST ─────────▶ API Layer ───────▶ Serv
 MCP (stdio) ───────▶   │                   │                     ├── In-memory
 A2A Protocol ──────▶   ├── Dashboard       ├── Extraction        └── Neo4j
 Python SDK ────────▶   ├── SSE Streaming   ├── ACL + pricing
-UCP Commerce ──────▶   └── UCP Endpoints   ├── Provenance + quorum
+UCP Commerce ──────▶   └── UCP Endpoints   ├── Context Compiler ─▶ ContextPack
+                                            ├── Provenance + quorum
                                             ├── Feed + subscriptions
                                             ├── Pattern matching
                                             └── Review + reputation
 ```
 
+### Memory OS Three-Tier Model
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Tier 3: Context Packs                              │
+│  Compiled, governed, token-budgeted summaries       │
+│  with citations, conflicts, and explanations        │
+├─────────────────────────────────────────────────────┤
+│  Tier 2: Claims Graph                               │
+│  Extracted assertions with provenance, freshness,   │
+│  visibility, trust, and pricing                     │
+├─────────────────────────────────────────────────────┤
+│  Tier 1: Raw Memories                               │
+│  Transcripts, docs, task logs, incident reports,    │
+│  handoff notes with source metadata                 │
+└─────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## Real Use Cases
+
+### Agent context briefing before task execution
+
+An orchestrator compiles a trusted brief from 200k tokens of mixed agent memory into a 2k token pack before dispatching a task agent. The pack includes only claims the agent is allowed to see, with conflicts called out explicitly.
+
+```python
+pack = client.compile_context(
+    agent_id=task_agent_id,
+    query="customer onboarding pipeline status",
+    token_budget=2000,
+)
+# Feed pack.summary + pack.included_claims into the task agent's system prompt
+# Agent sees provenance, freshness, and trust signals for every claim
+```
+
+### Incident response with cross-team context
+
+During an incident, the oncall bot compiles context from engineering, ops, and partner agents. Each team sees only what their access level allows, but the compiled pack shows the full picture to authorized responders.
+
+```python
+# Oncall bot (acme org) sees internal postmortems + public incident reports
+oncall_pack = client.compile_context(oncall_id, "payment service outage", 4000)
+
+# Partner agent (globex org) sees only published incident data
+partner_pack = client.compile_context(partner_id, "payment service outage", 4000)
+
+# oncall_pack has more claims than partner_pack — governed by access policy
+```
+
+### Research handoff with budget-aware compression
+
+A research agent hands off findings to a summarization agent. The context compiler ensures the handoff fits within the target model's context window while preserving the most relevant claims and their provenance.
+
+```python
+pack = client.compile_context(
+    agent_id=summarizer_id,
+    query="Q3 supply chain analysis findings",
+    token_budget=8000,
+    include_explanations=True,
+)
+# Summarizer gets top claims within budget
+# Explanation shows what was excluded and why (low relevance, stale, access denied)
+```
 
 ### Same company: agent follow with provenance
 
@@ -796,6 +960,7 @@ The main HTTP server exposes the following public routes today. This inventory e
 | `/v1/memory/store` | POST | Store memory and extract claims |
 | `/v1/memory/store-async` | POST | Queue an asynchronous store job |
 | `/v1/memory/recall` | POST | Search accessible claims and memories |
+| `/v1/memory/recall/explain` | POST | Recall with score breakdowns and filter reasons |
 | `/v1/memory/relate` | POST | Traverse graph relationships between entities |
 | `/v1/memories` | GET | List visible memories |
 | `/v1/memories/{memory_id}` | GET | Get a visible memory |
@@ -805,6 +970,14 @@ The main HTTP server exposes the following public routes today. This inventory e
 | `/v1/claims/{claim_id}` | GET | Get a visible claim |
 | `/v1/claims/review` | POST | Attest or challenge a claim |
 | `/v1/claims/{claim_id}` | PATCH | Update claim visibility, price, or access list |
+
+### Context Compiler
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/v1/context/compile` | POST | Compile a governed, token-budgeted context pack |
+| `/v1/context/{pack_id}` | GET | Retrieve a compiled context pack |
+| `/v1/context/{pack_id}/explain` | GET | Retrieve a pack with full inclusion/exclusion explanations |
 
 ### Watches, Jobs, and Notifications
 
@@ -889,7 +1062,7 @@ The main HTTP app ships the server, dashboard, console, streaming, UCP, and remo
 git clone https://github.com/AllenMaxi/ContextGraph.git
 cd contextgraph
 make install
-make test   # 188 tests
+make test   # 267 tests
 make lint
 ```
 
