@@ -197,9 +197,7 @@ class HttpTransport:
 
     def list_memories(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         query_params = {
-            key: value
-            for key, value in payload.items()
-            if key in {"include_inactive", "limit"} and value is not None
+            key: value for key, value in payload.items() if key in {"include_inactive", "limit"} and value is not None
         }
         path = "/v1/memories"
         if query_params:

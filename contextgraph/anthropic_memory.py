@@ -26,6 +26,7 @@ else:
 try:
     from anthropic.lib.tools import BetaAbstractMemoryTool
 except ImportError:  # pragma: no cover - exercised indirectly in local tests
+
     class BetaAbstractMemoryTool:
         """Small fallback so the adapter stays importable without Anthropic installed."""
 

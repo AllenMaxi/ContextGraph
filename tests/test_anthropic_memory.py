@@ -3,8 +3,9 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from contextgraph import ContextGraphAnthropicMemoryTool, ContextGraphService
 from contextgraph_sdk import ContextGraph
+
+from contextgraph import ContextGraphAnthropicMemoryTool, ContextGraphService
 
 
 class ContextGraphAnthropicMemoryToolTest(unittest.TestCase):
