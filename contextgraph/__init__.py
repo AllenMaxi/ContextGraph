@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from .bootstrap import create_service
 from .config import Settings, settings
 from .delivery import DeliveryRequest, NotificationDispatcher, WebhookNotificationDispatcher
@@ -32,6 +36,17 @@ from .models import (
 from .service import ContextGraphService
 from .web import create_app
 
+if TYPE_CHECKING:
+    from .anthropic_memory import ContextGraphAnthropicMemoryTool
+
+
+def __getattr__(name: str) -> object:
+    if name == "ContextGraphAnthropicMemoryTool":
+        from .anthropic_memory import ContextGraphAnthropicMemoryTool
+
+        return ContextGraphAnthropicMemoryTool
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     "Agent",
     "AgentTraceRecord",
@@ -40,6 +55,7 @@ __all__ = [
     "build_evaluation_cases_from_traces",
     "Claim",
     "ClaimSearchResult",
+    "ContextGraphAnthropicMemoryTool",
     "ContextGraphService",
     "ContextPack",
     "ContextPackClaim",

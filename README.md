@@ -63,6 +63,7 @@ The fastest path through the beta is:
 - context compiler demo: [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
 - flagship support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
 - research handoff flow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
+- Anthropic Memory Tool adapter: [`docs/anthropic-memory-tool.md`](docs/anthropic-memory-tool.md)
 - production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
 - comparison guide: [`docs/contextgraph-vs-vector-memory.md`](docs/contextgraph-vs-vector-memory.md)
 - launch asset guide: [`docs/launch-assets.md`](docs/launch-assets.md)
@@ -112,6 +113,7 @@ print(hits[0]["claim"]["statement"])
 ## What Ships Today
 
 - **context compiler**: compile governed, token-budgeted context packs from mixed agent memory
+- **Anthropic Memory Tool adapter**: use ContextGraph as the governed backend for Claude's API memory tool, with versioned memory snapshots and archival delete semantics
 - shared memory store/recall with claim-level provenance
 - explainable recall with score breakdowns and filtered-reason traces
 - review, trust, and freshness signals
@@ -199,6 +201,20 @@ ContextGraph now ships a **context compiler** that assembles governed, token-bud
 - **Memory** gains optional `source_type`, `source_uri`, `source_label`, `section_refs`, and `ingest_metadata` fields for richer source tracking
 - **Claim** gains optional `source_memory_section` for section-level provenance
 - All extensions are additive-only with null defaults — no migration needed, existing data remains valid
+
+### Anthropic Memory Tool Adapter
+ContextGraph can now act as the **governed backend for Anthropic's Claude API Memory tool**.
+
+This lets teams keep Claude-compatible memory operations while upgrading the storage layer underneath:
+
+- **Versioned memory snapshots**: each `/memories/...` file is stored as a ContextGraph memory revision instead of a mutable blob
+- **Archival delete semantics**: deletes map to curation/archive so provenance is preserved
+- **Adapter-native provenance**: Anthropic-backed memories carry `source_type`, `source_uri`, `source_label`, and ingestion metadata for traceability
+- **Public SDK surface**: the integration uses `store()`, `memories()`, `memory()`, and `update_memory_curation()` so it works with both local and HTTP clients
+- **Claude-compatible file operations**: create, view, insert, replace, rename, and delete stay available through a virtual `/memories` filesystem
+
+See the integration guide: [`docs/anthropic-memory-tool.md`](docs/anthropic-memory-tool.md)  
+Run the example: [`examples/anthropic_memory_tool.py`](examples/anthropic_memory_tool.py)
 
 ### New API Endpoints
 

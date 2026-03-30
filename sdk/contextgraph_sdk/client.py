@@ -31,6 +31,9 @@ class Transport(Protocol):
     def store(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def store_async(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_memories(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def get_memory(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def update_memory_curation(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def explain_recall(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def relate(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
@@ -191,6 +194,27 @@ class HttpTransport:
             if key in {"visibility", "price", "access_list"} and value is not None
         }
         return self._request("PATCH", f"/v1/memories/{memory_id}/access", body)
+
+    def list_memories(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        query_params = {
+            key: value
+            for key, value in payload.items()
+            if key in {"include_inactive", "limit"} and value is not None
+        }
+        path = "/v1/memories"
+        if query_params:
+            path = f"{path}?{urlencode(query_params)}"
+        return self._request("GET", path)
+
+    def get_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("GET", f"/v1/memories/{payload['memory_id']}")
+
+    def update_memory_curation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        memory_id = payload["memory_id"]
+        body = {
+            key: value for key, value in payload.items() if key in {"curation_status", "reason"} and value is not None
+        }
+        return self._request("PATCH", f"/v1/memories/{memory_id}/curation", body)
 
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         body = {key: value for key, value in payload.items() if key != "payment_token"}
@@ -468,6 +492,11 @@ class ContextGraph:
         metadata: dict[str, str] | None = None,
         evidence: list[str] | None = None,
         citations: list[str] | None = None,
+        source_type: str | None = None,
+        source_uri: str | None = None,
+        source_label: str | None = None,
+        section_refs: list[str] | None = None,
+        ingest_metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
         expires_in_days: int | None = None,
@@ -481,6 +510,11 @@ class ContextGraph:
                 "metadata": metadata or {},
                 "evidence": evidence,
                 "citations": citations,
+                "source_type": source_type,
+                "source_uri": source_uri,
+                "source_label": source_label,
+                "section_refs": section_refs,
+                "ingest_metadata": ingest_metadata or {},
                 "access_list": access_list,
                 "price": price,
                 "expires_in_days": expires_in_days,
@@ -496,6 +530,11 @@ class ContextGraph:
         metadata: dict[str, str] | None = None,
         evidence: list[str] | None = None,
         citations: list[str] | None = None,
+        source_type: str | None = None,
+        source_uri: str | None = None,
+        source_label: str | None = None,
+        section_refs: list[str] | None = None,
+        ingest_metadata: dict[str, str] | None = None,
         access_list: list[str] | None = None,
         price: float | None = None,
         expires_in_days: int | None = None,
@@ -509,6 +548,11 @@ class ContextGraph:
                 "metadata": metadata or {},
                 "evidence": evidence,
                 "citations": citations,
+                "source_type": source_type,
+                "source_uri": source_uri,
+                "source_label": source_label,
+                "section_refs": section_refs,
+                "ingest_metadata": ingest_metadata or {},
                 "access_list": access_list,
                 "price": price,
                 "expires_in_days": expires_in_days,
@@ -530,6 +574,45 @@ class ContextGraph:
                 "visibility": visibility,
                 "price": price,
                 "access_list": access_list,
+            }
+        )
+
+    def memories(
+        self,
+        requester_agent_id: str,
+        *,
+        include_inactive: bool = False,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        return self.transport.list_memories(
+            {
+                "requester_agent_id": requester_agent_id,
+                "include_inactive": include_inactive,
+                "limit": limit,
+            }
+        )
+
+    def memory(self, requester_agent_id: str, memory_id: str) -> dict[str, Any]:
+        return self.transport.get_memory(
+            {
+                "requester_agent_id": requester_agent_id,
+                "memory_id": memory_id,
+            }
+        )
+
+    def update_memory_curation(
+        self,
+        requester_agent_id: str,
+        memory_id: str,
+        curation_status: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        return self.transport.update_memory_curation(
+            {
+                "requester_agent_id": requester_agent_id,
+                "memory_id": memory_id,
+                "curation_status": curation_status,
+                "reason": reason,
             }
         )
 

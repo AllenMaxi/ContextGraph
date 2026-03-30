@@ -42,6 +42,9 @@ server = [
   "python-multipart>=0.0.9",
   "uvicorn[standard]>=0.34.0",
 ]
+anthropic = [
+  "anthropic>=0.74.0",
+]
 neo4j = [
   "neo4j>=5.28.0",
 ]

@@ -181,6 +181,11 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 metadata=payload.metadata,
                 evidence=payload.evidence,
                 citations=payload.citations,
+                source_type=payload.source_type,
+                source_uri=payload.source_uri,
+                source_label=payload.source_label,
+                section_refs=payload.section_refs,
+                ingest_metadata=payload.ingest_metadata,
                 access_list=payload.access_list,
                 price=payload.price,
                 expires_in_days=payload.expires_in_days,
@@ -203,6 +208,11 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 metadata=payload.metadata,
                 evidence=payload.evidence,
                 citations=payload.citations,
+                source_type=payload.source_type,
+                source_uri=payload.source_uri,
+                source_label=payload.source_label,
+                section_refs=payload.section_refs,
+                ingest_metadata=payload.ingest_metadata,
                 access_list=payload.access_list,
                 price=payload.price,
                 expires_in_days=payload.expires_in_days,
@@ -454,6 +464,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/memories", response_model=list[MemoryResponse])
     def list_memories(
         include_inactive: bool = False,
+        limit: int = 500,
         authenticated: Any = Depends(authenticated_agent),
     ) -> Any:
         return to_jsonable(
@@ -461,6 +472,7 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
                 requester_agent_id=authenticated.agent_id,
                 include_private_same_org=True,
                 include_inactive=include_inactive,
+                limit=limit,
             )
         )
 

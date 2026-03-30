@@ -65,6 +65,29 @@ class LocalTransport:
     def update_memory_access(self, payload: dict[str, Any]) -> dict[str, Any]:
         return to_jsonable(self.service.update_memory_access(**payload))
 
+    def list_memories(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(
+            self.service.list_memories(
+                requester_agent_id=payload["requester_agent_id"],
+                include_private_same_org=True,
+                include_inactive=payload.get("include_inactive", False),
+                limit=payload.get("limit", 500),
+            )
+        )
+
+    def get_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_memory_for_agent(
+                requester_agent_id=payload["requester_agent_id"],
+                memory_id=payload["memory_id"],
+                include_private_same_org=True,
+                include_inactive=True,
+            )
+        )
+
+    def update_memory_curation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.update_memory_curation(**payload))
+
     def recall(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(self.service.recall(**payload))
 

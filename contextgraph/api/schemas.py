@@ -81,6 +81,14 @@ class MemoryStoreRequest(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     evidence: list[str] | None = Field(default=None, description="Human-readable provenance notes for this memory.")
     citations: list[str] | None = Field(default=None, description="Source pointers such as URLs, paths, or ticket IDs.")
+    source_type: str | None = Field(default=None, description="Memory source type, such as transcript or document.")
+    source_uri: str | None = Field(default=None, description="Source URI or logical path for this memory.")
+    source_label: str | None = Field(default=None, description="Human-readable source label.")
+    section_refs: list[str] | None = Field(default=None, description="Section labels or headings inside the source.")
+    ingest_metadata: dict[str, str] | None = Field(
+        default=None,
+        description="Ingestion-time metadata for adapter-specific lineage and indexing.",
+    )
     access_list: list[str] | None = Field(
         default=None, description="Agent/org IDs allowed access (for 'shared' visibility)"
     )

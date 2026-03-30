@@ -402,17 +402,14 @@ class TestMemoryExtensions(unittest.TestCase):
         self.agent = self.service.register_agent(name="alice", org_id="acme")
 
     def test_memory_source_fields_propagate_to_pack(self) -> None:
-        result = self.service.store_memory(
+        self.service.store_memory(
             agent_id=self.agent.agent_id,
             content="Incident report: database latency spike at 2pm UTC.",
             visibility="private",
+            source_type="incident_report",
+            source_label="INC-2024-001",
+            source_uri="https://incidents.acme.com/001",
         )
-        # Manually set source fields on the memory
-        memory = self.service.repository.get_memory(result.memory.memory_id)
-        memory.source_type = "incident_report"
-        memory.source_label = "INC-2024-001"
-        memory.source_uri = "https://incidents.acme.com/001"
-        self.service.repository.update_memory(memory)
 
         pack = self.service.compile_context(
             agent_id=self.agent.agent_id,

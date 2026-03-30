@@ -152,6 +152,11 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
                 "Acme Corp reported API latency.",
                 evidence=["meeting:incident-review"],
                 citations=["ticket:INC-42"],
+                source_type="anthropic_memory_file",
+                source_uri="claude-memory://default/memories/project.md",
+                source_label="project.md",
+                section_refs=["Summary"],
+                ingest_metadata={"integration": "anthropic_memory_tool"},
                 expires_in_days=14,
             )
 
@@ -159,7 +164,52 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertEqual(captured["method"], "POST")
         self.assertIn('"evidence": ["meeting:incident-review"]', captured["body"])
         self.assertIn('"citations": ["ticket:INC-42"]', captured["body"])
+        self.assertIn('"source_type": "anthropic_memory_file"', captured["body"])
+        self.assertIn('"source_uri": "claude-memory://default/memories/project.md"', captured["body"])
+        self.assertIn('"source_label": "project.md"', captured["body"])
+        self.assertIn('"section_refs": ["Summary"]', captured["body"])
+        self.assertIn('"ingest_metadata": {"integration": "anthropic_memory_tool"}', captured["body"])
         self.assertIn('"expires_in_days": 14', captured["body"])
+
+    def test_http_transport_memory_helpers_use_expected_endpoints(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self._payload
+
+        captured: list[tuple[str, str, str]] = []
+        responses = [
+            FakeResponse(b"[]"),
+            FakeResponse(b"{}"),
+            FakeResponse(b"{}"),
+        ]
+
+        def fake_urlopen(req):
+            body = req.data.decode("utf-8") if req.data else ""
+            captured.append((req.get_method(), req.full_url, body))
+            return responses.pop(0)
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.memories("agt_test", include_inactive=True, limit=25)
+            client.memory("agt_test", "mem_123")
+            client.update_memory_curation("agt_test", "mem_123", "archived", "superseded")
+
+        self.assertEqual(captured[0], ("GET", "http://localhost:8420/v1/memories?include_inactive=True&limit=25", ""))
+        self.assertEqual(captured[1], ("GET", "http://localhost:8420/v1/memories/mem_123", ""))
+        self.assertEqual(captured[2][0], "PATCH")
+        self.assertEqual(captured[2][1], "http://localhost:8420/v1/memories/mem_123/curation")
+        self.assertIn('"curation_status": "archived"', captured[2][2])
+        self.assertIn('"reason": "superseded"', captured[2][2])
 
     def test_http_transport_explain_recall_uses_explain_endpoint_and_payment_header(self) -> None:
         client = ContextGraph.http("http://localhost:8420", api_key="key_ok")

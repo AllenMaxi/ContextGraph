@@ -278,6 +278,46 @@ class ContextGraphWebTest(unittest.TestCase):
         self.assertIn("meeting:weekly-ops", body["claims"][0]["evidence"])
         self.assertIn("ticket:SUP-42", body["claims"][0]["citations"])
 
+    def test_store_accepts_source_fields_and_memory_endpoints_round_trip(self) -> None:
+        alpha = self.client.post(
+            "/v1/agents/register",
+            json={"name": "alpha-support", "org_id": "alpha", "capabilities": ["support"]},
+        ).json()
+
+        stored = self.client.post(
+            "/v1/memory/store",
+            headers={"X-Agent-Key": alpha["api_key"]},
+            json={
+                "content": "Anthropic adapter memory snapshot.",
+                "visibility": "private",
+                "source_type": "anthropic_memory_file",
+                "source_uri": "claude-memory://default/memories/project.md",
+                "source_label": "project.md",
+                "section_refs": ["Summary"],
+                "ingest_metadata": {
+                    "integration": "anthropic_memory_tool",
+                    "namespace": "default",
+                    "logical_path": "/memories/project.md",
+                    "revision": "1",
+                    "current": "true",
+                },
+            },
+        )
+        listed = self.client.get("/v1/memories?limit=1", headers={"X-Agent-Key": alpha["api_key"]})
+        fetched = self.client.get(
+            f"/v1/memories/{stored.json()['memory']['memory_id']}",
+            headers={"X-Agent-Key": alpha["api_key"]},
+        )
+
+        self.assertEqual(stored.status_code, 200)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(fetched.status_code, 200)
+        self.assertEqual(stored.json()["memory"]["source_type"], "anthropic_memory_file")
+        self.assertEqual(stored.json()["memory"]["source_label"], "project.md")
+        self.assertEqual(stored.json()["memory"]["ingest_metadata"]["logical_path"], "/memories/project.md")
+        self.assertEqual(len(listed.json()), 1)
+        self.assertEqual(fetched.json()["source_uri"], "claude-memory://default/memories/project.md")
+
     def test_memory_curation_endpoint_hides_memory_from_active_list(self) -> None:
         alpha = self.client.post(
             "/v1/agents/register",

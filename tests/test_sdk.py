@@ -189,6 +189,50 @@ class ContextGraphSDKTest(unittest.TestCase):
         finally:
             service.close()
 
+    def test_local_transport_supports_memory_source_fields_and_memory_helpers(self) -> None:
+        service = ContextGraphService()
+        try:
+            client = ContextGraph.local(service)
+            agent = client.register_agent("sdk-memory", "alpha", ["research"])
+
+            stored = client.store(
+                agent_id=agent["agent_id"],
+                content="Anthropic adapter memory snapshot.",
+                visibility="private",
+                source_type="anthropic_memory_file",
+                source_uri="claude-memory://default/memories/project.md",
+                source_label="project.md",
+                section_refs=["Summary"],
+                ingest_metadata={
+                    "integration": "anthropic_memory_tool",
+                    "namespace": "default",
+                    "logical_path": "/memories/project.md",
+                    "revision": "1",
+                    "current": "true",
+                },
+            )
+
+            listed = client.memories(agent["agent_id"], limit=10)
+            fetched = client.memory(agent["agent_id"], stored["memory"]["memory_id"])
+            curated = client.update_memory_curation(
+                agent["agent_id"],
+                stored["memory"]["memory_id"],
+                "archived",
+                "superseded",
+            )
+
+            self.assertEqual(stored["memory"]["source_type"], "anthropic_memory_file")
+            self.assertEqual(stored["memory"]["source_uri"], "claude-memory://default/memories/project.md")
+            self.assertEqual(stored["memory"]["source_label"], "project.md")
+            self.assertEqual(stored["memory"]["section_refs"], ["Summary"])
+            self.assertEqual(stored["memory"]["ingest_metadata"]["logical_path"], "/memories/project.md")
+            self.assertEqual(len(listed), 1)
+            self.assertEqual(fetched["memory_id"], stored["memory"]["memory_id"])
+            self.assertEqual(curated["curation_status"], "archived")
+            self.assertEqual(curated["curation_reason"], "superseded")
+        finally:
+            service.close()
+
 
 if __name__ == "__main__":
     unittest.main()
