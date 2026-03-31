@@ -278,6 +278,51 @@ class ContextGraphSDKHttpTransportTest(unittest.TestCase):
         self.assertIn('"target_type": "agent"', captured["body"])
         self.assertIn('"target_id": "agt_target"', captured["body"])
 
+    def test_http_transport_session_helpers_use_expected_endpoints(self) -> None:
+        client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
+
+        class FakeResponse:
+            def __init__(self, payload: bytes) -> None:
+                self._payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self._payload
+
+        captured: list[tuple[str, str, str]] = []
+        responses = [FakeResponse(b"{}") for _ in range(6)]
+
+        def fake_urlopen(req):
+            body = req.data.decode("utf-8") if req.data else ""
+            captured.append((req.get_method(), req.full_url, body))
+            return responses.pop(0)
+
+        with patch("contextgraph_sdk.client.request.urlopen", side_effect=fake_urlopen):
+            client.create_session("agt_test", title="SDK session", source="codex")
+            client.record_session_event("agt_test", "ses_123", "decision", "Use pyproject")
+            client.checkpoint_session("agt_test", "ses_123", reason="manual", token_budget=1200)
+            client.session_checkpoints("agt_test", "ses_123")
+            client.context_diff("agt_test", "ses_123", from_checkpoint_id="chk_a", to_checkpoint_id="chk_b")
+            client.doctor_memory("agt_test", "ses_123")
+
+        self.assertEqual(captured[0][1], "http://localhost:8420/v1/sessions")
+        self.assertIn('"title": "SDK session"', captured[0][2])
+        self.assertEqual(captured[1][1], "http://localhost:8420/v1/sessions/ses_123/events")
+        self.assertIn('"event_type": "decision"', captured[1][2])
+        self.assertEqual(captured[2][1], "http://localhost:8420/v1/sessions/ses_123/checkpoint")
+        self.assertIn('"reason": "manual"', captured[2][2])
+        self.assertEqual(captured[3][1], "http://localhost:8420/v1/sessions/ses_123/checkpoints")
+        self.assertEqual(
+            captured[4][1],
+            "http://localhost:8420/v1/sessions/ses_123/diff?from_checkpoint_id=chk_a&to_checkpoint_id=chk_b",
+        )
+        self.assertEqual(captured[5][1], "http://localhost:8420/v1/sessions/ses_123/doctor")
+
     def test_http_transport_feed_uses_encoded_query_parameters(self) -> None:
         client = ContextGraph.http("http://localhost:8420", api_key="key_ok")
 

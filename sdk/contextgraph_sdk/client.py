@@ -63,6 +63,16 @@ class Transport(Protocol):
     def compile_context(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def get_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def explain_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def create_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_sessions(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def get_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_session_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def checkpoint_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def list_compaction_checkpoints(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
+    def resume_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def context_diff(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def doctor_memory(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 @dataclass(slots=True)
@@ -349,6 +359,56 @@ class HttpTransport:
     def explain_context_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
         pack_id = payload["pack_id"]
         return self._request("GET", f"/v1/context/{pack_id}/explain")
+
+    def create_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/sessions", payload)
+
+    def list_sessions(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return self._request("GET", "/v1/sessions")
+
+    def get_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        return self._request("GET", f"/v1/sessions/{session_id}")
+
+    def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        body = dict(payload)
+        body.pop("session_id", None)
+        return self._request("POST", f"/v1/sessions/{session_id}/events", body)
+
+    def list_session_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        session_id = payload["session_id"]
+        return self._request("GET", f"/v1/sessions/{session_id}/events")
+
+    def checkpoint_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        body = dict(payload)
+        body.pop("session_id", None)
+        return self._request("POST", f"/v1/sessions/{session_id}/checkpoint", body)
+
+    def list_compaction_checkpoints(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        session_id = payload["session_id"]
+        return self._request("GET", f"/v1/sessions/{session_id}/checkpoints")
+
+    def resume_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        return self._request("GET", f"/v1/sessions/{session_id}/resume")
+
+    def context_diff(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        params = {}
+        if payload.get("from_checkpoint_id"):
+            params["from_checkpoint_id"] = payload["from_checkpoint_id"]
+        if payload.get("to_checkpoint_id"):
+            params["to_checkpoint_id"] = payload["to_checkpoint_id"]
+        path = f"/v1/sessions/{session_id}/diff"
+        if params:
+            path = f"{path}?{urlencode(params)}"
+        return self._request("GET", path)
+
+    def doctor_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        return self._request("GET", f"/v1/sessions/{session_id}/doctor")
 
 
 class ContextGraph:
@@ -822,3 +882,95 @@ class ContextGraph:
 
     def explain_context_pack(self, pack_id: str) -> dict[str, Any]:
         return self.transport.explain_context_pack({"pack_id": pack_id})
+
+    def create_session(
+        self,
+        agent_id: str,
+        title: str = "",
+        source: str = "generic",
+        metadata: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.create_session(
+            {
+                "agent_id": agent_id,
+                "title": title,
+                "source": source,
+                "metadata": dict(metadata or {}),
+            }
+        )
+
+    def sessions(self, agent_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_sessions({"agent_id": agent_id})
+
+    def session(self, agent_id: str, session_id: str) -> dict[str, Any]:
+        return self.transport.get_session({"agent_id": agent_id, "session_id": session_id})
+
+    def record_session_event(
+        self,
+        agent_id: str,
+        session_id: str,
+        event_type: str,
+        content: str,
+        metadata: dict[str, str] | None = None,
+        important: bool | None = None,
+        auto_checkpoint: bool = False,
+        token_budget: int = 1600,
+        checkpoint_reason: str | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.record_session_event(
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "event_type": event_type,
+                "content": content,
+                "metadata": dict(metadata or {}),
+                "important": important,
+                "auto_checkpoint": auto_checkpoint,
+                "token_budget": token_budget,
+                "checkpoint_reason": checkpoint_reason,
+            }
+        )
+
+    def session_events(self, agent_id: str, session_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_session_events({"agent_id": agent_id, "session_id": session_id})
+
+    def checkpoint_session(
+        self,
+        agent_id: str,
+        session_id: str,
+        reason: str = "manual",
+        token_budget: int = 1600,
+    ) -> dict[str, Any]:
+        return self.transport.checkpoint_session(
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "reason": reason,
+                "token_budget": token_budget,
+            }
+        )
+
+    def session_checkpoints(self, agent_id: str, session_id: str) -> list[dict[str, Any]]:
+        return self.transport.list_compaction_checkpoints({"agent_id": agent_id, "session_id": session_id})
+
+    def resume_session(self, agent_id: str, session_id: str) -> dict[str, Any]:
+        return self.transport.resume_session({"agent_id": agent_id, "session_id": session_id})
+
+    def context_diff(
+        self,
+        agent_id: str,
+        session_id: str,
+        from_checkpoint_id: str | None = None,
+        to_checkpoint_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.context_diff(
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "from_checkpoint_id": from_checkpoint_id,
+                "to_checkpoint_id": to_checkpoint_id,
+            }
+        )
+
+    def doctor_memory(self, agent_id: str, session_id: str) -> dict[str, Any]:
+        return self.transport.doctor_memory({"agent_id": agent_id, "session_id": session_id})

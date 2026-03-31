@@ -229,3 +229,67 @@ class LocalTransport:
                 requester_agent_id=payload.get("requester_agent_id"),
             )
         )
+
+    def create_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.create_session(**payload))
+
+    def list_sessions(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(self.service.list_sessions(payload.get("agent_id") or ""))
+
+    def get_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.get_session(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+            )
+        )
+
+    def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.record_session_event(**payload))
+
+    def list_session_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(
+            self.service.list_session_events(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+            )
+        )
+
+    def checkpoint_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        local_payload = dict(payload)
+        local_payload["agent_id"] = local_payload.get("agent_id") or ""
+        return to_jsonable(self.service.checkpoint_session(**local_payload))
+
+    def list_compaction_checkpoints(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return to_jsonable(
+            self.service.list_compaction_checkpoints(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+            )
+        )
+
+    def resume_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.resume_session(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+            )
+        )
+
+    def context_diff(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.context_diff(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+                from_checkpoint_id=payload.get("from_checkpoint_id"),
+                to_checkpoint_id=payload.get("to_checkpoint_id"),
+            )
+        )
+
+    def doctor_memory(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(
+            self.service.doctor_memory(
+                requester_agent_id=payload.get("agent_id") or "",
+                session_id=payload["session_id"],
+            )
+        )

@@ -103,6 +103,22 @@ def _agent_id() -> str:
     return agent_id
 
 
+def _session_id(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
+    cfg = _load_config()
+    session_id = cfg.get("session_id")
+    if not session_id:
+        _err("No active session configured. Run 'cg session start' or pass --session.")
+    return session_id
+
+
+def _set_active_session(session_id: str) -> None:
+    cfg = _load_config()
+    cfg["session_id"] = session_id
+    _save_config(cfg)
+
+
 # ---------------------------------------------------------------------------
 # JSON output helper
 # ---------------------------------------------------------------------------
@@ -729,6 +745,175 @@ def cmd_status(args: argparse.Namespace, client: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Reactive delta compaction
+# ---------------------------------------------------------------------------
+
+
+def cmd_session_start(args: argparse.Namespace, client: Any) -> None:
+    result = client.create_session(
+        agent_id=_agent_id(),
+        title=args.title or "",
+        source=args.source,
+        metadata={"workspace": args.workspace} if args.workspace else {},
+    )
+    if args.activate:
+        _set_active_session(result["session_id"])
+
+    if args.json:
+        _json_out(result)
+        return
+
+    _ok(f"Started session {CYAN}{result['session_id']}{RESET}{GREEN}")
+    print(f"  {_bold('Title:')}   {result['title']}")
+    print(f"  {_bold('Source:')}  {result['source']}")
+    if args.activate:
+        print(f"  {_bold('Active:')}  saved as the default session in {CONFIG_FILE}")
+
+
+def cmd_session_show(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = client.session(_agent_id(), session_id)
+    if args.json:
+        _json_out(result)
+        return
+
+    print(_bold("Session"))
+    print(f"  {_bold('ID:')}          {CYAN}{result['session_id']}{RESET}")
+    print(f"  {_bold('Title:')}       {result['title']}")
+    print(f"  {_bold('Source:')}      {result['source']}")
+    print(f"  {_bold('Events:')}      {result['event_count']}")
+    print(f"  {_bold('Checkpoints:')} {result['checkpoint_count']}")
+    print(f"  {_bold('Updated:')}     {_dim(str(result['updated_at']))}")
+
+
+def cmd_session_event(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    metadata: dict[str, str] = {}
+    if args.metadata_json:
+        try:
+            metadata = json.loads(args.metadata_json)
+        except json.JSONDecodeError:
+            _err("Invalid JSON passed to --metadata-json.")
+    result = client.record_session_event(
+        agent_id=_agent_id(),
+        session_id=session_id,
+        event_type=args.event_type,
+        content=args.content,
+        metadata=metadata,
+        important=args.important,
+        auto_checkpoint=args.auto_checkpoint,
+        token_budget=args.token_budget,
+        checkpoint_reason=args.checkpoint_reason,
+    )
+    if args.json:
+        _json_out(result)
+        return
+
+    _ok(f"Recorded event {CYAN}{result['event']['event_id']}{RESET}{GREEN}")
+    print(f"  {_bold('Type:')}     {result['event']['event_type']}")
+    print(f"  {_bold('Sequence:')} {result['event']['sequence']}")
+    if result.get("checkpoint"):
+        print(f"  {_bold('Checkpoint:')} reactive checkpoint {CYAN}{result['checkpoint']['checkpoint_id']}{RESET}")
+
+
+def cmd_checkpoint(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    pack = client.checkpoint_session(
+        agent_id=_agent_id(),
+        session_id=session_id,
+        reason=args.reason,
+        token_budget=args.token_budget,
+    )
+    if args.json:
+        _json_out(pack)
+        return
+
+    _ok(f"Checkpoint created {CYAN}{pack['checkpoint_id']}{RESET}{GREEN}")
+    print(f"  {_bold('Delta Pack:')}  {pack['delta_pack_id']}")
+    print(f"  {_bold('Reason:')}      {pack['checkpoint_reason']}")
+    print(f"  {_bold('Tokens:')}      {pack['tokens_used']} / {pack['token_budget']}")
+    print(f"  {_bold('Summary:')}     {pack['summary'] or '<empty>'}")
+    if pack.get("restoration_instructions"):
+        print(f"  {_bold('Instructions:')}")
+        for item in pack["restoration_instructions"]:
+            print(f"    - {item}")
+
+
+def cmd_resume(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = client.resume_session(_agent_id(), session_id)
+    if args.json:
+        _json_out(result)
+        return
+
+    session = result["session"]
+    pack = result.get("delta_pack")
+    print(_bold("Resume"))
+    print(f"  {_bold('Session:')} {CYAN}{session['session_id']}{RESET}  {session['title']}")
+    if not pack:
+        _warn("No checkpoint available yet for this session.")
+        return
+    print(f"  {_bold('Checkpoint:')} {pack['checkpoint_id']}")
+    print(f"  {_bold('Summary:')}    {pack['summary'] or '<empty>'}")
+    print()
+    print(pack["restoration_prompt"] or "No restoration prompt available.")
+
+
+def cmd_context_diff(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = client.context_diff(
+        _agent_id(),
+        session_id,
+        from_checkpoint_id=args.from_checkpoint,
+        to_checkpoint_id=args.to_checkpoint,
+    )
+    if args.json:
+        _json_out(result)
+        return
+
+    print(_bold("Context Diff"))
+    print(f"  {_bold('Summary:')} {result['summary']}")
+    if result.get("added"):
+        print(f"\n{_bold('Added')}")
+        for bucket, items in result["added"].items():
+            print(f"  {bucket}:")
+            for item in items:
+                print(f"    + {item}")
+    if result.get("dropped"):
+        print(f"\n{_bold('Dropped')}")
+        for bucket, items in result["dropped"].items():
+            print(f"  {bucket}:")
+            for item in items:
+                print(f"    - {item}")
+
+
+def cmd_doctor_memory(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = client.doctor_memory(_agent_id(), session_id)
+    if args.json:
+        _json_out(result)
+        return
+
+    color = GREEN if result["status"] == "ok" else YELLOW
+    print(_bold("Memory Doctor"))
+    print(f"  {_bold('Status:')}      {color}{result['status']}{RESET}")
+    print(f"  {_bold('Events:')}      {result['total_events']}")
+    print(f"  {_bold('Checkpoints:')} {result['checkpoint_count']}")
+    print(f"  {_bold('Open tasks:')}  {result['unresolved_task_count']}")
+    print(f"  {_bold('Failures:')}    {result['failure_count']}")
+    print(f"  {_bold('Stale:')}       {result['stale_item_count']}")
+    print(f"  {_bold('Untrusted:')}   {result['untrusted_item_count']}")
+    if result.get("warnings"):
+        print(f"\n{_bold('Warnings')}")
+        for item in result["warnings"]:
+            print(f"  - {item}")
+    if result.get("recommendations"):
+        print(f"\n{_bold('Recommendations')}")
+        for item in result["recommendations"]:
+            print(f"  - {item}")
+
+
+# ---------------------------------------------------------------------------
 # Argument parser construction
 # ---------------------------------------------------------------------------
 
@@ -861,6 +1046,56 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- status ---
     subparsers.add_parser("status", help="Server health + summary stats")
 
+    # --- session ---
+    session_parser = subparsers.add_parser("session", help="Reactive delta compaction session management")
+    session_sub = session_parser.add_subparsers(dest="session_command")
+    session_start_parser = session_sub.add_parser("start", help="Start a tracked coding session")
+    session_start_parser.add_argument("--title", default="", help="Session title")
+    session_start_parser.add_argument("--source", default="generic", help="Session source/tool name")
+    session_start_parser.add_argument("--workspace", default="", help="Workspace path or identifier")
+    session_start_parser.add_argument(
+        "--activate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save this session as the default for checkpoint/resume commands",
+    )
+    session_show_parser = session_sub.add_parser("show", help="Show the active or specified session")
+    session_show_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    session_event_parser = session_sub.add_parser("event", help="Record a structured session event")
+    session_event_parser.add_argument("event_type", help="Event type such as decision, todo, failure, file_change")
+    session_event_parser.add_argument("content", help="Event content")
+    session_event_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    session_event_parser.add_argument("--metadata-json", default=None, help="JSON metadata object")
+    session_event_parser.add_argument("--important", action="store_true", default=None, help="Mark event as important")
+    session_event_parser.add_argument(
+        "--auto-checkpoint",
+        action="store_true",
+        default=False,
+        help="Checkpoint immediately after recording the event",
+    )
+    session_event_parser.add_argument("--token-budget", type=int, default=1600, help="Checkpoint token budget")
+    session_event_parser.add_argument("--checkpoint-reason", default=None, help="Reason for the reactive checkpoint")
+
+    # --- checkpoint / resume / diff ---
+    checkpoint_parser = subparsers.add_parser("checkpoint", help="Create a reactive delta checkpoint")
+    checkpoint_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    checkpoint_parser.add_argument("--reason", default="manual", help="Checkpoint reason")
+    checkpoint_parser.add_argument("--token-budget", type=int, default=1600, help="Token budget for the delta pack")
+
+    resume_parser = subparsers.add_parser("resume", help="Resume from the latest checkpoint")
+    resume_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+
+    diff_parser = subparsers.add_parser("context-diff", help="Diff the latest or specified checkpoints")
+    diff_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    diff_parser.add_argument("--from-checkpoint", default=None, help="Older checkpoint ID")
+    diff_parser.add_argument("--to-checkpoint", default=None, help="Newer checkpoint ID")
+
+    # --- doctor ---
+    doctor_parser = subparsers.add_parser("doctor", help="Diagnostic helpers")
+    doctor_sub = doctor_parser.add_subparsers(dest="doctor_command")
+    doctor_memory_parser = doctor_sub.add_parser("memory", help="Inspect reactive delta compaction health")
+    doctor_memory_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+
     return parser
 
 
@@ -879,6 +1114,9 @@ _DISPATCH: dict[str, Any] = {
     "followers": cmd_followers,
     "notifications": cmd_notifications,
     "status": cmd_status,
+    "checkpoint": cmd_checkpoint,
+    "resume": cmd_resume,
+    "context-diff": cmd_context_diff,
 }
 
 
@@ -954,6 +1192,26 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             cmd_watch_delete(args, client)
         else:
             _err("Usage: cg watch {create|list|delete <query_id>}")
+        return
+
+    if cmd == "session":
+        sub = getattr(args, "session_command", None)
+        if sub == "start":
+            cmd_session_start(args, client)
+        elif sub == "show":
+            cmd_session_show(args, client)
+        elif sub == "event":
+            cmd_session_event(args, client)
+        else:
+            _err("Usage: cg session {start|show|event}")
+        return
+
+    if cmd == "doctor":
+        sub = getattr(args, "doctor_command", None)
+        if sub == "memory":
+            cmd_doctor_memory(args, client)
+        else:
+            _err("Usage: cg doctor memory")
         return
 
     handler = _DISPATCH.get(cmd)

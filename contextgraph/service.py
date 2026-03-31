@@ -26,16 +26,19 @@ from .models import (
     Claim,
     ClaimImpact,
     ClaimSearchResult,
+    CompactionCheckpoint,
     ContextPack,
     ContextPackClaim,
     ContextPackExplanation,
     ContextPackSource,
     DeliveryMode,
+    DeltaPack,
     Entity,
     JobStatus,
     JobType,
     Memory,
     MemoryCurationStatus,
+    MemoryDoctorReport,
     Notification,
     PatternFilter,
     ProvenanceEntry,
@@ -49,6 +52,11 @@ from .models import (
     ReviewTask,
     SentinelDecision,
     SentinelVerdict,
+    Session,
+    SessionDiff,
+    SessionEvent,
+    SessionEventResult,
+    SessionResume,
     StandingQuery,
     StoreResult,
     Subscription,
@@ -58,6 +66,14 @@ from .models import (
 )
 from .payment import PaymentGate
 from .permissions import can_access_claim
+from .reactive_delta import (
+    SESSION_BUCKETS,
+    build_restoration_prompt,
+    compute_delta_pack_diff,
+    default_restoration_instructions,
+    flatten_diff_items,
+    reduce_session_events,
+)
 from .repository import Repository
 from .scoring import BM25Scorer
 from .utils import jaccard_similarity, new_api_key, new_id, normalize_alias, pairwise, utcnow
@@ -3180,3 +3196,468 @@ class ContextGraphService:
             source_label=memory.source_label if memory else "",
             locked=locked,
         )
+
+    # ------------------------------------------------------------------
+    # Memory OS v2 — Reactive Delta Compaction
+    # ------------------------------------------------------------------
+
+    def create_session(
+        self,
+        agent_id: str,
+        title: str = "",
+        source: str = "generic",
+        metadata: dict[str, str] | None = None,
+    ) -> Session:
+        agent = self.get_agent(agent_id)
+        now = utcnow()
+        session = Session(
+            session_id=new_id("ses"),
+            agent_id=agent.agent_id,
+            title=title.strip() or f"{agent.name} session",
+            source=(source or "generic").strip() or "generic",
+            status="active",
+            metadata={str(key): str(value) for key, value in dict(metadata or {}).items() if value is not None},
+            created_at=now,
+            updated_at=now,
+        )
+        self.repository.save_session(session)
+        self._audit(
+            "create_session",
+            actor_agent_id=agent.agent_id,
+            details={"session_id": session.session_id, "source": session.source},
+        )
+        return session
+
+    def get_session(self, requester_agent_id: str, session_id: str) -> Session:
+        session = self.repository.get_session(session_id)
+        if session is None:
+            raise NotFoundError(f"Session '{session_id}' not found.")
+        if session.agent_id != requester_agent_id:
+            raise PermissionDeniedError("Cannot access another agent's session.")
+        return session
+
+    def list_sessions(self, requester_agent_id: str) -> list[Session]:
+        sessions = self.repository.list_sessions_for_agent(requester_agent_id)
+        return sorted(sessions, key=lambda item: item.updated_at, reverse=True)
+
+    def list_session_events(self, requester_agent_id: str, session_id: str) -> list[SessionEvent]:
+        self.get_session(requester_agent_id, session_id)
+        return self.repository.list_session_events(session_id)
+
+    def record_session_event(
+        self,
+        agent_id: str,
+        session_id: str,
+        event_type: str,
+        content: str,
+        metadata: dict[str, str] | None = None,
+        important: bool | None = None,
+        auto_checkpoint: bool = False,
+        token_budget: int = 1600,
+        checkpoint_reason: str | None = None,
+    ) -> SessionEventResult:
+        session = self.get_session(agent_id, session_id)
+        now = utcnow()
+        events = self.repository.list_session_events(session_id)
+        clean_metadata = {str(key): str(value) for key, value in dict(metadata or {}).items() if value is not None}
+        normalized_type = (event_type or "note").strip().lower() or "note"
+        inferred_important = normalized_type in {
+            "decision",
+            "constraint",
+            "todo",
+            "task",
+            "open_task",
+            "failure",
+            "blocker",
+            "error",
+            "resolved",
+            "plan_change",
+            "context_pressure",
+            "checkpoint",
+            "compact",
+        }
+        event = SessionEvent(
+            event_id=new_id("evt"),
+            session_id=session_id,
+            agent_id=agent_id,
+            event_type=normalized_type,
+            content=content.strip(),
+            created_at=now,
+            metadata=clean_metadata,
+            sequence=len(events) + 1,
+            important=inferred_important if important is None else important,
+        )
+        self.repository.save_session_event(event)
+        session.updated_at = now
+        session.event_count += 1
+        self.repository.update_session(session)
+
+        checkpoint = None
+        delta_pack = None
+        if auto_checkpoint or self._should_auto_checkpoint(event):
+            reason = checkpoint_reason or self._checkpoint_reason_for_event(event)
+            checkpoint, delta_pack = self._checkpoint_session_internal(
+                session, reason=reason, token_budget=token_budget
+            )
+
+        self._audit(
+            "record_session_event",
+            actor_agent_id=agent_id,
+            details={"session_id": session_id, "event_id": event.event_id, "event_type": normalized_type},
+        )
+        return SessionEventResult(session=session, event=event, checkpoint=checkpoint, delta_pack=delta_pack)
+
+    def checkpoint_session(
+        self,
+        agent_id: str,
+        session_id: str,
+        reason: str = "manual",
+        token_budget: int = 1600,
+    ) -> DeltaPack:
+        session = self.get_session(agent_id, session_id)
+        _checkpoint, delta_pack = self._checkpoint_session_internal(
+            session,
+            reason=(reason or "manual").strip() or "manual",
+            token_budget=token_budget,
+        )
+        return delta_pack
+
+    def list_compaction_checkpoints(self, requester_agent_id: str, session_id: str) -> list[CompactionCheckpoint]:
+        self.get_session(requester_agent_id, session_id)
+        return self.repository.list_compaction_checkpoints(session_id)
+
+    def resume_session(self, requester_agent_id: str, session_id: str) -> SessionResume:
+        session = self.get_session(requester_agent_id, session_id)
+        checkpoint = (
+            self.repository.get_compaction_checkpoint(session.latest_checkpoint_id)
+            if session.latest_checkpoint_id
+            else None
+        )
+        delta_pack = (
+            self.repository.get_delta_pack(session.latest_delta_pack_id) if session.latest_delta_pack_id else None
+        )
+        return SessionResume(session=session, checkpoint=checkpoint, delta_pack=delta_pack)
+
+    def context_diff(
+        self,
+        requester_agent_id: str,
+        session_id: str,
+        from_checkpoint_id: str | None = None,
+        to_checkpoint_id: str | None = None,
+    ) -> SessionDiff:
+        session = self.get_session(requester_agent_id, session_id)
+        checkpoints = self.repository.list_compaction_checkpoints(session_id)
+        if not checkpoints:
+            raise ConflictError("No checkpoints exist for this session yet.")
+
+        checkpoint_map = {checkpoint.checkpoint_id: checkpoint for checkpoint in checkpoints}
+        if to_checkpoint_id is None:
+            to_checkpoint = checkpoints[-1]
+        else:
+            to_checkpoint = checkpoint_map.get(to_checkpoint_id)
+            if to_checkpoint is None:
+                raise NotFoundError(f"Checkpoint '{to_checkpoint_id}' not found.")
+
+        if from_checkpoint_id is None:
+            candidate_sequence = to_checkpoint.sequence - 1
+            from_checkpoint = next(
+                (checkpoint for checkpoint in checkpoints if checkpoint.sequence == candidate_sequence),
+                None,
+            )
+        else:
+            from_checkpoint = checkpoint_map.get(from_checkpoint_id)
+            if from_checkpoint is None:
+                raise NotFoundError(f"Checkpoint '{from_checkpoint_id}' not found.")
+
+        to_pack = self.repository.get_delta_pack(to_checkpoint.delta_pack_id)
+        if to_pack is None:
+            raise NotFoundError(f"Delta pack '{to_checkpoint.delta_pack_id}' not found.")
+        from_pack = self.repository.get_delta_pack(from_checkpoint.delta_pack_id) if from_checkpoint else None
+        diff = compute_delta_pack_diff(from_pack, self._delta_pack_sections(to_pack))
+        summary = self._build_diff_summary(diff)
+        return SessionDiff(
+            session_id=session_id,
+            agent_id=session.agent_id,
+            from_checkpoint_id=from_checkpoint.checkpoint_id if from_checkpoint else "",
+            to_checkpoint_id=to_checkpoint.checkpoint_id,
+            from_delta_pack_id=from_pack.delta_pack_id if from_pack else "",
+            to_delta_pack_id=to_pack.delta_pack_id,
+            summary=summary,
+            added=diff.added,
+            dropped=diff.dropped,
+        )
+
+    def doctor_memory(self, requester_agent_id: str, session_id: str) -> MemoryDoctorReport:
+        session = self.get_session(requester_agent_id, session_id)
+        checkpoints = self.repository.list_compaction_checkpoints(session_id)
+        latest_checkpoint = checkpoints[-1] if checkpoints else None
+        latest_pack = (
+            self.repository.get_delta_pack(session.latest_delta_pack_id) if session.latest_delta_pack_id else None
+        )
+        warnings: list[str] = []
+        recommendations: list[str] = []
+        if latest_checkpoint is None:
+            warnings.append("No checkpoints have been created for this session yet.")
+            recommendations.append("Create a checkpoint before the next context-boundary event.")
+        else:
+            events_since_checkpoint = max(session.event_count - latest_checkpoint.event_count, 0)
+            if events_since_checkpoint >= 15:
+                warnings.append(f"{events_since_checkpoint} events have accumulated since the last checkpoint.")
+                recommendations.append("Create a fresh checkpoint to avoid compaction drift.")
+        if latest_pack is not None:
+            if latest_pack.stale_items:
+                warnings.append(f"{len(latest_pack.stale_items)} stale items need review or refresh.")
+                recommendations.append("Refresh or drop stale notes before the next resume.")
+            if latest_pack.untrusted_items:
+                warnings.append(f"{len(latest_pack.untrusted_items)} items are marked untrusted.")
+                recommendations.append("Validate untrusted items before treating them as durable context.")
+            if len(latest_pack.open_tasks) > 12:
+                recommendations.append("Reduce or group open tasks to keep restoration payloads focused.")
+        status = "warning" if warnings else "ok"
+        return MemoryDoctorReport(
+            session_id=session_id,
+            agent_id=session.agent_id,
+            total_events=session.event_count,
+            checkpoint_count=session.checkpoint_count,
+            latest_checkpoint_at=latest_checkpoint.created_at if latest_checkpoint else None,
+            unresolved_task_count=len(latest_pack.open_tasks) if latest_pack else 0,
+            failure_count=len(latest_pack.failures) if latest_pack else 0,
+            stale_item_count=len(latest_pack.stale_items) if latest_pack else 0,
+            untrusted_item_count=len(latest_pack.untrusted_items) if latest_pack else 0,
+            warnings=warnings,
+            recommendations=recommendations,
+            status=status,
+        )
+
+    def _should_auto_checkpoint(self, event: SessionEvent) -> bool:
+        if event.event_type in {"context_pressure", "checkpoint", "compact", "plan_change"}:
+            return True
+        remaining = event.metadata.get("context_remaining_pct", "").strip()
+        if remaining:
+            try:
+                return float(remaining) <= 15.0
+            except ValueError:
+                return False
+        return False
+
+    def _checkpoint_reason_for_event(self, event: SessionEvent) -> str:
+        if event.event_type in {"context_pressure", "compact"}:
+            return "context_pressure"
+        if event.event_type == "plan_change":
+            return "plan_change"
+        if event.event_type == "checkpoint":
+            return "manual"
+        return "reactive"
+
+    def _estimate_compaction_tokens(
+        self,
+        sections: dict[str, list[str]],
+        summary: str,
+        instructions: list[str],
+    ) -> int:
+        tokens = self._estimate_tokens(summary) if summary else 0
+        for bucket in SESSION_BUCKETS:
+            items = sections.get(bucket, [])
+            if not items:
+                continue
+            tokens += 4
+            for item in items:
+                tokens += self._estimate_tokens(item) + 2
+        for instruction in instructions:
+            tokens += self._estimate_tokens(instruction) + 2
+        return max(tokens, 1)
+
+    def _build_delta_summary(self, sections: dict[str, list[str]], token_budget: int) -> str:
+        remaining = max(token_budget, 1)
+        parts: list[str] = []
+        for bucket in (
+            "decisions",
+            "constraints",
+            "open_tasks",
+            "failures",
+            "changed_files",
+            "important_artifacts",
+            "notes",
+        ):
+            for item in sections.get(bucket, [])[:2]:
+                part = f"{bucket.replace('_', ' ')}: {item}"
+                part_tokens = self._estimate_tokens(part)
+                if parts and remaining < part_tokens:
+                    return " ".join(parts)
+                if remaining < part_tokens:
+                    break
+                parts.append(part)
+                remaining -= part_tokens
+        return " ".join(parts)
+
+    def _trim_delta_sections(self, sections: dict[str, list[str]], token_budget: int) -> dict[str, list[str]]:
+        trimmed = {bucket: [] for bucket in SESSION_BUCKETS}
+        remaining = max(token_budget, 1)
+        for bucket in (
+            "decisions",
+            "constraints",
+            "open_tasks",
+            "failures",
+            "changed_files",
+            "important_artifacts",
+            "external_references",
+            "commands",
+            "resolved_items",
+            "notes",
+        ):
+            items = sections.get(bucket, [])
+            if not items or remaining <= 0:
+                continue
+            remaining -= 4
+            if remaining <= 0:
+                break
+            for item in items:
+                item_tokens = self._estimate_tokens(item) + 2
+                if item_tokens > remaining:
+                    break
+                trimmed[bucket].append(item)
+                remaining -= item_tokens
+        return trimmed
+
+    def _delta_pack_sections(self, pack: DeltaPack) -> dict[str, list[str]]:
+        return {
+            "decisions": list(pack.decisions),
+            "constraints": list(pack.constraints),
+            "open_tasks": list(pack.open_tasks),
+            "failures": list(pack.failures),
+            "resolved_items": list(pack.resolved_items),
+            "important_artifacts": list(pack.important_artifacts),
+            "external_references": list(pack.external_references),
+            "changed_files": list(pack.changed_files),
+            "commands": list(pack.commands),
+            "notes": list(pack.notes),
+        }
+
+    def _build_diff_summary(self, diff: Any) -> str:
+        added_count = sum(len(items) for items in diff.added.values())
+        dropped_count = sum(len(items) for items in diff.dropped.values())
+        if added_count == 0 and dropped_count == 0:
+            return "No material context changes between checkpoints."
+        return f"Added {added_count} item(s) and dropped {dropped_count} item(s) across the compared checkpoints."
+
+    def _checkpoint_session_internal(
+        self,
+        session: Session,
+        *,
+        reason: str,
+        token_budget: int,
+    ) -> tuple[CompactionCheckpoint, DeltaPack]:
+        now = utcnow()
+        events = self.repository.list_session_events(session.session_id)
+        reduced = reduce_session_events(events)
+        full_sections = {bucket: list(reduced.get(bucket, [])) for bucket in SESSION_BUCKETS}
+        summary_budget = max(int(max(token_budget, 1) * 0.25), 20)
+        summary = self._build_delta_summary(full_sections, summary_budget)
+        summary_tokens = self._estimate_tokens(summary) if summary else 0
+        trimmed_sections = self._trim_delta_sections(full_sections, max(token_budget - summary_tokens - 40, 1))
+
+        previous_pack = (
+            self.repository.get_delta_pack(session.latest_delta_pack_id) if session.latest_delta_pack_id else None
+        )
+        diff = compute_delta_pack_diff(previous_pack, trimmed_sections)
+        instructions = default_restoration_instructions(trimmed_sections)
+        prompt = build_restoration_prompt(
+            title=session.title,
+            source=session.source,
+            summary=summary,
+            sections=trimmed_sections,
+            instructions=instructions,
+        )
+        while self._estimate_compaction_tokens(trimmed_sections, summary, instructions) > token_budget:
+            trimmed = False
+            for bucket in (
+                "notes",
+                "commands",
+                "external_references",
+                "important_artifacts",
+                "changed_files",
+                "failures",
+                "open_tasks",
+            ):
+                if trimmed_sections[bucket]:
+                    trimmed_sections[bucket].pop()
+                    trimmed = True
+                    break
+            if not trimmed:
+                break
+            instructions = default_restoration_instructions(trimmed_sections)
+            prompt = build_restoration_prompt(
+                title=session.title,
+                source=session.source,
+                summary=summary,
+                sections=trimmed_sections,
+                instructions=instructions,
+            )
+
+        delta_pack_id = new_id("dpk")
+        checkpoint_id = new_id("chk")
+        base_pack_id = previous_pack.base_pack_id if previous_pack and previous_pack.base_pack_id else delta_pack_id
+        delta_pack = DeltaPack(
+            delta_pack_id=delta_pack_id,
+            checkpoint_id=checkpoint_id,
+            session_id=session.session_id,
+            agent_id=session.agent_id,
+            sequence=session.checkpoint_count + 1,
+            checkpoint_reason=reason,
+            generated_at=now,
+            token_budget=token_budget,
+            tokens_used=min(self._estimate_compaction_tokens(trimmed_sections, summary, instructions), token_budget),
+            summary=summary,
+            base_pack_id=base_pack_id,
+            delta_from_pack_id=previous_pack.delta_pack_id if previous_pack else "",
+            decisions=trimmed_sections["decisions"],
+            constraints=trimmed_sections["constraints"],
+            open_tasks=trimmed_sections["open_tasks"],
+            failures=trimmed_sections["failures"],
+            resolved_items=trimmed_sections["resolved_items"],
+            important_artifacts=trimmed_sections["important_artifacts"],
+            external_references=trimmed_sections["external_references"],
+            changed_files=trimmed_sections["changed_files"],
+            commands=trimmed_sections["commands"],
+            notes=trimmed_sections["notes"],
+            stale_items=list(reduced.get("stale_items", [])),
+            untrusted_items=list(reduced.get("untrusted_items", [])),
+            dropped_items=flatten_diff_items(diff),
+            restoration_prompt=prompt,
+            restoration_instructions=instructions,
+            included_event_ids=list(reduced.get("included_event_ids", [])),
+            event_count=int(reduced.get("event_count", len(events))),
+            diff=diff,
+        )
+        checkpoint = CompactionCheckpoint(
+            checkpoint_id=checkpoint_id,
+            session_id=session.session_id,
+            agent_id=session.agent_id,
+            sequence=delta_pack.sequence,
+            reason=reason,
+            created_at=now,
+            delta_pack_id=delta_pack.delta_pack_id,
+            base_checkpoint_id=session.latest_checkpoint_id,
+            event_count=delta_pack.event_count,
+            restoration_prompt=delta_pack.restoration_prompt,
+            restoration_instructions=list(delta_pack.restoration_instructions),
+            summary=delta_pack.summary,
+        )
+        self.repository.save_delta_pack(delta_pack)
+        self.repository.save_compaction_checkpoint(checkpoint)
+        session.latest_checkpoint_id = checkpoint.checkpoint_id
+        session.latest_delta_pack_id = delta_pack.delta_pack_id
+        session.checkpoint_count += 1
+        session.updated_at = now
+        self.repository.update_session(session)
+        self._audit(
+            "checkpoint_session",
+            actor_agent_id=session.agent_id,
+            details={
+                "session_id": session.session_id,
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "delta_pack_id": delta_pack.delta_pack_id,
+                "reason": reason,
+            },
+        )
+        return checkpoint, delta_pack

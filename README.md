@@ -5,9 +5,9 @@
 <h1 align="center">ContextGraph</h1>
 
 <p align="center">
-  <strong>The first governed memory OS for AI agents.</strong><br>
-  Store, govern, and compile agent memory into trusted, token-budgeted context packs with provenance, freshness, and access control built in.<br>
-  Ships with a context compiler, dashboard, CLI, SDK, MCP server, and self-hosted governance workflow.
+  <strong>Stop losing agent context.</strong><br>
+  ContextGraph is the memory backend for coding agents and multi-agent teams.<br>
+  Capture durable facts, compile trusted context packs, and survive compaction with reactive delta checkpoints.
 </p>
 
 <p align="center">
@@ -18,15 +18,14 @@
 </p>
 
 <p align="center">
+  <a href="#reactive-delta-compaction">Reactive Delta</a> &middot;
   <a href="#context-compiler">Context Compiler</a> &middot;
+  <a href="#use-cases">Use Cases</a> &middot;
   <a href="#demo">Demo</a> &middot;
-  <a href="#whats-new-in-v050">What's New</a> &middot;
   <a href="#quickstart">Quickstart</a> &middot;
   <a href="#python-sdk">SDK</a> &middot;
   <a href="#cli-tool">CLI</a> &middot;
-  <a href="#dashboard">Dashboard</a> &middot;
-  <a href="#how-access-works">Access Model</a> &middot;
-  <a href="#protocols">Protocols</a> &middot;
+  <a href="#real-use-cases">More Use Cases</a> &middot;
   <a href="docs/">Docs</a>
 </p>
 
@@ -36,64 +35,45 @@
 
 ---
 
-## What It Is
+## Why It Stands Out
 
-ContextGraph is the **shared-memory layer** for teams running multiple agents.
+Most agent memory tools either store raw text in a vector database or replace long sessions with one lossy summary.
 
-When one agent learns something important, other agents can reuse it without losing:
+ContextGraph is built for the gap between those two:
 
-- where it came from
-- whether it was reviewed
-- how fresh it is
-- who is allowed to see it
+- **governed shared memory** so agents can reuse facts without losing provenance, freshness, or access control
+- **context packs** so agents get token-budgeted, explainable context instead of opaque recall results
+- **reactive delta compaction** so coding agents can checkpoint decisions, open tasks, blockers, and changed files before the context window collapses
 
-This repo is built for teams that need to:
-
-- store operational or research context once and reuse it across agents
-- attach provenance, evidence, and citations to what gets recalled
-- review risky claims before another agent acts on them
-- enforce org, partner-share, and published visibility at retrieval time
-- inspect why a memory was returned or filtered without guessing from prompts
+If you want memory that is inspectable, team-safe, and useful during real work, this is the wedge.
 
 ## Start Here
 
-The fastest path through the beta is:
+The fastest path to understand the repo is:
 
-- 2-minute local aha: [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
-- context compiler demo: [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
-- flagship support workflow: [`examples/support_memory_workflow.py`](examples/support_memory_workflow.py)
-- research handoff flow: [`examples/research_memory_workflow.py`](examples/research_memory_workflow.py)
-- Anthropic Memory Tool adapter: [`docs/anthropic-memory-tool.md`](docs/anthropic-memory-tool.md)
-- production posture: [`docs/production-readiness.md`](docs/production-readiness.md)
-- comparison guide: [`docs/contextgraph-vs-vector-memory.md`](docs/contextgraph-vs-vector-memory.md)
-- launch asset guide: [`docs/launch-assets.md`](docs/launch-assets.md)
-- professional post templates: [`docs/articles/shared-memory-launch-posts.md`](docs/articles/shared-memory-launch-posts.md)
-
-Primary CTA flow:
-
-1. run the quickstart
-2. run the support workflow
-3. read the production guide
+1. run the 2-minute setup in [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
+2. run the coding-agent continuity demo in [`examples/reactive_delta_compaction_demo.py`](examples/reactive_delta_compaction_demo.py)
+3. run the governed retrieval demo in [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
+4. skim the hook protocol in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md)
+5. check the production notes in [`docs/production-readiness.md`](docs/production-readiness.md)
 
 Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
 
-## Best Fit
+## Use Cases
 
-- multi-agent support and incident operations
-- research and analyst handoffs
-- internal agent platforms where wrong context is expensive
+- coding agents that need to survive `/compact`, `/resume`, or context-window pressure without losing the plot
+- support and incident agents that need trusted shared memory across handoffs
+- research and analyst flows where provenance and freshness matter as much as retrieval quality
+- internal agent platforms where ACLs, review state, and explainability must live in the memory layer
+- teams that want a self-hosted memory backend instead of wiring brittle prompt glue around a vector store
 
-## Why Teams Switch From Vector-Memory Setups
+## Where It Wins
 
-Most teams do not switch because they want "more memory." They switch because they keep hitting:
+- **better than vector-only memory** when freshness, provenance, and access control matter
+- **better than plain chat summaries** when coding agents need to resume from structured state
+- **better than prompt glue** when multiple agents or teams need one shared memory backend
 
-1. **Stale context**: vector memory can return relevant text, but it usually does not tell an agent whether the memory is fresh enough to trust.
-2. **No provenance**: teams need source agent, evidence, and citations before they let another agent act on recalled context.
-3. **No policy**: memory reuse without org, partner-share, and published visibility controls quickly turns into leakage or duplicated prompt glue.
-
-ContextGraph keeps freshness, trust, and visibility in the memory layer itself instead of leaving those decisions to every individual agent prompt.
-
-## Not For You If
+## Not The Right Fit
 
 - you only need personal memory for one chatbot
 - you want a hosted agent runtime or enterprise IAM today
@@ -112,16 +92,76 @@ print(hits[0]["claim"]["statement"])
 
 ## What Ships Today
 
+- **reactive delta compaction**: checkpoint coding sessions from structured events and restore them across compaction boundaries
 - **context compiler**: compile governed, token-budgeted context packs from mixed agent memory
+- **governed shared memory**: store and recall claims with provenance, freshness, review state, and ACLs
+- **explainable retrieval**: inspect why a claim was included, excluded, locked, or filtered
 - **Anthropic Memory Tool adapter**: use ContextGraph as the governed backend for Claude's API memory tool, with versioned memory snapshots and archival delete semantics
-- shared memory store/recall with claim-level provenance
-- explainable recall with score breakdowns and filtered-reason traces
-- review, trust, and freshness signals
-- follow/feed/discovery workflows
-- dashboard, CLI, Python SDK, and MCP server
-- in-memory indexed search and Neo4j-backed self-hosted beta path
+- **developer surfaces**: dashboard, CLI, Python SDK, HTTP API, and MCP server
+- **self-hosted backends**: in-memory local mode and Neo4j persistence
 
 Broader roadmap note: federation, payments, and protocol positioning remain part of the long-term direction, but the current beta is focused on governed shared memory inside real team workflows.
+
+---
+
+## Reactive Delta Compaction
+
+Reactive Delta Compaction is the flagship feature for coding agents.
+
+Instead of collapsing a long session into one fragile summary, ContextGraph records structured events and compiles **delta packs** with:
+
+- decisions
+- constraints
+- open tasks
+- failures and resolved items
+- changed files and important artifacts
+- restoration prompts and instructions
+
+This makes compaction feel more like `git diff` for agent context than “rewrite the whole conversation and hope.”
+
+**Real use case: payment-service refactor**
+
+During a live session, the agent records events like:
+
+- decision: "Keep the public REST API stable"
+- constraint: "Do not break SDK compatibility"
+- file change: `contextgraph/service.py`
+- failure: "resume-path regression is failing"
+- todo: "add migration tests"
+
+When context pressure appears, ContextGraph emits a delta pack instead of a vague summary.
+
+The next turn or next day can resume from:
+
+- the decision that must still hold
+- the files that changed
+- the test failure that is still open
+- the unresolved task list
+- a restoration prompt and instructions for the next agent
+
+That is why it feels like `git diff` for working context, not “summarize and hope.”
+
+```python
+from contextgraph_sdk import ContextGraph
+
+client = ContextGraph.local()
+agent = client.register_agent("delta-coder", "acme", ["coding"])
+session = client.create_session(agent["agent_id"], title="Payments refactor", source="claude-code")
+
+client.record_session_event(agent["agent_id"], session["session_id"], "decision", "Keep the REST API stable.")
+result = client.record_session_event(
+    agent["agent_id"],
+    session["session_id"],
+    "context_pressure",
+    "Only 10 percent of the context window remains.",
+    metadata={"context_remaining_pct": "10"},
+)
+
+print(result["checkpoint"]["checkpoint_id"])
+print(result["delta_pack"]["restoration_prompt"])
+```
+
+Hook adapters and the JSON protocol are documented in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md).
 
 ---
 

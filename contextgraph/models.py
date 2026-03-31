@@ -441,6 +441,146 @@ class ContextPack:
     tokens_used: int
     generated_at: datetime
     summary: str = ""
+    session_id: str = ""
+    base_pack_id: str = ""
+    delta_from_pack_id: str = ""
+    checkpoint_reason: str = ""
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = field(default_factory=list)
     excluded_claims: list[ContextPackClaim] = field(default_factory=list)
     conflicting_claims: list[ContextPackClaim] = field(default_factory=list)
     explanation: ContextPackExplanation | None = None
+
+
+# ---------------------------------------------------------------------------
+# Memory OS v2 — Reactive Delta Compaction types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class Session:
+    session_id: str
+    agent_id: str
+    title: str
+    source: str
+    status: str
+    metadata: dict[str, str]
+    created_at: datetime
+    updated_at: datetime
+    latest_checkpoint_id: str = ""
+    latest_delta_pack_id: str = ""
+    checkpoint_count: int = 0
+    event_count: int = 0
+
+
+@dataclass(slots=True)
+class SessionEvent:
+    event_id: str
+    session_id: str
+    agent_id: str
+    event_type: str
+    content: str
+    created_at: datetime
+    metadata: dict[str, str] = field(default_factory=dict)
+    sequence: int = 0
+    important: bool = False
+
+
+@dataclass(slots=True)
+class DeltaPackDiff:
+    added: dict[str, list[str]] = field(default_factory=dict)
+    dropped: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class DeltaPack:
+    delta_pack_id: str
+    checkpoint_id: str
+    session_id: str
+    agent_id: str
+    sequence: int
+    checkpoint_reason: str
+    generated_at: datetime
+    token_budget: int
+    tokens_used: int
+    summary: str = ""
+    base_pack_id: str = ""
+    delta_from_pack_id: str = ""
+    decisions: list[str] = field(default_factory=list)
+    constraints: list[str] = field(default_factory=list)
+    open_tasks: list[str] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    resolved_items: list[str] = field(default_factory=list)
+    important_artifacts: list[str] = field(default_factory=list)
+    external_references: list[str] = field(default_factory=list)
+    changed_files: list[str] = field(default_factory=list)
+    commands: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    stale_items: list[str] = field(default_factory=list)
+    untrusted_items: list[str] = field(default_factory=list)
+    dropped_items: list[str] = field(default_factory=list)
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = field(default_factory=list)
+    included_event_ids: list[str] = field(default_factory=list)
+    event_count: int = 0
+    diff: DeltaPackDiff | None = None
+
+
+@dataclass(slots=True)
+class CompactionCheckpoint:
+    checkpoint_id: str
+    session_id: str
+    agent_id: str
+    sequence: int
+    reason: str
+    created_at: datetime
+    delta_pack_id: str
+    base_checkpoint_id: str = ""
+    event_count: int = 0
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = field(default_factory=list)
+    summary: str = ""
+
+
+@dataclass(slots=True)
+class SessionEventResult:
+    session: Session
+    event: SessionEvent
+    checkpoint: CompactionCheckpoint | None = None
+    delta_pack: DeltaPack | None = None
+
+
+@dataclass(slots=True)
+class SessionResume:
+    session: Session
+    checkpoint: CompactionCheckpoint | None = None
+    delta_pack: DeltaPack | None = None
+
+
+@dataclass(slots=True)
+class SessionDiff:
+    session_id: str
+    agent_id: str
+    from_checkpoint_id: str
+    to_checkpoint_id: str
+    from_delta_pack_id: str = ""
+    to_delta_pack_id: str = ""
+    summary: str = ""
+    added: dict[str, list[str]] = field(default_factory=dict)
+    dropped: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class MemoryDoctorReport:
+    session_id: str
+    agent_id: str
+    total_events: int
+    checkpoint_count: int
+    latest_checkpoint_at: datetime | None
+    unresolved_task_count: int
+    failure_count: int
+    stale_item_count: int
+    untrusted_item_count: int
+    warnings: list[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
+    status: str = "ok"

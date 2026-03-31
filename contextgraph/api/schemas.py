@@ -527,6 +527,12 @@ class ContextPackResponse(BaseModel):
     agent_id: str
     query: str
     summary: str = ""
+    session_id: str = ""
+    base_pack_id: str = ""
+    delta_from_pack_id: str = ""
+    checkpoint_reason: str = ""
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = Field(default_factory=list)
     included_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
     conflicting_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
     excluded_claims: list[ContextPackClaimResponse] = Field(default_factory=list)
@@ -535,3 +541,170 @@ class ContextPackResponse(BaseModel):
     tokens_used: int
     generated_at: datetime
     explanation: ContextPackExplanationResponse | None = None
+
+
+# ---------------------------------------------------------------------------
+# Memory OS v2 — Reactive Delta Compaction schemas
+# ---------------------------------------------------------------------------
+
+
+class SessionCreateRequest(BaseModel):
+    agent_id: str | None = None
+    title: str = ""
+    source: str = "generic"
+    metadata: dict[str, str] = Field(default_factory=dict)
+
+
+class SessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: str
+    agent_id: str
+    title: str
+    source: str
+    status: str
+    metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    latest_checkpoint_id: str = ""
+    latest_delta_pack_id: str = ""
+    checkpoint_count: int = 0
+    event_count: int = 0
+
+
+class SessionEventRequest(BaseModel):
+    agent_id: str | None = None
+    event_type: str
+    content: str = ""
+    metadata: dict[str, str] = Field(default_factory=dict)
+    important: bool | None = None
+    auto_checkpoint: bool = False
+    token_budget: int = Field(default=1600, ge=1, le=128000)
+    checkpoint_reason: str | None = None
+
+
+class SessionEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: str
+    session_id: str
+    agent_id: str
+    event_type: str
+    content: str
+    created_at: datetime
+    metadata: dict[str, str] = Field(default_factory=dict)
+    sequence: int = 0
+    important: bool = False
+
+
+class DeltaPackDiffResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    added: dict[str, list[str]] = Field(default_factory=dict)
+    dropped: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class DeltaPackResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    delta_pack_id: str
+    checkpoint_id: str
+    session_id: str
+    agent_id: str
+    sequence: int
+    checkpoint_reason: str
+    generated_at: datetime
+    token_budget: int
+    tokens_used: int
+    summary: str = ""
+    base_pack_id: str = ""
+    delta_from_pack_id: str = ""
+    decisions: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    open_tasks: list[str] = Field(default_factory=list)
+    failures: list[str] = Field(default_factory=list)
+    resolved_items: list[str] = Field(default_factory=list)
+    important_artifacts: list[str] = Field(default_factory=list)
+    external_references: list[str] = Field(default_factory=list)
+    changed_files: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    stale_items: list[str] = Field(default_factory=list)
+    untrusted_items: list[str] = Field(default_factory=list)
+    dropped_items: list[str] = Field(default_factory=list)
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = Field(default_factory=list)
+    included_event_ids: list[str] = Field(default_factory=list)
+    event_count: int = 0
+    diff: DeltaPackDiffResponse | None = None
+
+
+class CompactionCheckpointResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    checkpoint_id: str
+    session_id: str
+    agent_id: str
+    sequence: int
+    reason: str
+    created_at: datetime
+    delta_pack_id: str
+    base_checkpoint_id: str = ""
+    event_count: int = 0
+    restoration_prompt: str = ""
+    restoration_instructions: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class SessionEventResultResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session: SessionResponse
+    event: SessionEventResponse
+    checkpoint: CompactionCheckpointResponse | None = None
+    delta_pack: DeltaPackResponse | None = None
+
+
+class SessionCheckpointRequest(BaseModel):
+    agent_id: str | None = None
+    reason: str = "manual"
+    token_budget: int = Field(default=1600, ge=1, le=128000)
+
+
+class SessionResumeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session: SessionResponse
+    checkpoint: CompactionCheckpointResponse | None = None
+    delta_pack: DeltaPackResponse | None = None
+
+
+class SessionDiffResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: str
+    agent_id: str
+    from_checkpoint_id: str
+    to_checkpoint_id: str
+    from_delta_pack_id: str = ""
+    to_delta_pack_id: str = ""
+    summary: str = ""
+    added: dict[str, list[str]] = Field(default_factory=dict)
+    dropped: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class MemoryDoctorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    session_id: str
+    agent_id: str
+    total_events: int
+    checkpoint_count: int
+    latest_checkpoint_at: datetime | None = None
+    unresolved_task_count: int
+    failure_count: int
+    stale_item_count: int
+    untrusted_item_count: int
+    warnings: list[str] = Field(default_factory=list)
+    recommendations: list[str] = Field(default_factory=list)
+    status: str = "ok"

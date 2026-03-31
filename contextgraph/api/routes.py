@@ -19,13 +19,16 @@ from .schemas import (
     BackgroundJobResponse,
     ClaimResponse,
     ClaimUpdateRequest,
+    CompactionCheckpointResponse,
     CompileContextRequest,
     ContextPackResponse,
+    DeltaPackResponse,
     DiscoverAgentsResponse,
     FeedItemResponse,
     FollowRequest,
     MemoryAccessUpdateRequest,
     MemoryCurationUpdateRequest,
+    MemoryDoctorResponse,
     MemoryResponse,
     MemoryStoreRequest,
     NotificationResponse,
@@ -39,6 +42,14 @@ from .schemas import (
     ReviewClaimRequest,
     ReviewQueueItemResponse,
     ReviewTaskResponse,
+    SessionCheckpointRequest,
+    SessionCreateRequest,
+    SessionDiffResponse,
+    SessionEventRequest,
+    SessionEventResponse,
+    SessionEventResultResponse,
+    SessionResponse,
+    SessionResumeResponse,
     StandingQueryResponse,
     StoreResultResponse,
     SubscriptionResponse,
@@ -593,3 +604,109 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/context/{pack_id}/explain", response_model=ContextPackResponse)
     def explain_context_pack(pack_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
         return to_jsonable(graph.explain_context_pack(pack_id, requester_agent_id=authenticated.agent_id))
+
+    # --- Memory OS v2 — Reactive Delta Compaction endpoints ---
+
+    @app.post("/v1/sessions", response_model=SessionResponse, status_code=201)
+    def create_session(payload: SessionCreateRequest, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        if payload.agent_id:
+            require_same_agent(
+                authenticated,
+                payload.agent_id,
+                "Authenticated agent does not match the requested agent_id.",
+            )
+        return to_jsonable(
+            graph.create_session(
+                agent_id=authenticated.agent_id,
+                title=payload.title,
+                source=payload.source,
+                metadata=payload.metadata,
+            )
+        )
+
+    @app.get("/v1/sessions", response_model=list[SessionResponse])
+    def list_sessions(authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.list_sessions(authenticated.agent_id))
+
+    @app.get("/v1/sessions/{session_id}", response_model=SessionResponse)
+    def get_session(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.get_session(authenticated.agent_id, session_id))
+
+    @app.post("/v1/sessions/{session_id}/events", response_model=SessionEventResultResponse)
+    def record_session_event(
+        session_id: str,
+        payload: SessionEventRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        if payload.agent_id:
+            require_same_agent(
+                authenticated,
+                payload.agent_id,
+                "Authenticated agent does not match the requested agent_id.",
+            )
+        return to_jsonable(
+            graph.record_session_event(
+                agent_id=authenticated.agent_id,
+                session_id=session_id,
+                event_type=payload.event_type,
+                content=payload.content,
+                metadata=payload.metadata,
+                important=payload.important,
+                auto_checkpoint=payload.auto_checkpoint,
+                token_budget=payload.token_budget,
+                checkpoint_reason=payload.checkpoint_reason,
+            )
+        )
+
+    @app.get("/v1/sessions/{session_id}/events", response_model=list[SessionEventResponse])
+    def list_session_events(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.list_session_events(authenticated.agent_id, session_id))
+
+    @app.post("/v1/sessions/{session_id}/checkpoint", response_model=DeltaPackResponse)
+    def checkpoint_session(
+        session_id: str,
+        payload: SessionCheckpointRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        if payload.agent_id:
+            require_same_agent(
+                authenticated,
+                payload.agent_id,
+                "Authenticated agent does not match the requested agent_id.",
+            )
+        return to_jsonable(
+            graph.checkpoint_session(
+                agent_id=authenticated.agent_id,
+                session_id=session_id,
+                reason=payload.reason,
+                token_budget=payload.token_budget,
+            )
+        )
+
+    @app.get("/v1/sessions/{session_id}/checkpoints", response_model=list[CompactionCheckpointResponse])
+    def list_compaction_checkpoints(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.list_compaction_checkpoints(authenticated.agent_id, session_id))
+
+    @app.get("/v1/sessions/{session_id}/resume", response_model=SessionResumeResponse)
+    def resume_session(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.resume_session(authenticated.agent_id, session_id))
+
+    @app.get("/v1/sessions/{session_id}/diff", response_model=SessionDiffResponse)
+    def context_diff(
+        session_id: str,
+        from_checkpoint_id: str | None = None,
+        to_checkpoint_id: str | None = None,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        return to_jsonable(
+            graph.context_diff(
+                requester_agent_id=authenticated.agent_id,
+                session_id=session_id,
+                from_checkpoint_id=from_checkpoint_id,
+                to_checkpoint_id=to_checkpoint_id,
+            )
+        )
+
+    @app.get("/v1/sessions/{session_id}/doctor", response_model=MemoryDoctorResponse)
+    def doctor_memory(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
+        return to_jsonable(graph.doctor_memory(authenticated.agent_id, session_id))

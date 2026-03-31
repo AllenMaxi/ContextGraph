@@ -7,13 +7,17 @@ from .models import (
     AuditEntry,
     Claim,
     ClaimSearchResult,
+    CompactionCheckpoint,
     ContextPack,
+    DeltaPack,
     Entity,
     Memory,
     MemoryCurationStatus,
     Notification,
     ReviewTask,
     SentinelVerdict,
+    Session,
+    SessionEvent,
     StandingQuery,
     Subscription,
     SubscriptionTarget,
@@ -40,6 +44,13 @@ class InMemoryRepository:
         self._subscriptions: dict[str, Subscription] = {}
         self._sentinel_verdicts: dict[str, SentinelVerdict] = {}
         self._context_packs: dict[str, ContextPack] = {}
+        self._sessions: dict[str, Session] = {}
+        self._session_events: dict[str, SessionEvent] = {}
+        self._session_events_by_session: dict[str, list[str]] = {}
+        self._compaction_checkpoints: dict[str, CompactionCheckpoint] = {}
+        self._checkpoints_by_session: dict[str, list[str]] = {}
+        self._delta_packs: dict[str, DeltaPack] = {}
+        self._delta_packs_by_session: dict[str, list[str]] = {}
         self._claim_search = BM25Scorer(k1=1.5, b=0.75)
 
     def save_agent(self, agent: Agent) -> Agent:
@@ -303,6 +314,69 @@ class InMemoryRepository:
         with self._lock:
             return self._context_packs.get(pack_id)
 
+    def save_session(self, session: Session) -> Session:
+        with self._lock:
+            self._sessions[session.session_id] = session
+            return session
+
+    def update_session(self, session: Session) -> Session:
+        with self._lock:
+            self._sessions[session.session_id] = session
+            return session
+
+    def get_session(self, session_id: str) -> Session | None:
+        with self._lock:
+            return self._sessions.get(session_id)
+
+    def list_sessions_for_agent(self, agent_id: str) -> list[Session]:
+        with self._lock:
+            return [session for session in self._sessions.values() if session.agent_id == agent_id]
+
+    def save_session_event(self, event: SessionEvent) -> SessionEvent:
+        with self._lock:
+            self._session_events[event.event_id] = event
+            self._session_events_by_session.setdefault(event.session_id, []).append(event.event_id)
+            return event
+
+    def list_session_events(self, session_id: str) -> list[SessionEvent]:
+        with self._lock:
+            event_ids = self._session_events_by_session.get(session_id, [])
+            return [self._session_events[event_id] for event_id in event_ids if event_id in self._session_events]
+
+    def save_compaction_checkpoint(self, checkpoint: CompactionCheckpoint) -> CompactionCheckpoint:
+        with self._lock:
+            self._compaction_checkpoints[checkpoint.checkpoint_id] = checkpoint
+            self._checkpoints_by_session.setdefault(checkpoint.session_id, []).append(checkpoint.checkpoint_id)
+            return checkpoint
+
+    def get_compaction_checkpoint(self, checkpoint_id: str) -> CompactionCheckpoint | None:
+        with self._lock:
+            return self._compaction_checkpoints.get(checkpoint_id)
+
+    def list_compaction_checkpoints(self, session_id: str) -> list[CompactionCheckpoint]:
+        with self._lock:
+            checkpoint_ids = self._checkpoints_by_session.get(session_id, [])
+            return [
+                self._compaction_checkpoints[checkpoint_id]
+                for checkpoint_id in checkpoint_ids
+                if checkpoint_id in self._compaction_checkpoints
+            ]
+
+    def save_delta_pack(self, pack: DeltaPack) -> DeltaPack:
+        with self._lock:
+            self._delta_packs[pack.delta_pack_id] = pack
+            self._delta_packs_by_session.setdefault(pack.session_id, []).append(pack.delta_pack_id)
+            return pack
+
+    def get_delta_pack(self, delta_pack_id: str) -> DeltaPack | None:
+        with self._lock:
+            return self._delta_packs.get(delta_pack_id)
+
+    def list_delta_packs(self, session_id: str) -> list[DeltaPack]:
+        with self._lock:
+            pack_ids = self._delta_packs_by_session.get(session_id, [])
+            return [self._delta_packs[pack_id] for pack_id in pack_ids if pack_id in self._delta_packs]
+
     def snapshot(self) -> dict[str, int]:
         with self._lock:
             return {
@@ -317,6 +391,10 @@ class InMemoryRepository:
                 "subscriptions": len(self._subscriptions),
                 "sentinel_verdicts": len(self._sentinel_verdicts),
                 "context_packs": len(self._context_packs),
+                "sessions": len(self._sessions),
+                "session_events": len(self._session_events),
+                "compaction_checkpoints": len(self._compaction_checkpoints),
+                "delta_packs": len(self._delta_packs),
             }
 
     def close(self) -> None:
