@@ -68,6 +68,7 @@ from .payment import PaymentGate
 from .permissions import can_access_claim
 from .reactive_delta import (
     SESSION_BUCKETS,
+    STATE_SNAPSHOT_VERSION,
     build_restoration_prompt,
     compute_delta_pack_diff,
     default_restoration_instructions,
@@ -3228,6 +3229,51 @@ class ContextGraphService:
         )
         return session
 
+    def fork_session(
+        self,
+        agent_id: str,
+        session_id: str,
+        from_checkpoint_id: str | None = None,
+        title: str | None = None,
+    ) -> Session:
+        parent_session = self.get_session(agent_id, session_id)
+        checkpoints = self.repository.list_compaction_checkpoints(session_id)
+        if not checkpoints:
+            raise ConflictError("Cannot fork a session that has no checkpoints yet.")
+
+        checkpoint_map = {checkpoint.checkpoint_id: checkpoint for checkpoint in checkpoints}
+        if from_checkpoint_id is None:
+            base_checkpoint = checkpoints[-1]
+        else:
+            base_checkpoint = checkpoint_map.get(from_checkpoint_id)
+            if base_checkpoint is None:
+                raise NotFoundError(f"Checkpoint '{from_checkpoint_id}' not found.")
+
+        now = utcnow()
+        child_session = Session(
+            session_id=new_id("ses"),
+            agent_id=parent_session.agent_id,
+            title=(title or "").strip() or f"{parent_session.title} branch",
+            source=parent_session.source,
+            status="active",
+            metadata=dict(parent_session.metadata),
+            created_at=now,
+            updated_at=now,
+            parent_session_id=parent_session.session_id,
+            forked_from_checkpoint_id=base_checkpoint.checkpoint_id,
+        )
+        self.repository.save_session(child_session)
+        self._audit(
+            "fork_session",
+            actor_agent_id=agent_id,
+            details={
+                "session_id": child_session.session_id,
+                "parent_session_id": parent_session.session_id,
+                "from_checkpoint_id": base_checkpoint.checkpoint_id,
+            },
+        )
+        return child_session
+
     def get_session(self, requester_agent_id: str, session_id: str) -> Session:
         session = self.repository.get_session(session_id)
         if session is None:
@@ -3243,6 +3289,102 @@ class ContextGraphService:
     def list_session_events(self, requester_agent_id: str, session_id: str) -> list[SessionEvent]:
         self.get_session(requester_agent_id, session_id)
         return self.repository.list_session_events(session_id)
+
+    def _session_branch_backed(self, session: Session) -> bool:
+        return bool(session.parent_session_id and session.forked_from_checkpoint_id)
+
+    def _is_snapshot_pack_reusable(self, pack: DeltaPack | None) -> tuple[bool, list[str]]:
+        if pack is None:
+            return False, ["missing_delta_pack"]
+        reasons: list[str] = []
+        if pack.state_snapshot_version != STATE_SNAPSHOT_VERSION:
+            reasons.append("snapshot_version_mismatch")
+        if not pack.state_snapshot:
+            reasons.append("missing_state_snapshot")
+        return not reasons, reasons
+
+    def _build_effective_session_events(
+        self,
+        session: Session,
+        *,
+        upto_event_count: int | None = None,
+        visited: set[str] | None = None,
+    ) -> tuple[list[SessionEvent], list[str]]:
+        local_events = self.repository.list_session_events(session.session_id)
+        if upto_event_count is not None:
+            local_events = local_events[: max(upto_event_count, 0)]
+
+        issues: list[str] = []
+        if not self._session_branch_backed(session):
+            return list(local_events), issues
+
+        lineage_seen = set(visited or set())
+        if session.session_id in lineage_seen:
+            return list(local_events), ["lineage_cycle_detected"]
+        lineage_seen.add(session.session_id)
+
+        parent_session = self.repository.get_session(session.parent_session_id)
+        if parent_session is None:
+            return list(local_events), ["missing_parent_session"]
+
+        base_checkpoint = self.repository.get_compaction_checkpoint(session.forked_from_checkpoint_id)
+        if base_checkpoint is None:
+            return list(local_events), ["missing_fork_base_checkpoint"]
+        if base_checkpoint.session_id != parent_session.session_id:
+            return list(local_events), ["fork_checkpoint_parent_mismatch"]
+
+        parent_events, parent_issues = self._build_effective_session_events(
+            parent_session,
+            upto_event_count=base_checkpoint.event_count,
+            visited=lineage_seen,
+        )
+        issues.extend(parent_issues)
+        return parent_events + list(local_events), issues
+
+    def _branch_cache_seed(
+        self,
+        session: Session,
+        events: list[SessionEvent],
+    ) -> tuple[CompactionCheckpoint | None, DeltaPack | None, list[SessionEvent], int, list[str]]:
+        issues: list[str] = []
+        if not self._session_branch_backed(session):
+            return None, None, events, 0, issues
+
+        if session.latest_checkpoint_id and session.latest_delta_pack_id:
+            latest_checkpoint = self.repository.get_compaction_checkpoint(session.latest_checkpoint_id)
+            latest_pack = self.repository.get_delta_pack(session.latest_delta_pack_id)
+            if latest_checkpoint is None:
+                issues.append("missing_latest_checkpoint")
+            elif latest_pack is None:
+                issues.append("missing_latest_delta_pack")
+            else:
+                new_events = events[latest_checkpoint.event_count :]
+                return latest_checkpoint, latest_pack, new_events, latest_pack.state_snapshot_event_count, issues
+
+        base_checkpoint = self.repository.get_compaction_checkpoint(session.forked_from_checkpoint_id)
+        if base_checkpoint is None:
+            issues.append("missing_fork_base_checkpoint")
+            return None, None, events, 0, issues
+        base_pack = self.repository.get_delta_pack(base_checkpoint.delta_pack_id)
+        if base_pack is None:
+            issues.append("missing_fork_base_delta_pack")
+            return base_checkpoint, None, events, 0, issues
+        return base_checkpoint, base_pack, events, base_pack.state_snapshot_event_count, issues
+
+    def _branch_has_reusable_prefix(self, session: Session) -> bool:
+        if not self._session_branch_backed(session):
+            return False
+        if session.latest_delta_pack_id:
+            latest_pack = self.repository.get_delta_pack(session.latest_delta_pack_id)
+            valid, _reasons = self._is_snapshot_pack_reusable(latest_pack)
+            if valid:
+                return True
+        base_checkpoint = self.repository.get_compaction_checkpoint(session.forked_from_checkpoint_id)
+        if base_checkpoint is None:
+            return False
+        base_pack = self.repository.get_delta_pack(base_checkpoint.delta_pack_id)
+        valid, _reasons = self._is_snapshot_pack_reusable(base_pack)
+        return valid
 
     def record_session_event(
         self,
@@ -3424,6 +3566,9 @@ class ContextGraphService:
             failure_count=len(latest_pack.failures) if latest_pack else 0,
             stale_item_count=len(latest_pack.stale_items) if latest_pack else 0,
             untrusted_item_count=len(latest_pack.untrusted_items) if latest_pack else 0,
+            branch_backed=self._session_branch_backed(session),
+            latest_cache_status=latest_pack.cache_status if latest_pack else "",
+            likely_prefix_reuse=self._branch_has_reusable_prefix(session),
             warnings=warnings,
             recommendations=recommendations,
             status=status,
@@ -3549,16 +3694,56 @@ class ContextGraphService:
     ) -> tuple[CompactionCheckpoint, DeltaPack]:
         now = utcnow()
         events = self.repository.list_session_events(session.session_id)
-        reduced = reduce_session_events(events)
+        previous_pack = (
+            self.repository.get_delta_pack(session.latest_delta_pack_id) if session.latest_delta_pack_id else None
+        )
+        branch_backed = self._session_branch_backed(session)
+        cache_status = "miss"
+        cache_base_checkpoint_id = ""
+        cache_base_pack: DeltaPack | None = None
+        reused_event_count = 0
+        recomputed_event_count = len(events)
+        invalidated_reasons: list[str] = []
+
+        reduced: dict[str, Any] | None = None
+        if branch_backed:
+            seed_checkpoint, seed_pack, seed_events, seed_event_count, seed_issues = self._branch_cache_seed(
+                session, events
+            )
+            invalidated_reasons.extend(seed_issues)
+            valid_snapshot, snapshot_issues = self._is_snapshot_pack_reusable(seed_pack)
+            if valid_snapshot and seed_pack is not None:
+                try:
+                    reduced = reduce_session_events(seed_events, base_snapshot=seed_pack.state_snapshot)
+                    cache_status = "prefix_hit"
+                    cache_base_checkpoint_id = seed_checkpoint.checkpoint_id if seed_checkpoint else ""
+                    cache_base_pack = seed_pack
+                    reused_event_count = seed_event_count
+                    recomputed_event_count = len(seed_events)
+                except ValueError:
+                    invalidated_reasons.append("corrupt_state_snapshot")
+            else:
+                invalidated_reasons.extend(snapshot_issues)
+
+        if reduced is None:
+            if branch_backed:
+                effective_events, lineage_issues = self._build_effective_session_events(session)
+                invalidated_reasons.extend(lineage_issues)
+                reduced = reduce_session_events(effective_events)
+                cache_status = "fallback_recompute"
+                reused_event_count = 0
+                recomputed_event_count = len(effective_events)
+            else:
+                reduced = reduce_session_events(events)
+                cache_status = "miss"
+                reused_event_count = 0
+                recomputed_event_count = len(events)
+
         full_sections = {bucket: list(reduced.get(bucket, [])) for bucket in SESSION_BUCKETS}
         summary_budget = max(int(max(token_budget, 1) * 0.25), 20)
         summary = self._build_delta_summary(full_sections, summary_budget)
         summary_tokens = self._estimate_tokens(summary) if summary else 0
         trimmed_sections = self._trim_delta_sections(full_sections, max(token_budget - summary_tokens - 40, 1))
-
-        previous_pack = (
-            self.repository.get_delta_pack(session.latest_delta_pack_id) if session.latest_delta_pack_id else None
-        )
         diff = compute_delta_pack_diff(previous_pack, trimmed_sections)
         instructions = default_restoration_instructions(trimmed_sections)
         prompt = build_restoration_prompt(
@@ -3596,7 +3781,12 @@ class ContextGraphService:
 
         delta_pack_id = new_id("dpk")
         checkpoint_id = new_id("chk")
-        base_pack_id = previous_pack.base_pack_id if previous_pack and previous_pack.base_pack_id else delta_pack_id
+        if previous_pack and previous_pack.base_pack_id:
+            base_pack_id = previous_pack.base_pack_id
+        elif cache_base_pack and cache_base_pack.base_pack_id:
+            base_pack_id = cache_base_pack.base_pack_id
+        else:
+            base_pack_id = delta_pack_id
         delta_pack = DeltaPack(
             delta_pack_id=delta_pack_id,
             checkpoint_id=checkpoint_id,
@@ -3626,7 +3816,15 @@ class ContextGraphService:
             restoration_prompt=prompt,
             restoration_instructions=instructions,
             included_event_ids=list(reduced.get("included_event_ids", [])),
-            event_count=int(reduced.get("event_count", len(events))),
+            event_count=session.event_count,
+            cache_status=cache_status,
+            cache_base_checkpoint_id=cache_base_checkpoint_id,
+            reused_event_count=reused_event_count,
+            recomputed_event_count=recomputed_event_count,
+            invalidated_reasons=list(dict.fromkeys(item for item in invalidated_reasons if item)),
+            state_snapshot=dict(reduced.get("state_snapshot", {})),
+            state_snapshot_version=str(reduced.get("state_snapshot_version", STATE_SNAPSHOT_VERSION)),
+            state_snapshot_event_count=reused_event_count + recomputed_event_count,
             diff=diff,
         )
         checkpoint = CompactionCheckpoint(
@@ -3658,6 +3856,7 @@ class ContextGraphService:
                 "checkpoint_id": checkpoint.checkpoint_id,
                 "delta_pack_id": delta_pack.delta_pack_id,
                 "reason": reason,
+                "cache_status": delta_pack.cache_status,
             },
         )
         return checkpoint, delta_pack

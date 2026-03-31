@@ -20,7 +20,7 @@ def _required_env(name: str) -> str:
 
 
 def _workspace_key(tool_name: str, workspace: str) -> str:
-    raw = f"{tool_name}:{workspace}".encode("utf-8")
+    raw = f"{tool_name}:{workspace}".encode()
     return hashlib.sha1(raw).hexdigest()[:16]
 
 
@@ -59,7 +59,15 @@ def ensure_session(client: ContextGraph, *, agent_id: str, tool_name: str, works
         metadata={"workspace": workspace},
     )
     path.write_text(json.dumps({"session_id": session["session_id"]}, indent=2) + "\n")
+    _sync_memory_directory(client, agent_id=agent_id, session_id=session["session_id"], workspace=workspace)
     return session["session_id"]
+
+
+def _sync_memory_directory(client: ContextGraph, *, agent_id: str, session_id: str, workspace: str) -> None:
+    try:
+        client.sync_memory_directory(agent_id, session_id, workspace_path=workspace)
+    except Exception as exc:
+        print(f"ContextGraph memdir sync skipped: {exc}", file=sys.stderr)
 
 
 def emit_hook_event(
@@ -86,4 +94,6 @@ def emit_hook_event(
         token_budget=token_budget,
         checkpoint_reason=checkpoint_reason,
     )
+    if result.get("checkpoint"):
+        _sync_memory_directory(client, agent_id=agent_id, session_id=session_id, workspace=workspace)
     return {"session_id": session_id, **result}

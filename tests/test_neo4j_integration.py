@@ -129,6 +129,47 @@ class ContextGraphNeo4jIntegrationTest(unittest.TestCase):
         self.assertEqual(stored_checkpoint.delta_pack_id, stored_pack.delta_pack_id)
         self.assertEqual(resume.delta_pack.delta_pack_id, stored_pack.delta_pack_id)
 
+    def test_branch_aware_cache_metadata_round_trip_persists_to_neo4j(self) -> None:
+        session = self.service.create_session(
+            agent_id=self.owner.agent_id,
+            title="Neo4j branch root",
+            source="codex",
+            metadata={"workspace": "/tmp/contextgraph"},
+        )
+        self.service.record_session_event(
+            self.owner.agent_id,
+            session.session_id,
+            "todo",
+            "Add migration tests.",
+        )
+        base_pack = self.service.checkpoint_session(self.owner.agent_id, session.session_id, reason="manual")
+
+        child = self.service.fork_session(
+            self.owner.agent_id,
+            session.session_id,
+            from_checkpoint_id=base_pack.checkpoint_id,
+            title="Neo4j branch child",
+        )
+        self.service.record_session_event(
+            self.owner.agent_id,
+            child.session_id,
+            "file_change",
+            "Changed service.py",
+            metadata={"path": "contextgraph/service.py"},
+        )
+        child_pack = self.service.checkpoint_session(self.owner.agent_id, child.session_id, reason="manual")
+
+        stored_child = self.repository.get_session(child.session_id)
+        stored_pack = self.repository.get_delta_pack(child_pack.delta_pack_id)
+
+        self.assertIsNotNone(stored_child)
+        self.assertEqual(stored_child.parent_session_id, session.session_id)
+        self.assertEqual(stored_child.forked_from_checkpoint_id, base_pack.checkpoint_id)
+        self.assertIsNotNone(stored_pack)
+        self.assertEqual(stored_pack.cache_status, "prefix_hit")
+        self.assertEqual(stored_pack.cache_base_checkpoint_id, base_pack.checkpoint_id)
+        self.assertTrue(stored_pack.state_snapshot)
+
 
 if __name__ == "__main__":
     unittest.main()

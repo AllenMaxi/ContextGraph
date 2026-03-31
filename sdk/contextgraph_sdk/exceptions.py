@@ -5,6 +5,10 @@ class ContextGraphSDKError(Exception):
     """Base SDK error."""
 
 
+class MemoryDirectoryError(ContextGraphSDKError):
+    """Local memory-directory sync failure."""
+
+
 class ContextGraphTransportError(ContextGraphSDKError):
     """Transport-level failure."""
 

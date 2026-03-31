@@ -566,10 +566,18 @@ class SessionResponse(BaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+    parent_session_id: str = ""
+    forked_from_checkpoint_id: str = ""
     latest_checkpoint_id: str = ""
     latest_delta_pack_id: str = ""
     checkpoint_count: int = 0
     event_count: int = 0
+
+
+class SessionForkRequest(BaseModel):
+    agent_id: str | None = None
+    from_checkpoint_id: str | None = None
+    title: str | None = None
 
 
 class SessionEventRequest(BaseModel):
@@ -636,6 +644,11 @@ class DeltaPackResponse(BaseModel):
     restoration_instructions: list[str] = Field(default_factory=list)
     included_event_ids: list[str] = Field(default_factory=list)
     event_count: int = 0
+    cache_status: str = "miss"
+    cache_base_checkpoint_id: str = ""
+    reused_event_count: int = 0
+    recomputed_event_count: int = 0
+    invalidated_reasons: list[str] = Field(default_factory=list)
     diff: DeltaPackDiffResponse | None = None
 
 
@@ -705,6 +718,9 @@ class MemoryDoctorResponse(BaseModel):
     failure_count: int
     stale_item_count: int
     untrusted_item_count: int
+    branch_backed: bool = False
+    latest_cache_status: str = ""
+    likely_prefix_reuse: bool = False
     warnings: list[str] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     status: str = "ok"

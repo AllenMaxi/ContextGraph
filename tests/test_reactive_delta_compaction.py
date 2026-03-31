@@ -13,6 +13,7 @@ from contextgraph_sdk import ContextGraph
 from contextgraph import ContextGraphService
 from contextgraph.config import Settings
 from contextgraph.errors import PermissionDeniedError
+from contextgraph.reactive_delta import reduce_session_events
 from contextgraph.web import FastAPI, create_app
 
 
@@ -162,6 +163,130 @@ class ReactiveDeltaCompactionServiceTest(unittest.TestCase):
         self.assertGreaterEqual(report.untrusted_item_count, 1)
         self.assertEqual(report_pack.sequence, 1)
 
+    def test_branch_checkpoint_reuses_prefix_snapshot(self) -> None:
+        self.service.record_session_event(
+            self.agent.agent_id, self.session.session_id, "decision", "Keep the public REST API stable."
+        )
+        self.service.record_session_event(self.agent.agent_id, self.session.session_id, "todo", "Add migration tests.")
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+
+        child = self.service.fork_session(self.agent.agent_id, self.session.session_id, title="Refactor branch")
+        self.service.record_session_event(
+            self.agent.agent_id,
+            child.session_id,
+            "file_change",
+            "Changed service.py",
+            metadata={"path": "contextgraph/service.py"},
+        )
+        child_pack = self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+        effective_events, issues = self.service._build_effective_session_events(child)
+        reduced = reduce_session_events(effective_events)
+
+        self.assertFalse(issues)
+        self.assertEqual(child.parent_session_id, self.session.session_id)
+        self.assertEqual(child.forked_from_checkpoint_id, base_pack.checkpoint_id)
+        self.assertEqual(child_pack.cache_status, "prefix_hit")
+        self.assertEqual(child_pack.cache_base_checkpoint_id, base_pack.checkpoint_id)
+        self.assertEqual(child_pack.reused_event_count, base_pack.state_snapshot_event_count)
+        self.assertEqual(child_pack.recomputed_event_count, 1)
+        self.assertEqual(child_pack.decisions, reduced["decisions"])
+        self.assertEqual(child_pack.open_tasks, reduced["open_tasks"])
+        self.assertEqual(child_pack.changed_files, reduced["changed_files"])
+
+    def test_branch_snapshot_version_mismatch_falls_back_to_full_recompute(self) -> None:
+        self.service.record_session_event(
+            self.agent.agent_id, self.session.session_id, "decision", "Keep the public REST API stable."
+        )
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+        child = self.service.fork_session(self.agent.agent_id, self.session.session_id)
+        self.service.record_session_event(self.agent.agent_id, child.session_id, "todo", "Ship resume hooks.")
+
+        base_pack.state_snapshot_version = "broken"
+        child_pack = self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+
+        self.assertEqual(child_pack.cache_status, "fallback_recompute")
+        self.assertIn("snapshot_version_mismatch", child_pack.invalidated_reasons)
+        self.assertIn("Keep the public REST API stable.", child_pack.decisions)
+        self.assertIn("Ship resume hooks.", child_pack.open_tasks)
+
+    def test_branch_corrupt_snapshot_falls_back_to_full_recompute(self) -> None:
+        self.service.record_session_event(self.agent.agent_id, self.session.session_id, "todo", "Ship resume hooks.")
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+        child = self.service.fork_session(self.agent.agent_id, self.session.session_id)
+        self.service.record_session_event(self.agent.agent_id, child.session_id, "note", "Branch-specific note.")
+
+        base_pack.state_snapshot = "broken"  # type: ignore[assignment]
+        child_pack = self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+
+        self.assertEqual(child_pack.cache_status, "fallback_recompute")
+        self.assertIn("corrupt_state_snapshot", child_pack.invalidated_reasons)
+        self.assertIn("Ship resume hooks.", child_pack.open_tasks)
+        self.assertIn("Branch-specific note.", child_pack.notes)
+
+    def test_non_branch_checkpoints_report_cache_miss(self) -> None:
+        self.service.record_session_event(self.agent.agent_id, self.session.session_id, "todo", "Add migration tests.")
+
+        pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+
+        self.assertEqual(pack.cache_status, "miss")
+        self.assertEqual(pack.reused_event_count, 0)
+        self.assertEqual(pack.recomputed_event_count, 1)
+
+    def test_branch_stale_detection_uses_inherited_snapshot_timestamps(self) -> None:
+        self.service.record_session_event(
+            self.agent.agent_id, self.session.session_id, "todo", "Refresh the benchmark."
+        )
+        root_event = self.service.repository.list_session_events(self.session.session_id)[0]
+        root_event.created_at = root_event.created_at - timedelta(days=8)
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+
+        child = self.service.fork_session(
+            self.agent.agent_id,
+            self.session.session_id,
+            from_checkpoint_id=base_pack.checkpoint_id,
+        )
+        child_pack = self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+
+        self.assertEqual(child_pack.cache_status, "prefix_hit")
+        self.assertIn("Refresh the benchmark.", child_pack.stale_items)
+
+    def test_branch_resolved_event_removes_inherited_open_task(self) -> None:
+        self.service.record_session_event(self.agent.agent_id, self.session.session_id, "todo", "Add migration tests.")
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+
+        child = self.service.fork_session(
+            self.agent.agent_id,
+            self.session.session_id,
+            from_checkpoint_id=base_pack.checkpoint_id,
+        )
+        self.service.record_session_event(
+            self.agent.agent_id,
+            child.session_id,
+            "resolved",
+            "Add migration tests.",
+        )
+        child_pack = self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+
+        self.assertNotIn("Add migration tests.", child_pack.open_tasks)
+        self.assertIn("Add migration tests.", child_pack.resolved_items)
+
+    def test_doctor_reports_branch_cache_metadata(self) -> None:
+        self.service.record_session_event(self.agent.agent_id, self.session.session_id, "todo", "Add migration tests.")
+        base_pack = self.service.checkpoint_session(self.agent.agent_id, self.session.session_id, reason="manual")
+        child = self.service.fork_session(
+            self.agent.agent_id,
+            self.session.session_id,
+            from_checkpoint_id=base_pack.checkpoint_id,
+        )
+        self.service.record_session_event(self.agent.agent_id, child.session_id, "note", "Branch note.")
+        self.service.checkpoint_session(self.agent.agent_id, child.session_id, reason="manual")
+
+        report = self.service.doctor_memory(self.agent.agent_id, child.session_id)
+
+        self.assertTrue(report.branch_backed)
+        self.assertEqual(report.latest_cache_status, "prefix_hit")
+        self.assertTrue(report.likely_prefix_reuse)
+
 
 class ReactiveDeltaCompactionSDKTest(unittest.TestCase):
     def test_sdk_round_trip_for_checkpoint_and_resume(self) -> None:
@@ -183,6 +308,41 @@ class ReactiveDeltaCompactionSDKTest(unittest.TestCase):
             self.assertIsNotNone(result["checkpoint"])
             self.assertEqual(resume["session"]["session_id"], session["session_id"])
             self.assertIn("Added", diff["summary"])
+            self.assertNotIn("state_snapshot", result["delta_pack"])
+            self.assertNotIn("state_snapshot", resume["delta_pack"])
+        finally:
+            service.close()
+
+    def test_sdk_round_trip_for_branch_fork_and_cache_metadata(self) -> None:
+        service = _make_service()
+        try:
+            client = ContextGraph.local(service)
+            agent = client.register_agent("sdk-brancher", "acme", ["coding"])
+            session = client.create_session(agent["agent_id"], title="SDK branch", source="codex")
+            client.record_session_event(
+                agent["agent_id"],
+                session["session_id"],
+                "todo",
+                "Add migration tests.",
+            )
+            base_pack = client.checkpoint_session(agent["agent_id"], session["session_id"])
+            child = client.fork_session(agent["agent_id"], session["session_id"], title="SDK child")
+            client.record_session_event(
+                agent["agent_id"],
+                child["session_id"],
+                "file_change",
+                "Changed service.py",
+                metadata={"path": "contextgraph/service.py"},
+            )
+            child_pack = client.checkpoint_session(agent["agent_id"], child["session_id"])
+            resume = client.resume_session(agent["agent_id"], child["session_id"])
+
+            self.assertEqual(child["parent_session_id"], session["session_id"])
+            self.assertEqual(child["forked_from_checkpoint_id"], base_pack["checkpoint_id"])
+            self.assertEqual(child_pack["cache_status"], "prefix_hit")
+            self.assertEqual(child_pack["cache_base_checkpoint_id"], base_pack["checkpoint_id"])
+            self.assertNotIn("state_snapshot", child_pack)
+            self.assertEqual(resume["delta_pack"]["cache_status"], "prefix_hit")
         finally:
             service.close()
 
@@ -226,3 +386,31 @@ class ReactiveDeltaCompactionWebTest(unittest.TestCase):
         self.assertEqual(doctor.status_code, 200)
         self.assertEqual(resume.json()["session"]["session_id"], session_id)
         self.assertEqual(event.json()["delta_pack"]["checkpoint_reason"], "context_pressure")
+
+    def test_session_fork_endpoint_round_trip(self) -> None:
+        headers = {"X-Agent-Key": self.agent["api_key"]}
+        created = self.client.post(
+            "/v1/sessions",
+            headers=headers,
+            json={"title": "Web branch root", "source": "claude-code"},
+        )
+        session_id = created.json()["session_id"]
+        self.client.post(
+            f"/v1/sessions/{session_id}/events",
+            headers=headers,
+            json={"event_type": "todo", "content": "Add migration tests."},
+        )
+        checkpoint = self.client.post(
+            f"/v1/sessions/{session_id}/checkpoint",
+            headers=headers,
+            json={"reason": "manual", "token_budget": 600},
+        )
+        forked = self.client.post(
+            f"/v1/sessions/{session_id}/fork",
+            headers=headers,
+            json={"title": "Web child", "from_checkpoint_id": checkpoint.json()["checkpoint_id"]},
+        )
+
+        self.assertEqual(forked.status_code, 201)
+        self.assertEqual(forked.json()["parent_session_id"], session_id)
+        self.assertEqual(forked.json()["forked_from_checkpoint_id"], checkpoint.json()["checkpoint_id"])

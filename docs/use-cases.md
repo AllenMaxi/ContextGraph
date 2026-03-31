@@ -4,24 +4,59 @@
 
 ContextGraph is broad infrastructure, but the best current fit is narrower:
 
-- multi-agent support and incident operations
-- research and analyst handoffs
+- coding agents that need to survive compaction, resume cleanly, and branch work without losing durable state
 - internal agent platforms that need governed memory reuse
+- support and research workflows where provenance and visibility still matter
 
 These workflows benefit immediately from:
 
-- shared memory between agents
+- structured checkpoints instead of lossy summaries
+- branch-aware cache reuse across sessions and task forks
 - provenance on what was stored and recalled
 - review and trust signals before reuse
 - controlled org, partner-share, and published visibility
 
 Runnable reference flows:
 
+- `python3 examples/reactive_delta_compaction_demo.py`
 - `python3 examples/beta_quickstart.py`
 - `python3 examples/support_memory_workflow.py`
 - `python3 examples/research_memory_workflow.py`
 
-## 1. Support Operations
+## 1. Coding Agent Continuity
+
+Canonical scenario:
+
+- a coding agent records decisions, constraints, failures, file changes, and open tasks during a refactor
+- context pressure triggers a checkpoint
+- the session forks into two implementation branches
+- each branch reuses the inherited checkpoint prefix and only recomputes its own new events
+
+What ContextGraph adds:
+
+- durable structured state instead of one lossy chat summary
+- checkpoint, resume, and branch flows through the same memory layer
+- branch-aware cache metadata showing reuse, recompute work, and invalidation reasons
+- governed context that can later feed a context pack or handoff
+
+Run it:
+
+```bash
+python3 examples/reactive_delta_compaction_demo.py
+```
+
+Look for this shape in the output:
+
+```text
+Auto checkpoint
+Manual checkpoint
+Branch checkpoint: ... (prefix_hit)
+cache base checkpoint
+reused events
+recomputed events
+```
+
+## 2. Support Operations
 
 Canonical scenario:
 
@@ -52,7 +87,7 @@ Look for this shape in the output:
 4) Billing recall uses the reviewed memory
 ```
 
-## 2. Research Handoff
+## 3. Research Handoff
 
 Canonical scenario:
 

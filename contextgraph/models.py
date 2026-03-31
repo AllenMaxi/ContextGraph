@@ -467,6 +467,8 @@ class Session:
     metadata: dict[str, str]
     created_at: datetime
     updated_at: datetime
+    parent_session_id: str = ""
+    forked_from_checkpoint_id: str = ""
     latest_checkpoint_id: str = ""
     latest_delta_pack_id: str = ""
     checkpoint_count: int = 0
@@ -490,6 +492,12 @@ class SessionEvent:
 class DeltaPackDiff:
     added: dict[str, list[str]] = field(default_factory=dict)
     dropped: dict[str, list[str]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class SessionStateEntry:
+    value: str
+    observed_at: datetime
 
 
 @dataclass(slots=True)
@@ -523,6 +531,14 @@ class DeltaPack:
     restoration_instructions: list[str] = field(default_factory=list)
     included_event_ids: list[str] = field(default_factory=list)
     event_count: int = 0
+    cache_status: str = "miss"
+    cache_base_checkpoint_id: str = ""
+    reused_event_count: int = 0
+    recomputed_event_count: int = 0
+    invalidated_reasons: list[str] = field(default_factory=list)
+    state_snapshot: dict[str, list[SessionStateEntry]] = field(default_factory=dict)
+    state_snapshot_version: str = ""
+    state_snapshot_event_count: int = 0
     diff: DeltaPackDiff | None = None
 
 
@@ -581,6 +597,9 @@ class MemoryDoctorReport:
     failure_count: int
     stale_item_count: int
     untrusted_item_count: int
+    branch_backed: bool = False
+    latest_cache_status: str = ""
+    likely_prefix_reuse: bool = False
     warnings: list[str] = field(default_factory=list)
     recommendations: list[str] = field(default_factory=list)
     status: str = "ok"

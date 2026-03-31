@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
-from .models import DeltaPack, DeltaPackDiff, SessionEvent
+from .models import DeltaPack, DeltaPackDiff, SessionEvent, SessionStateEntry
 from .utils import jaccard_similarity, utcnow
 
 SESSION_BUCKETS = (
@@ -19,13 +19,21 @@ SESSION_BUCKETS = (
     "commands",
     "notes",
 )
+STATE_SNAPSHOT_VERSION = "rdc_state_v1"
+_SNAPSHOT_SPECIAL_BUCKETS = ("untrusted_items",)
 
 _URL_PATTERN = re.compile(r"https?://[^\s)>]+")
 _BULLET_PREFIX = re.compile(r"^\s*(?:[-*+]|\d+\.)\s*")
 
+_StateMap = dict[str, dict[str, tuple[str, datetime]]]
+
 
 def _normalize_item(value: str) -> str:
     return " ".join(value.strip().lower().split())
+
+
+def _empty_state() -> _StateMap:
+    return {bucket: {} for bucket in SESSION_BUCKETS}
 
 
 def _split_text_items(content: str) -> list[str]:
@@ -66,12 +74,7 @@ def _iter_paths(metadata: dict[str, str], content: str) -> list[str]:
     return [item for item in dict.fromkeys(values) if item]
 
 
-def _add_state_item(
-    state: dict[str, dict[str, tuple[str, datetime]]],
-    bucket: str,
-    item: str,
-    timestamp: datetime,
-) -> None:
+def _add_state_item(state: _StateMap, bucket: str, item: str, timestamp: datetime) -> None:
     cleaned = item.strip()
     if not cleaned:
         return
@@ -81,11 +84,7 @@ def _add_state_item(
     state[bucket][norm] = (cleaned, timestamp)
 
 
-def _remove_matching_items(
-    state: dict[str, dict[str, tuple[str, datetime]]],
-    buckets: tuple[str, ...],
-    item: str,
-) -> list[str]:
+def _remove_matching_items(state: _StateMap, buckets: tuple[str, ...], item: str) -> list[str]:
     removed: list[str] = []
     target = _normalize_item(item)
     if not target:
@@ -109,79 +108,147 @@ def _event_items(event: SessionEvent) -> list[str]:
     return _split_text_items(event.content)
 
 
+def _parse_snapshot_timestamp(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    raise ValueError("Invalid snapshot timestamp.")
+
+
+def _parse_snapshot_entry(value: Any) -> SessionStateEntry:
+    if isinstance(value, SessionStateEntry):
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("Invalid snapshot entry.")
+    return SessionStateEntry(
+        value=str(value.get("value", "")).strip(),
+        observed_at=_parse_snapshot_timestamp(value.get("observed_at")),
+    )
+
+
+def restore_state_snapshot(snapshot: dict[str, list[SessionStateEntry]] | None) -> tuple[_StateMap, dict[str, str]]:
+    if snapshot is None:
+        return _empty_state(), {}
+    if not isinstance(snapshot, dict):
+        raise ValueError("Invalid snapshot payload.")
+
+    state = _empty_state()
+    untrusted_map: dict[str, str] = {}
+
+    for bucket in SESSION_BUCKETS:
+        entries = snapshot.get(bucket, [])
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            raise ValueError(f"Snapshot bucket '{bucket}' is invalid.")
+        for raw in entries:
+            entry = _parse_snapshot_entry(raw)
+            _add_state_item(state, bucket, entry.value, entry.observed_at)
+
+    untrusted_entries = snapshot.get("untrusted_items", [])
+    if untrusted_entries is None:
+        untrusted_entries = []
+    if not isinstance(untrusted_entries, list):
+        raise ValueError("Snapshot bucket 'untrusted_items' is invalid.")
+    for raw in untrusted_entries:
+        entry = _parse_snapshot_entry(raw)
+        norm = _normalize_item(entry.value)
+        if norm:
+            untrusted_map[norm] = entry.value
+
+    return state, untrusted_map
+
+
+def build_state_snapshot(state: _StateMap, untrusted_map: dict[str, str]) -> dict[str, list[SessionStateEntry]]:
+    snapshot: dict[str, list[SessionStateEntry]] = {}
+    for bucket in SESSION_BUCKETS:
+        snapshot[bucket] = [
+            SessionStateEntry(value=item, observed_at=timestamp) for item, timestamp in state[bucket].values()
+        ]
+    snapshot["untrusted_items"] = [
+        SessionStateEntry(value=item, observed_at=utcnow()) for item in untrusted_map.values()
+    ]
+    return snapshot
+
+
+def _apply_event_to_state(state: _StateMap, untrusted_map: dict[str, str], event: SessionEvent) -> None:
+    event_type = event.event_type.strip().lower() or "note"
+    metadata = dict(event.metadata or {})
+    items = _event_items(event)
+    confidence = metadata.get("confidence", "").strip()
+    trusted = metadata.get("trusted", "").strip().lower()
+    try:
+        confidence_value = float(confidence) if confidence else None
+    except ValueError:
+        confidence_value = None
+    is_untrusted = trusted in {"false", "0", "no"} or (confidence_value is not None and confidence_value < 0.6)
+
+    for item in items:
+        if is_untrusted:
+            untrusted_map[_normalize_item(item)] = item
+
+    if event_type in {"decision", "decisions"}:
+        for item in items:
+            _add_state_item(state, "decisions", item, event.created_at)
+    elif event_type in {"constraint", "constraints", "instruction", "instructions"}:
+        for item in items:
+            _add_state_item(state, "constraints", item, event.created_at)
+    elif event_type in {"todo", "task", "open_task", "plan_item", "plan_change"}:
+        for item in items:
+            _add_state_item(state, "open_tasks", item, event.created_at)
+    elif event_type in {"failure", "blocker", "error"}:
+        for item in items:
+            _add_state_item(state, "failures", item, event.created_at)
+    elif event_type in {"resolved", "resolution", "fix", "done"}:
+        for item in items:
+            _add_state_item(state, "resolved_items", item, event.created_at)
+            _remove_matching_items(state, ("open_tasks", "failures", "notes"), item)
+    elif event_type in {"artifact", "reference", "memory_hit", "document"}:
+        artifact_items = items or [event.content.strip()]
+        for item in artifact_items:
+            _add_state_item(state, "important_artifacts", item, event.created_at)
+        for url in _iter_urls(event.content, metadata):
+            _add_state_item(state, "external_references", url, event.created_at)
+    elif event_type in {"file_change", "file_edit", "diff", "path"}:
+        for path in _iter_paths(metadata, event.content):
+            _add_state_item(state, "changed_files", path, event.created_at)
+            _add_state_item(state, "important_artifacts", path, event.created_at)
+    elif event_type in {"command", "tool", "bash"}:
+        command_items = items or _split_metadata_items(metadata.get("command", ""))
+        for item in command_items:
+            _add_state_item(state, "commands", item, event.created_at)
+        exit_code = metadata.get("exit_code", "").strip()
+        if exit_code and exit_code != "0":
+            failure_text = (
+                metadata.get("error", "").strip()
+                or f"Command failed: {command_items[0] if command_items else event.content.strip()}"
+            )
+            _add_state_item(state, "failures", failure_text, event.created_at)
+    elif event_type in {"context_pressure", "compact", "checkpoint"}:
+        note = event.content.strip() or metadata.get("reason", "").strip()
+        if note:
+            _add_state_item(state, "notes", note, event.created_at)
+    else:
+        for item in items:
+            _add_state_item(state, "notes", item, event.created_at)
+
+    for url in _iter_urls(event.content, metadata):
+        _add_state_item(state, "external_references", url, event.created_at)
+
+
 def reduce_session_events(
     events: list[SessionEvent],
     *,
+    base_snapshot: dict[str, list[SessionStateEntry]] | None = None,
     stale_after: timedelta = timedelta(days=7),
 ) -> dict[str, Any]:
     ordered = sorted(events, key=lambda event: (event.sequence, event.created_at.isoformat(), event.event_id))
-    state: dict[str, dict[str, tuple[str, datetime]]] = {bucket: {} for bucket in SESSION_BUCKETS}
-    untrusted_map: dict[str, str] = {}
+    state, untrusted_map = restore_state_snapshot(base_snapshot)
     latest_timestamp = max(ordered[-1].created_at, utcnow()) if ordered else utcnow()
 
     for event in ordered:
-        event_type = event.event_type.strip().lower() or "note"
-        metadata = dict(event.metadata or {})
-        items = _event_items(event)
-        confidence = metadata.get("confidence", "").strip()
-        trusted = metadata.get("trusted", "").strip().lower()
-        try:
-            confidence_value = float(confidence) if confidence else None
-        except ValueError:
-            confidence_value = None
-        is_untrusted = trusted in {"false", "0", "no"} or (confidence_value is not None and confidence_value < 0.6)
-
-        for item in items:
-            if is_untrusted:
-                untrusted_map[_normalize_item(item)] = item
-
-        if event_type in {"decision", "decisions"}:
-            for item in items:
-                _add_state_item(state, "decisions", item, event.created_at)
-        elif event_type in {"constraint", "constraints", "instruction", "instructions"}:
-            for item in items:
-                _add_state_item(state, "constraints", item, event.created_at)
-        elif event_type in {"todo", "task", "open_task", "plan_item", "plan_change"}:
-            for item in items:
-                _add_state_item(state, "open_tasks", item, event.created_at)
-        elif event_type in {"failure", "blocker", "error"}:
-            for item in items:
-                _add_state_item(state, "failures", item, event.created_at)
-        elif event_type in {"resolved", "resolution", "fix", "done"}:
-            for item in items:
-                _add_state_item(state, "resolved_items", item, event.created_at)
-                _remove_matching_items(state, ("open_tasks", "failures", "notes"), item)
-        elif event_type in {"artifact", "reference", "memory_hit", "document"}:
-            artifact_items = items or [event.content.strip()]
-            for item in artifact_items:
-                _add_state_item(state, "important_artifacts", item, event.created_at)
-            for url in _iter_urls(event.content, metadata):
-                _add_state_item(state, "external_references", url, event.created_at)
-        elif event_type in {"file_change", "file_edit", "diff", "path"}:
-            for path in _iter_paths(metadata, event.content):
-                _add_state_item(state, "changed_files", path, event.created_at)
-                _add_state_item(state, "important_artifacts", path, event.created_at)
-        elif event_type in {"command", "tool", "bash"}:
-            command_items = items or _split_metadata_items(metadata.get("command", ""))
-            for item in command_items:
-                _add_state_item(state, "commands", item, event.created_at)
-            exit_code = metadata.get("exit_code", "").strip()
-            if exit_code and exit_code != "0":
-                failure_text = (
-                    metadata.get("error", "").strip()
-                    or f"Command failed: {command_items[0] if command_items else event.content.strip()}"
-                )
-                _add_state_item(state, "failures", failure_text, event.created_at)
-        elif event_type in {"context_pressure", "compact", "checkpoint"}:
-            note = event.content.strip() or metadata.get("reason", "").strip()
-            if note:
-                _add_state_item(state, "notes", note, event.created_at)
-        else:
-            for item in items:
-                _add_state_item(state, "notes", item, event.created_at)
-
-        for url in _iter_urls(event.content, metadata):
-            _add_state_item(state, "external_references", url, event.created_at)
+        _apply_event_to_state(state, untrusted_map, event)
 
     sections: dict[str, list[str]] = {}
     stale_items: list[str] = []
@@ -195,9 +262,11 @@ def reduce_session_events(
                 stale_items.append(item)
 
     sections["stale_items"] = list(dict.fromkeys(stale_items))
-    sections["untrusted_items"] = list(untrusted_map.values())
+    sections["untrusted_items"] = list(dict.fromkeys(untrusted_map.values()))
     sections["included_event_ids"] = [event.event_id for event in ordered]
     sections["event_count"] = len(ordered)
+    sections["state_snapshot"] = build_state_snapshot(state, untrusted_map)
+    sections["state_snapshot_version"] = STATE_SNAPSHOT_VERSION
     return sections
 
 

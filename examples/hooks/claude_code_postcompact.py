@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 
-from _hook_common import build_client, ensure_session
+from _hook_common import _sync_memory_directory, build_client, ensure_session
 
 
 def main() -> None:
@@ -12,6 +12,7 @@ def main() -> None:
     workspace = os.environ.get("CG_WORKSPACE", os.getcwd())
     session_id = ensure_session(client, agent_id=agent_id, tool_name="claude-code", workspace=workspace)
     resume = client.resume_session(agent_id, session_id)
+    _sync_memory_directory(client, agent_id=agent_id, session_id=session_id, workspace=workspace)
     print(json.dumps(resume, indent=2))
 
 

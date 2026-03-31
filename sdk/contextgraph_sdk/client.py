@@ -66,6 +66,7 @@ class Transport(Protocol):
     def create_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_sessions(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def get_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def fork_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]: ...
     def list_session_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]: ...
     def checkpoint_session(self, payload: dict[str, Any]) -> dict[str, Any]: ...
@@ -369,6 +370,12 @@ class HttpTransport:
     def get_session(self, payload: dict[str, Any]) -> dict[str, Any]:
         session_id = payload["session_id"]
         return self._request("GET", f"/v1/sessions/{session_id}")
+
+    def fork_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session_id = payload["session_id"]
+        body = dict(payload)
+        body.pop("session_id", None)
+        return self._request("POST", f"/v1/sessions/{session_id}/fork", body)
 
     def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]:
         session_id = payload["session_id"]
@@ -905,6 +912,22 @@ class ContextGraph:
     def session(self, agent_id: str, session_id: str) -> dict[str, Any]:
         return self.transport.get_session({"agent_id": agent_id, "session_id": session_id})
 
+    def fork_session(
+        self,
+        agent_id: str,
+        session_id: str,
+        from_checkpoint_id: str | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        return self.transport.fork_session(
+            {
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "from_checkpoint_id": from_checkpoint_id,
+                "title": title,
+            }
+        )
+
     def record_session_event(
         self,
         agent_id: str,
@@ -974,3 +997,20 @@ class ContextGraph:
 
     def doctor_memory(self, agent_id: str, session_id: str) -> dict[str, Any]:
         return self.transport.doctor_memory({"agent_id": agent_id, "session_id": session_id})
+
+    def sync_memory_directory(
+        self,
+        agent_id: str,
+        session_id: str,
+        workspace_path: str | None = None,
+        include_doctor: bool = True,
+    ) -> dict[str, Any]:
+        from .memory_directory import sync_memory_directory
+
+        return sync_memory_directory(
+            self,
+            agent_id=agent_id,
+            session_id=session_id,
+            workspace_path=workspace_path,
+            include_doctor=include_doctor,
+        )

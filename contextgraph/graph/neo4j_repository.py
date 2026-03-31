@@ -32,6 +32,7 @@ from ..models import (
     SentinelVerdict,
     Session,
     SessionEvent,
+    SessionStateEntry,
     StandingQuery,
     Subscription,
     SubscriptionTarget,
@@ -1007,6 +1008,30 @@ class Neo4jRepository:
             dropped={str(key): self._parse_string_list(item) for key, item in dict(data.get("dropped", {})).items()},
         )
 
+    def _parse_state_snapshot(self, value: Any) -> dict[str, list[SessionStateEntry]]:
+        parsed = self._parse_json_if_needed(value)
+        if not isinstance(parsed, dict):
+            return {}
+        snapshot: dict[str, list[SessionStateEntry]] = {}
+        for bucket, items in parsed.items():
+            if not isinstance(items, list):
+                continue
+            entries: list[SessionStateEntry] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                observed_at = self._parse_dt(item.get("observed_at"))
+                if observed_at is None:
+                    continue
+                entries.append(
+                    SessionStateEntry(
+                        value=str(item.get("value", "")),
+                        observed_at=observed_at,
+                    )
+                )
+            snapshot[str(bucket)] = entries
+        return snapshot
+
     def _agent_from_node(self, node: Any) -> Agent:
         props = dict(node)
         return Agent(
@@ -1240,6 +1265,8 @@ class Neo4jRepository:
             metadata=self._parse_string_map(props.get("metadata", {})),
             created_at=self._parse_dt(props["created_at"]),
             updated_at=self._parse_dt(props["updated_at"]),
+            parent_session_id=props.get("parent_session_id", ""),
+            forked_from_checkpoint_id=props.get("forked_from_checkpoint_id", ""),
             latest_checkpoint_id=props.get("latest_checkpoint_id", ""),
             latest_delta_pack_id=props.get("latest_delta_pack_id", ""),
             checkpoint_count=int(props.get("checkpoint_count", 0) or 0),
@@ -1292,6 +1319,14 @@ class Neo4jRepository:
             restoration_instructions=self._parse_string_list(props.get("restoration_instructions", [])),
             included_event_ids=self._parse_string_list(props.get("included_event_ids", [])),
             event_count=int(props.get("event_count", 0) or 0),
+            cache_status=props.get("cache_status", "miss"),
+            cache_base_checkpoint_id=props.get("cache_base_checkpoint_id", ""),
+            reused_event_count=int(props.get("reused_event_count", 0) or 0),
+            recomputed_event_count=int(props.get("recomputed_event_count", 0) or 0),
+            invalidated_reasons=self._parse_string_list(props.get("invalidated_reasons", [])),
+            state_snapshot=self._parse_state_snapshot(props.get("state_snapshot")),
+            state_snapshot_version=props.get("state_snapshot_version", ""),
+            state_snapshot_event_count=int(props.get("state_snapshot_event_count", 0) or 0),
             diff=self._delta_pack_diff_from_value(props.get("diff")),
         )
 

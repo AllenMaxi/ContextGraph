@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 
-from contextgraph import ContextGraphAnthropicMemoryTool
 from contextgraph_sdk import ContextGraph
+
+from contextgraph import ContextGraphAnthropicMemoryTool
 
 
 def main() -> None:
@@ -11,7 +12,7 @@ def main() -> None:
         import anthropic
     except ImportError as exc:  # pragma: no cover - example guard
         raise SystemExit(
-            "Install the Anthropic SDK first: pip install anthropic or pip install -e \".[anthropic]\""
+            'Install the Anthropic SDK first: pip install anthropic or pip install -e ".[anthropic]"'
         ) from exc
 
     api_key = os.getenv("ANTHROPIC_API_KEY")

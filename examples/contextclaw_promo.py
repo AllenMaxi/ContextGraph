@@ -4,28 +4,49 @@ import asyncio
 import json
 import sys
 import tempfile
+from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "contextclaw"))
 
-from contextclaw.config.agent_config import AgentConfig
-from contextclaw.providers.protocol import LLMResponse, ToolCall
-from contextclaw.runner import AgentRunner
-from contextclaw.runtime import create_tools
-from contextclaw.sandbox.policy import PolicyEngine
-from contextclaw.sandbox.process import ProcessSandbox
-from contextclaw.tools.manager import ToolManager
+@lru_cache(maxsize=1)
+def _contextclaw() -> SimpleNamespace:
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "contextclaw"))
+    try:
+        from contextclaw.config.agent_config import AgentConfig
+        from contextclaw.providers.protocol import LLMResponse, ToolCall
+        from contextclaw.runner import AgentRunner
+        from contextclaw.runtime import create_tools
+        from contextclaw.sandbox.policy import PolicyEngine
+        from contextclaw.sandbox.process import ProcessSandbox
+        from contextclaw.tools.manager import ToolManager
+    except ModuleNotFoundError as exc:  # pragma: no cover - example guard
+        raise SystemExit(
+            "The ContextClaw promo example requires the local `contextclaw` package in this repository checkout."
+        ) from exc
+
+    return SimpleNamespace(
+        AgentConfig=AgentConfig,
+        AgentRunner=AgentRunner,
+        LLMResponse=LLMResponse,
+        PolicyEngine=PolicyEngine,
+        ProcessSandbox=ProcessSandbox,
+        ToolCall=ToolCall,
+        ToolManager=ToolManager,
+        create_tools=create_tools,
+    )
 
 
 class ScriptedProvider:
-    def __init__(self, responses: list[LLMResponse]) -> None:
+    def __init__(self, responses: list[object]) -> None:
         self._responses = list(responses)
 
-    def complete(self, messages: list, tools: list, system: str = "") -> LLMResponse:
+    def complete(self, messages: list[object], tools: list[object], system: str = "") -> object:
         if self._responses:
             return self._responses.pop(0)
-        return LLMResponse(content="Done.")
+        return _contextclaw().LLMResponse(content="Done.")
 
 
 class FakeKnowledge:
@@ -50,7 +71,7 @@ def print_header(title: str) -> None:
     print(f"\n========== {title} ==========")
 
 
-def print_agent_status(name: str, config: AgentConfig, *, linked: bool = False) -> None:
+def print_agent_status(name: str, config: Any, *, linked: bool = False) -> None:
     print(f"$ cclaw status {name}")
     print(f"Agent: {config.name}")
     print(f"Provider: {config.provider}")
@@ -63,6 +84,7 @@ def print_agent_status(name: str, config: AgentConfig, *, linked: bool = False) 
         print(f"Subagents: {config.subagents_path.name}")
     if config.checkpoint_path:
         print(f"Checkpoint: {config.checkpoint_path.relative_to(config.workspace)}")
+
 
 def write_mock_mcp_server(workspace: Path) -> Path:
     script = workspace / "mock_mcp_server.py"
@@ -116,6 +138,13 @@ for line in sys.stdin:
 
 
 async def run_orchestrator_agent(base: Path) -> None:
+    contextclaw = _contextclaw()
+    AgentConfig = contextclaw.AgentConfig
+    AgentRunner = contextclaw.AgentRunner
+    LLMResponse = contextclaw.LLMResponse
+    ToolCall = contextclaw.ToolCall
+    create_tools = contextclaw.create_tools
+
     print_header("Orchestrator Agent")
     workspace = base / "promo-orchestrator"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -136,13 +165,7 @@ async def run_orchestrator_agent(base: Path) -> None:
     )
     mcp_script = write_mock_mcp_server(workspace)
     (workspace / "mcp_servers.json").write_text(
-        json.dumps(
-            {
-                "servers": [
-                    {"name": "demo", "command": [sys.executable, str(mcp_script)]}
-                ]
-            }
-        ),
+        json.dumps({"servers": [{"name": "demo", "command": [sys.executable, str(mcp_script)]}]}),
         encoding="utf-8",
     )
     config = AgentConfig(
@@ -200,7 +223,7 @@ async def run_orchestrator_agent(base: Path) -> None:
         [LLMResponse(content="ContextClaw runs the agents. ContextGraph shares the memory.")]
     )
 
-    def provider_factory(subconfig: AgentConfig):
+    def provider_factory(subconfig: Any):
         if subconfig.name == "research-sub":
             return child_provider
         raise RuntimeError(f"Unexpected delegated agent: {subconfig.name}")
@@ -244,6 +267,14 @@ async def run_orchestrator_agent(base: Path) -> None:
 
 
 async def run_coder_agent(base: Path) -> None:
+    contextclaw = _contextclaw()
+    AgentConfig = contextclaw.AgentConfig
+    AgentRunner = contextclaw.AgentRunner
+    LLMResponse = contextclaw.LLMResponse
+    ProcessSandbox = contextclaw.ProcessSandbox
+    ToolCall = contextclaw.ToolCall
+    ToolManager = contextclaw.ToolManager
+
     print_header("Coder Agent")
     workspace = base / "promo-coder"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -257,9 +288,7 @@ async def run_coder_agent(base: Path) -> None:
         [
             LLMResponse(
                 content="I will run a quick sandboxed smoke check.",
-                tool_calls=[
-                    ToolCall(id="tc3", name="execute", arguments={"command": "printf 'smoke-test-ready\\n'"})
-                ],
+                tool_calls=[ToolCall(id="tc3", name="execute", arguments={"command": "printf 'smoke-test-ready\\n'"})],
             ),
             LLMResponse(content="The sandbox responded with smoke-test-ready."),
         ]
@@ -288,6 +317,14 @@ async def run_coder_agent(base: Path) -> None:
 
 
 async def run_memory_agent(base: Path) -> None:
+    contextclaw = _contextclaw()
+    AgentConfig = contextclaw.AgentConfig
+    AgentRunner = contextclaw.AgentRunner
+    LLMResponse = contextclaw.LLMResponse
+    PolicyEngine = contextclaw.PolicyEngine
+    ToolCall = contextclaw.ToolCall
+    ToolManager = contextclaw.ToolManager
+
     print_header("Memory Agent")
     workspace = base / "promo-memory"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -316,7 +353,9 @@ permissions:
                 content="I will try to run shell, but policy should stop me.",
                 tool_calls=[ToolCall(id="tc4", name="execute", arguments={"command": "pwd"})],
             ),
-            LLMResponse(content="Shell execution was blocked, which keeps this agent focused on memory and governance."),
+            LLMResponse(
+                content="Shell execution was blocked, which keeps this agent focused on memory and governance."
+            ),
         ]
     )
     tools = ToolManager()

@@ -20,6 +20,7 @@ from contextgraph.models import (
     ProvenanceEntry,
     Session,
     SessionEvent,
+    SessionStateEntry,
     StandingQuery,
     Subscription,
     SubscriptionTarget,
@@ -195,6 +196,8 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
             metadata={"workspace": "/tmp/project"},
             created_at=self.now,
             updated_at=self.now,
+            parent_session_id="ses_parent",
+            forked_from_checkpoint_id="chk_parent",
             latest_checkpoint_id="chk_1",
             latest_delta_pack_id="dpk_1",
             checkpoint_count=2,
@@ -238,6 +241,18 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
             restoration_instructions=["Start with the changed files."],
             included_event_ids=["evt_1"],
             event_count=9,
+            cache_status="prefix_hit",
+            cache_base_checkpoint_id="chk_parent",
+            reused_event_count=8,
+            recomputed_event_count=1,
+            invalidated_reasons=["snapshot_version_mismatch"],
+            state_snapshot={
+                "decisions": [SessionStateEntry(value="Keep the public API stable.", observed_at=self.now)],
+                "open_tasks": [SessionStateEntry(value="Ship resume hooks.", observed_at=self.now)],
+                "untrusted_items": [SessionStateEntry(value="Third-party benchmark", observed_at=self.now)],
+            },
+            state_snapshot_version="rdc_state_v1",
+            state_snapshot_event_count=9,
             diff=DeltaPackDiff(
                 added={"open_tasks": ["Ship resume hooks."]},
                 dropped={"resolved_items": ["Old TODO"]},
@@ -286,8 +301,18 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
         subscription_round_trip = self.repo._subscription_from_node(self.repo._serialize(subscription))
 
         self.assertEqual(session_round_trip.metadata["workspace"], "/tmp/project")
+        self.assertEqual(session_round_trip.parent_session_id, "ses_parent")
+        self.assertEqual(session_round_trip.forked_from_checkpoint_id, "chk_parent")
         self.assertEqual(event_round_trip.metadata["context_remaining_pct"], "10")
         self.assertEqual(delta_round_trip.diff.added["open_tasks"], ["Ship resume hooks."])
+        self.assertEqual(delta_round_trip.cache_status, "prefix_hit")
+        self.assertEqual(delta_round_trip.cache_base_checkpoint_id, "chk_parent")
+        self.assertEqual(delta_round_trip.reused_event_count, 8)
+        self.assertEqual(delta_round_trip.recomputed_event_count, 1)
+        self.assertEqual(delta_round_trip.invalidated_reasons, ["snapshot_version_mismatch"])
+        self.assertEqual(delta_round_trip.state_snapshot_version, "rdc_state_v1")
+        self.assertEqual(delta_round_trip.state_snapshot_event_count, 9)
+        self.assertEqual(delta_round_trip.state_snapshot["decisions"][0].value, "Keep the public API stable.")
         self.assertEqual(checkpoint_round_trip.base_checkpoint_id, "chk_0")
         self.assertIsNotNone(query_round_trip.pattern)
         self.assertEqual(query_round_trip.pattern.entities, ["payment"])

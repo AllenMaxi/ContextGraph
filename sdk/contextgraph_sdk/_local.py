@@ -6,6 +6,8 @@ from typing import Any
 from contextgraph.service import ContextGraphService
 from contextgraph.utils import to_jsonable
 
+from .memory_directory import strip_internal_delta_pack_fields
+
 
 @dataclass(slots=True)
 class LocalTransport:
@@ -244,8 +246,11 @@ class LocalTransport:
             )
         )
 
+    def fork_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return to_jsonable(self.service.fork_session(**payload))
+
     def record_session_event(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(self.service.record_session_event(**payload))
+        return strip_internal_delta_pack_fields(to_jsonable(self.service.record_session_event(**payload)))
 
     def list_session_events(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(
@@ -258,7 +263,7 @@ class LocalTransport:
     def checkpoint_session(self, payload: dict[str, Any]) -> dict[str, Any]:
         local_payload = dict(payload)
         local_payload["agent_id"] = local_payload.get("agent_id") or ""
-        return to_jsonable(self.service.checkpoint_session(**local_payload))
+        return strip_internal_delta_pack_fields(to_jsonable(self.service.checkpoint_session(**local_payload)))
 
     def list_compaction_checkpoints(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return to_jsonable(
@@ -269,10 +274,12 @@ class LocalTransport:
         )
 
     def resume_session(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return to_jsonable(
-            self.service.resume_session(
-                requester_agent_id=payload.get("agent_id") or "",
-                session_id=payload["session_id"],
+        return strip_internal_delta_pack_fields(
+            to_jsonable(
+                self.service.resume_session(
+                    requester_agent_id=payload.get("agent_id") or "",
+                    session_id=payload["session_id"],
+                )
             )
         )
 

@@ -56,3 +56,6 @@ neo4j_data/
 
 # Superpowers
 .superpowers/
+
+# Repo-local memory directory
+.contextgraph/

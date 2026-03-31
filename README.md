@@ -7,7 +7,7 @@
 <p align="center">
   <strong>Stop losing agent context.</strong><br>
   ContextGraph is the memory backend for coding agents and multi-agent teams.<br>
-  Capture durable facts, compile trusted context packs, and survive compaction with reactive delta checkpoints.
+  Capture durable facts, compile trusted context packs, and make agent state visible with reactive checkpoints and repo-local memory directories.
 </p>
 
 <p align="center">
@@ -44,6 +44,8 @@ ContextGraph is built for the gap between those two:
 - **governed shared memory** so agents can reuse facts without losing provenance, freshness, or access control
 - **context packs** so agents get token-budgeted, explainable context instead of opaque recall results
 - **reactive delta compaction** so coding agents can checkpoint decisions, open tasks, blockers, and changed files before the context window collapses
+- **branch-aware context cache** so child sessions can reuse shared checkpoint prefixes instead of recompiling everything from scratch
+- **`.contextgraph/` memory directories** so the latest session state is inspectable in the repo, not trapped inside one response payload
 
 If you want memory that is inspectable, team-safe, and useful during real work, this is the wedge.
 
@@ -53,9 +55,10 @@ The fastest path to understand the repo is:
 
 1. run the 2-minute setup in [`examples/beta_quickstart.py`](examples/beta_quickstart.py)
 2. run the coding-agent continuity demo in [`examples/reactive_delta_compaction_demo.py`](examples/reactive_delta_compaction_demo.py)
-3. run the governed retrieval demo in [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
-4. skim the hook protocol in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md)
-5. check the production notes in [`docs/production-readiness.md`](docs/production-readiness.md)
+3. inspect the generated `.contextgraph/` folder from that demo to see resume prompts, open tasks, failures, and branch/cache metadata
+4. run the governed retrieval demo in [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
+5. skim the hook protocol in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md)
+6. check the production notes in [`docs/production-readiness.md`](docs/production-readiness.md)
 
 Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
 
@@ -93,6 +96,8 @@ print(hits[0]["claim"]["statement"])
 ## What Ships Today
 
 - **reactive delta compaction**: checkpoint coding sessions from structured events and restore them across compaction boundaries
+- **branch-aware context cache**: fork sessions from a checkpoint and reuse the inherited structured state on each branch checkpoint
+- **repo-local memory directory**: sync the latest durable session state into `.contextgraph/` for human review, handoff, and hook-driven workflows
 - **context compiler**: compile governed, token-budgeted context packs from mixed agent memory
 - **governed shared memory**: store and recall claims with provenance, freshness, review state, and ACLs
 - **explainable retrieval**: inspect why a claim was included, excluded, locked, or filtered
@@ -116,8 +121,17 @@ Instead of collapsing a long session into one fragile summary, ContextGraph reco
 - failures and resolved items
 - changed files and important artifacts
 - restoration prompts and instructions
+- cache metadata showing whether a checkpoint reused an inherited prefix or fell back to full recomputation
+- a repo-local `.contextgraph/` directory that makes the current state visible in the workspace
 
 This makes compaction feel more like `git diff` for agent context than “rewrite the whole conversation and hope.”
+
+Now it also supports **branch-aware context cache**:
+
+- fork a session from any checkpoint
+- inherit the parent checkpoint's reduced state snapshot
+- recompute only the new branch events
+- expose cache hits, reuse counts, and invalidation reasons in the delta pack
 
 **Real use case: payment-service refactor**
 
@@ -159,6 +173,65 @@ result = client.record_session_event(
 
 print(result["checkpoint"]["checkpoint_id"])
 print(result["delta_pack"]["restoration_prompt"])
+```
+
+Branching from a checkpoint is just as direct:
+
+```python
+base = client.checkpoint_session(agent["agent_id"], session["session_id"])
+branch = client.fork_session(agent["agent_id"], session["session_id"], title="grpc-branch")
+
+client.record_session_event(
+    agent["agent_id"],
+    branch["session_id"],
+    "file_change",
+    "Updated contextgraph/service.py",
+    metadata={"path": "contextgraph/service.py"},
+)
+child = client.checkpoint_session(agent["agent_id"], branch["session_id"])
+
+print(child["cache_status"])             # prefix_hit
+print(child["cache_base_checkpoint_id"]) # base checkpoint ID
+print(child["reused_event_count"])       # inherited event count
+```
+
+### `.contextgraph/` Memory Directory
+
+When a session knows its workspace path, ContextGraph can sync the latest state into a repo-local `.contextgraph/` directory.
+
+That directory includes:
+
+- `session.json`
+- `latest_delta_pack.json`
+- `doctor.json`
+- `resume_prompt.md`
+- `restoration_instructions.md`
+- `decisions.md`
+- `constraints.md`
+- `open_tasks.md`
+- `failures.md`
+- `changed_files.md`
+- `important_artifacts.md`
+
+This makes the branch/cache story tangible:
+
+- a coding agent can survive `/compact`
+- another agent can reopen the repo and read the exact open tasks and failures
+- a reviewer can inspect which checkpoint a branch inherited from and whether it was a cache `prefix_hit`
+
+```python
+client.sync_memory_directory(
+    agent["agent_id"],
+    branch["session_id"],
+    workspace_path="/path/to/repo",
+)
+```
+
+```bash
+cg session start --title "Payments refactor" --source claude-code --workspace "$PWD"
+cg checkpoint --reason manual
+cg memdir sync
+ls .contextgraph
 ```
 
 Hook adapters and the JSON protocol are documented in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md).
@@ -500,33 +573,6 @@ python3 examples/dashboard_demo_seed.py
 # Then open http://localhost:8420/dashboard
 ```
 
-### ContextClaw Runtime Demo
-
-[![ContextClaw promo demo](docs/assets/contextclaw-promo.gif)](docs/assets/contextclaw-promo.mp4)
-
-ContextClaw is the complementary runtime/orchestrator layer for ContextGraph.
-The promo demo shows:
-
-- role-specific agents
-- built-in plus deep-agent-style filesystem, web, shell, and planning tools
-- policy-gated execution with operator approval
-- session checkpoints for long-lived agents
-- sub-agent delegation through the `task` tool
-- MCP registry loading and MCP tool invocation
-
-Current scope: the runtime pieces are in place and working well. The main gap
-remaining is a broader first-party connector or MCP catalog and a larger
-library of packaged skills.
-
-Run the deterministic local demo:
-
-```bash
-python3 examples/contextclaw_promo.py
-python3 scripts/render_contextclaw_promo.py
-```
-
----
-
 ## Quickstart
 
 ### Install
@@ -543,6 +589,7 @@ pip install -e ".[server,mcp,dev]"
 
 ```bash
 python3 examples/beta_quickstart.py
+python3 examples/reactive_delta_compaction_demo.py
 ```
 
 That gives you the shortest possible proof that ContextGraph can:
@@ -550,6 +597,7 @@ That gives you the shortest possible proof that ContextGraph can:
 - store one governed memory
 - add a review/trust signal
 - recall it from another agent with provenance and policy context
+- checkpoint coding-agent state and materialize it into `.contextgraph/`
 
 ### 10-Minute Evaluation Path
 
@@ -663,6 +711,12 @@ cg notifications
 # Governance
 cg sentinel health
 cg sentinel verdicts --status dispute
+
+# Coding-agent continuity
+cg session start --title "Payments refactor" --source claude-code --workspace "$PWD"
+cg checkpoint --reason manual
+cg resume
+cg memdir sync
 
 # Server status
 cg status

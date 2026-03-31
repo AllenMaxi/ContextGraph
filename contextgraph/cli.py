@@ -128,6 +128,30 @@ def _json_out(data: Any) -> None:
     print(json.dumps(data, indent=2, default=str))
 
 
+def _sync_memdir(
+    client: Any,
+    *,
+    session_id: str,
+    workspace_path: str | None = None,
+    include_doctor: bool = True,
+    fail_hard: bool = False,
+    reason: str = "",
+) -> dict[str, Any] | None:
+    try:
+        return client.sync_memory_directory(
+            _agent_id(),
+            session_id,
+            workspace_path=workspace_path,
+            include_doctor=include_doctor,
+        )
+    except Exception as exc:
+        if fail_hard:
+            _err(str(exc))
+        suffix = f" after {reason}" if reason else ""
+        _warn(f"Skipped .contextgraph sync{suffix}: {exc}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # auth commands
 # ---------------------------------------------------------------------------
@@ -758,6 +782,13 @@ def cmd_session_start(args: argparse.Namespace, client: Any) -> None:
     )
     if args.activate:
         _set_active_session(result["session_id"])
+    if args.workspace:
+        _sync_memdir(
+            client,
+            session_id=result["session_id"],
+            workspace_path=args.workspace,
+            reason="session start",
+        )
 
     if args.json:
         _json_out(result)
@@ -783,7 +814,35 @@ def cmd_session_show(args: argparse.Namespace, client: Any) -> None:
     print(f"  {_bold('Source:')}      {result['source']}")
     print(f"  {_bold('Events:')}      {result['event_count']}")
     print(f"  {_bold('Checkpoints:')} {result['checkpoint_count']}")
+    if result.get("parent_session_id"):
+        print(f"  {_bold('Parent:')}      {result['parent_session_id']}")
+    if result.get("forked_from_checkpoint_id"):
+        print(f"  {_bold('Fork base:')}   {result['forked_from_checkpoint_id']}")
     print(f"  {_bold('Updated:')}     {_dim(str(result['updated_at']))}")
+
+
+def cmd_session_fork(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = client.fork_session(
+        agent_id=_agent_id(),
+        session_id=session_id,
+        from_checkpoint_id=args.from_checkpoint,
+        title=args.title,
+    )
+    if args.activate:
+        _set_active_session(result["session_id"])
+    _sync_memdir(client, session_id=result["session_id"], reason="session fork")
+
+    if args.json:
+        _json_out(result)
+        return
+
+    _ok(f"Forked session {CYAN}{result['session_id']}{RESET}{GREEN}")
+    print(f"  {_bold('Title:')}      {result['title']}")
+    print(f"  {_bold('Parent:')}     {result['parent_session_id']}")
+    print(f"  {_bold('Fork base:')}  {result['forked_from_checkpoint_id']}")
+    if args.activate:
+        print(f"  {_bold('Active:')}     saved as the default session in {CONFIG_FILE}")
 
 
 def cmd_session_event(args: argparse.Namespace, client: Any) -> None:
@@ -805,6 +864,8 @@ def cmd_session_event(args: argparse.Namespace, client: Any) -> None:
         token_budget=args.token_budget,
         checkpoint_reason=args.checkpoint_reason,
     )
+    if result.get("checkpoint"):
+        _sync_memdir(client, session_id=session_id, reason="auto-checkpoint")
     if args.json:
         _json_out(result)
         return
@@ -824,6 +885,7 @@ def cmd_checkpoint(args: argparse.Namespace, client: Any) -> None:
         reason=args.reason,
         token_budget=args.token_budget,
     )
+    _sync_memdir(client, session_id=session_id, reason="checkpoint")
     if args.json:
         _json_out(pack)
         return
@@ -832,7 +894,17 @@ def cmd_checkpoint(args: argparse.Namespace, client: Any) -> None:
     print(f"  {_bold('Delta Pack:')}  {pack['delta_pack_id']}")
     print(f"  {_bold('Reason:')}      {pack['checkpoint_reason']}")
     print(f"  {_bold('Tokens:')}      {pack['tokens_used']} / {pack['token_budget']}")
+    print(f"  {_bold('Cache:')}       {pack.get('cache_status', 'miss')}")
+    if pack.get("cache_base_checkpoint_id"):
+        print(f"  {_bold('Cache base:')}  {pack['cache_base_checkpoint_id']}")
+    print(
+        f"  {_bold('Reuse:')}       {pack.get('reused_event_count', 0)} reused, {pack.get('recomputed_event_count', 0)} recomputed"
+    )
     print(f"  {_bold('Summary:')}     {pack['summary'] or '<empty>'}")
+    if pack.get("invalidated_reasons"):
+        print(f"  {_bold('Invalidated:')}")
+        for item in pack["invalidated_reasons"]:
+            print(f"    - {item}")
     if pack.get("restoration_instructions"):
         print(f"  {_bold('Instructions:')}")
         for item in pack["restoration_instructions"]:
@@ -842,6 +914,7 @@ def cmd_checkpoint(args: argparse.Namespace, client: Any) -> None:
 def cmd_resume(args: argparse.Namespace, client: Any) -> None:
     session_id = _session_id(args.session)
     result = client.resume_session(_agent_id(), session_id)
+    _sync_memdir(client, session_id=session_id, reason="resume")
     if args.json:
         _json_out(result)
         return
@@ -850,10 +923,17 @@ def cmd_resume(args: argparse.Namespace, client: Any) -> None:
     pack = result.get("delta_pack")
     print(_bold("Resume"))
     print(f"  {_bold('Session:')} {CYAN}{session['session_id']}{RESET}  {session['title']}")
+    if session.get("parent_session_id"):
+        print(f"  {_bold('Parent:')}  {session['parent_session_id']}")
+    if session.get("forked_from_checkpoint_id"):
+        print(f"  {_bold('Fork base:')} {session['forked_from_checkpoint_id']}")
     if not pack:
         _warn("No checkpoint available yet for this session.")
         return
     print(f"  {_bold('Checkpoint:')} {pack['checkpoint_id']}")
+    print(f"  {_bold('Cache:')}      {pack.get('cache_status', 'miss')}")
+    if pack.get("cache_base_checkpoint_id"):
+        print(f"  {_bold('Cache base:')} {pack['cache_base_checkpoint_id']}")
     print(f"  {_bold('Summary:')}    {pack['summary'] or '<empty>'}")
     print()
     print(pack["restoration_prompt"] or "No restoration prompt available.")
@@ -903,10 +983,37 @@ def cmd_doctor_memory(args: argparse.Namespace, client: Any) -> None:
     print(f"  {_bold('Failures:')}    {result['failure_count']}")
     print(f"  {_bold('Stale:')}       {result['stale_item_count']}")
     print(f"  {_bold('Untrusted:')}   {result['untrusted_item_count']}")
+    print(f"  {_bold('Branch:')}      {'yes' if result.get('branch_backed') else 'no'}")
+    if result.get("latest_cache_status"):
+        print(f"  {_bold('Last cache:')}  {result['latest_cache_status']}")
+    print(f"  {_bold('Likely reuse:')} {'yes' if result.get('likely_prefix_reuse') else 'no'}")
     if result.get("warnings"):
         print(f"\n{_bold('Warnings')}")
         for item in result["warnings"]:
             print(f"  - {item}")
+
+
+def cmd_memdir_sync(args: argparse.Namespace, client: Any) -> None:
+    session_id = _session_id(args.session)
+    result = _sync_memdir(
+        client,
+        session_id=session_id,
+        workspace_path=args.workspace,
+        fail_hard=True,
+        reason="manual sync",
+    )
+    if result is None:
+        return
+
+    if args.json:
+        _json_out(result)
+        return
+
+    _ok(f"Synced {CYAN}{result['directory_path']}{RESET}{GREEN}")
+    print(f"  {_bold('Session:')}    {result['session_id']}")
+    print(f"  {_bold('Checkpoint:')} {result.get('checkpoint_id') or '<none>'}")
+    print(f"  {_bold('Cache:')}      {result.get('cache_status') or '<none>'}")
+    print(f"  {_bold('Files:')}      {len(result.get('files_written', []))}")
     if result.get("recommendations"):
         print(f"\n{_bold('Recommendations')}")
         for item in result["recommendations"]:
@@ -1061,6 +1168,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     session_show_parser = session_sub.add_parser("show", help="Show the active or specified session")
     session_show_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    session_fork_parser = session_sub.add_parser("fork", help="Fork a session from the latest or specified checkpoint")
+    session_fork_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    session_fork_parser.add_argument("--from-checkpoint", default=None, help="Checkpoint ID to fork from")
+    session_fork_parser.add_argument("--title", default=None, help="Optional branch session title")
+    session_fork_parser.add_argument(
+        "--activate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save the forked session as the default session",
+    )
     session_event_parser = session_sub.add_parser("event", help="Record a structured session event")
     session_event_parser.add_argument("event_type", help="Event type such as decision, todo, failure, file_change")
     session_event_parser.add_argument("content", help="Event content")
@@ -1095,6 +1212,13 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor_sub = doctor_parser.add_subparsers(dest="doctor_command")
     doctor_memory_parser = doctor_sub.add_parser("memory", help="Inspect reactive delta compaction health")
     doctor_memory_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+
+    # --- memdir ---
+    memdir_parser = subparsers.add_parser("memdir", help="Sync the repo-local .contextgraph memory directory")
+    memdir_sub = memdir_parser.add_subparsers(dest="memdir_command")
+    memdir_sync_parser = memdir_sub.add_parser("sync", help="Write the latest session state into .contextgraph/")
+    memdir_sync_parser.add_argument("--session", default=None, help="Session ID (defaults to the active session)")
+    memdir_sync_parser.add_argument("--workspace", default=None, help="Explicit workspace path override")
 
     return parser
 
@@ -1200,10 +1324,12 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             cmd_session_start(args, client)
         elif sub == "show":
             cmd_session_show(args, client)
+        elif sub == "fork":
+            cmd_session_fork(args, client)
         elif sub == "event":
             cmd_session_event(args, client)
         else:
-            _err("Usage: cg session {start|show|event}")
+            _err("Usage: cg session {start|show|fork|event}")
         return
 
     if cmd == "doctor":
@@ -1212,6 +1338,14 @@ def _dispatch(args: argparse.Namespace, client: Any) -> None:
             cmd_doctor_memory(args, client)
         else:
             _err("Usage: cg doctor memory")
+        return
+
+    if cmd == "memdir":
+        sub = getattr(args, "memdir_command", None)
+        if sub == "sync":
+            cmd_memdir_sync(args, client)
+        else:
+            _err("Usage: cg memdir sync")
         return
 
     handler = _DISPATCH.get(cmd)

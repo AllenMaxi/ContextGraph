@@ -48,6 +48,7 @@ from .schemas import (
     SessionEventRequest,
     SessionEventResponse,
     SessionEventResultResponse,
+    SessionForkRequest,
     SessionResponse,
     SessionResumeResponse,
     StandingQueryResponse,
@@ -631,6 +632,27 @@ def register_routes(app: Any, graph: ContextGraphService) -> None:
     @app.get("/v1/sessions/{session_id}", response_model=SessionResponse)
     def get_session(session_id: str, authenticated: Any = Depends(authenticated_agent)) -> Any:
         return to_jsonable(graph.get_session(authenticated.agent_id, session_id))
+
+    @app.post("/v1/sessions/{session_id}/fork", response_model=SessionResponse, status_code=201)
+    def fork_session(
+        session_id: str,
+        payload: SessionForkRequest,
+        authenticated: Any = Depends(authenticated_agent),
+    ) -> Any:
+        if payload.agent_id:
+            require_same_agent(
+                authenticated,
+                payload.agent_id,
+                "Authenticated agent does not match the requested agent_id.",
+            )
+        return to_jsonable(
+            graph.fork_session(
+                agent_id=authenticated.agent_id,
+                session_id=session_id,
+                from_checkpoint_id=payload.from_checkpoint_id,
+                title=payload.title,
+            )
+        )
 
     @app.post("/v1/sessions/{session_id}/events", response_model=SessionEventResultResponse)
     def record_session_event(
