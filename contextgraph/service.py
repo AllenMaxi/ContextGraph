@@ -120,10 +120,13 @@ class ContextGraphService:
             handler=self._process_job,
             poll_interval_seconds=self.settings.background_worker_poll_seconds,
         )
+        self._last_consolidation_result: dict[str, int] = {}
         if self.settings.enable_background_worker:
             self._background_worker.start()
             if self.settings.enable_claim_expiry_sweeps:
                 self._schedule_claim_expiry_sweep(self.settings.claim_expiry_sweep_seconds)
+            if self.settings.enable_memory_consolidation:
+                self._schedule_memory_consolidation(self.settings.memory_consolidation_interval_hours * 3600.0)
         if self.settings.sentinel_enabled:
             self._register_sentinels()
 
@@ -1783,6 +1786,7 @@ class ContextGraphService:
             ),
             "job_status_counts": status_counts,
             "health": self.health(),
+            "last_consolidation": self._last_consolidation_result or {},
         }
 
     def list_audit_entries(self, requester_agent_id: str) -> list[AuditEntry]:
@@ -2701,6 +2705,19 @@ class ContextGraphService:
             delay_seconds,
             lambda: self.enqueue_claim_expiry_sweep(recurring=True),
         )
+
+    def _schedule_memory_consolidation(self, delay_seconds: float) -> None:
+        if self._closing or not self.settings.enable_memory_consolidation:
+            return
+
+        def _run_and_reschedule() -> None:
+            try:
+                self._last_consolidation_result = self.run_memory_consolidation()
+            except Exception:
+                logger.exception("Memory consolidation sweep failed")
+            self._schedule_memory_consolidation(delay_seconds)
+
+        self._schedule_callback(delay_seconds, _run_and_reschedule)
 
     def _cancel_timers(self) -> None:
         with self._job_lock:
