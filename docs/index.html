@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ContextGraph | Memory Backend for Coding Agents</title>
+    <meta
+      name="description"
+      content="Checkpoint, resume, branch, and inspect coding-agent context without losing the plot."
+    >
+    <meta
+      property="og:title"
+      content="ContextGraph | Memory Backend for Coding Agents"
+    >
+    <meta
+      property="og:description"
+      content="Reactive delta compaction, branch-aware context cache, and repo-local .contextgraph memory directories."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="./assets/contextgraph-social-preview.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta
+      name="twitter:title"
+      content="ContextGraph | Memory Backend for Coding Agents"
+    >
+    <meta
+      name="twitter:description"
+      content="Checkpoint, resume, branch, and inspect coding-agent context without losing the plot."
+    >
+    <meta name="twitter:image" content="./assets/contextgraph-social-preview.png">
+    <link rel="icon" href="./assets/logo.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="./assets/contextgraph-social-preview.png">
+    <link rel="apple-touch-icon" href="./assets/contextgraph-social-preview.png">
+    <link rel="stylesheet" href="./landing.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <a class="brand" href="https://github.com/AllenMaxi/ContextGraph">
+          <span class="brand-mark" aria-hidden="true">
+            <img src="./assets/logo.svg" alt="" class="brand-logo">
+          </span>
+          <span class="brand-text">ContextGraph</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#use-case">Use Case</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#demo">Demo</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Memory backend for coding agents</p>
+            <h1>Checkpoint, resume, branch, and inspect agent context without losing the plot.</h1>
+            <p class="hero-text">
+              ContextGraph preserves durable working state when coding agents hit compaction pressure.
+              It stores decisions, open tasks, failures, changed files, and restoration instructions,
+              then makes that state visible inside the repo through <code>.contextgraph/</code>.
+            </p>
+            <div class="hero-actions">
+              <a
+                class="button button-primary"
+                href="https://github.com/AllenMaxi/ContextGraph#quickstart"
+              >
+                Try the quickstart
+              </a>
+              <a
+                class="button button-secondary"
+                href="https://github.com/AllenMaxi/ContextGraph"
+              >
+                View on GitHub
+              </a>
+            </div>
+            <ul class="hero-signals" aria-label="Proof points">
+              <li>Reactive delta compaction</li>
+              <li>Branch-aware context cache</li>
+              <li>Repo-local <code>.contextgraph/</code></li>
+            </ul>
+          </div>
+          <div class="hero-visual">
+            <div class="hero-card">
+              <img
+                src="./assets/contextgraph-hero.jpeg"
+                alt="ContextGraph launch artwork"
+                class="hero-image"
+              >
+              <div class="hero-card-caption">
+                <span>Built for compaction-safe coding workflows</span>
+                <span>Self-hosted, inspectable, GitHub-native</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="why-now">
+          <div class="section-heading">
+            <p class="section-kicker">Why now</p>
+            <h2>Most agent memory still breaks exactly when work gets complicated.</h2>
+          </div>
+          <div class="why-grid">
+            <article class="why-card">
+              <h3>Raw vector memory is not working state</h3>
+              <p>
+                Searchable text is useful, but it does not preserve the live decisions, blockers, and changed files
+                that an agent needs after compaction.
+              </p>
+            </article>
+            <article class="why-card">
+              <h3>One summary is too lossy</h3>
+              <p>
+                Compressing an entire session into one paragraph hides what is still open, what failed, and what
+                should not be changed.
+              </p>
+            </article>
+            <article class="why-card">
+              <h3>ContextGraph keeps durable state visible</h3>
+              <p>
+                It checkpoints structured session state, reuses branch prefixes cheaply, and writes the latest state
+                into the repo so both humans and agents can inspect it.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="features" class="features">
+          <div class="section-heading">
+            <p class="section-kicker">Core features</p>
+            <h2>A sharper alternative to “summarize and hope.”</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card">
+              <h3>Reactive Delta Compaction</h3>
+              <p>
+                Record decisions, constraints, tasks, failures, files, and artifacts as structured events, then emit
+                deterministic delta packs when context gets tight.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3>Branch-Aware Context Cache</h3>
+              <p>
+                Fork from a checkpoint and reuse the shared reduced prefix so child branches recompute only their new
+                work instead of rebuilding the whole session state.
+              </p>
+            </article>
+            <article class="feature-card">
+              <h3><code>.contextgraph/</code> Memory Directory</h3>
+              <p>
+                Materialize the latest session into readable repo-local files like <code>resume_prompt.md</code>,
+                <code>open_tasks.md</code>, and <code>failures.md</code>.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section id="use-case" class="use-case">
+          <div class="section-heading">
+            <p class="section-kicker">Real-world use case</p>
+            <h2>A coding agent is refactoring a payment service and the context window is collapsing.</h2>
+          </div>
+          <div class="use-case-grid">
+            <div class="use-case-copy">
+              <p>
+                The agent records durable events during the session: “keep the public REST API stable”, “do not break
+                SDK compatibility”, “resume-path regression is failing”, “add migration tests”, and the files that
+                changed.
+              </p>
+              <p>
+                When compaction hits, ContextGraph checkpoints that state instead of rewriting the whole chat. If the
+                work branches, the new session reuses the inherited prefix. If another agent takes over tomorrow,
+                it can reopen the repo and inspect <code>.contextgraph/</code> immediately.
+              </p>
+            </div>
+            <div class="use-case-panel">
+              <h3>What survives compaction</h3>
+              <ul>
+                <li>Confirmed decisions</li>
+                <li>Active constraints</li>
+                <li>Open tasks and blockers</li>
+                <li>Changed files</li>
+                <li>Restoration prompt and instructions</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="how-it-works" class="how-it-works">
+          <div class="section-heading">
+            <p class="section-kicker">How it works</p>
+            <h2>One memory layer for agent continuity.</h2>
+          </div>
+          <div class="steps">
+            <article class="step-card">
+              <span class="step-number">01</span>
+              <h3>Track structured session events</h3>
+              <p>Record decisions, tasks, failures, commands, artifacts, and file changes as durable state.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-number">02</span>
+              <h3>Checkpoint when context pressure hits</h3>
+              <p>Emit a delta pack instead of rewriting the whole conversation into one fragile summary.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-number">03</span>
+              <h3>Reuse shared branch prefixes</h3>
+              <p>Fork sessions from checkpoints and recompute only the branch-specific delta.</p>
+            </article>
+            <article class="step-card">
+              <span class="step-number">04</span>
+              <h3>Inspect the repo-local memory</h3>
+              <p>Open <code>.contextgraph/</code> to review the latest prompt, failures, open work, and cache state.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="demo" class="demo">
+          <div class="section-heading">
+            <p class="section-kicker">Proof</p>
+            <h2>See the product story in one screen.</h2>
+          </div>
+          <div class="demo-grid">
+            <article class="demo-card">
+              <div class="media-frame">
+                <img
+                  src="./assets/contextgraph-demo.gif"
+                  alt="Governed memory demo"
+                  loading="lazy"
+                >
+              </div>
+              <div class="demo-copy">
+                <h3>Governed memory</h3>
+                <p>Store, review, and recall memory with provenance, visibility, and policy intact.</p>
+              </div>
+            </article>
+            <article class="demo-card">
+              <div class="media-frame">
+                <img
+                  src="./assets/contextgraph-dashboard-demo.gif"
+                  alt="ContextGraph dashboard demo"
+                  loading="lazy"
+                >
+              </div>
+              <div class="demo-copy">
+                <h3>Operator visibility</h3>
+                <p>Inspect trust, memory state, and shared knowledge through a dashboard built for teams.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="cta-strip">
+          <div class="cta-copy">
+            <p class="section-kicker">Try it</p>
+            <h2>Use the quickstart if you want the fastest proof. Open the README if you want the full story.</h2>
+          </div>
+          <div class="cta-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/AllenMaxi/ContextGraph#quickstart"
+            >
+              Try the quickstart
+            </a>
+            <a
+              class="button button-secondary"
+              href="https://github.com/AllenMaxi/ContextGraph/blob/main/docs/reactive-delta-compaction.md"
+            >
+              Read reactive delta docs
+            </a>
+            <a
+              class="button button-tertiary"
+              href="https://github.com/AllenMaxi/ContextGraph/blob/main/README.md"
+            >
+              Read the README
+            </a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <p>ContextGraph is open source and self-hosted.</p>
+        <div class="footer-links">
+          <a href="https://github.com/AllenMaxi/ContextGraph">GitHub</a>
+          <a href="https://github.com/AllenMaxi/ContextGraph/blob/main/examples/beta_quickstart.py">Quickstart</a>
+          <a href="https://github.com/AllenMaxi/ContextGraph/blob/main/docs/reactive-delta-compaction.md">
+            Reactive Delta Docs
+          </a>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
