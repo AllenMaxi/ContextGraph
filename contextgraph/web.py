@@ -8,6 +8,7 @@ from typing import Any
 from .api._compat import FastAPI, JSONResponse
 from .api.console import register_console_routes
 from .api.dashboard import register_dashboard_routes
+from .api.playground import register_playground_routes
 from .api.routes import register_routes
 from .bootstrap import create_service
 from .errors import AuthenticationError, ContextGraphError, NotFoundError, PaymentRequiredError, PermissionDeniedError
@@ -79,6 +80,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
     register_routes(app, graph)
     register_console_routes(app, graph)
+    register_playground_routes(app, graph)
     if app_settings.enable_dashboard:
         register_dashboard_routes(app, graph)
     if app_settings.enable_streaming:
