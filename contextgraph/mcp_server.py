@@ -246,6 +246,111 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    {
+        "name": "contextgraph_session_start",
+        "description": (
+            "Start a new coding session in ContextGraph. "
+            "Returns a session object with a session_id for recording events and checkpoints."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Human-readable title for the session.",
+                    "default": "",
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Source tool identifier (e.g. 'claude-code', 'cursor').",
+                    "default": "mcp",
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": "Arbitrary key/value metadata for the session.",
+                    "default": {},
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "contextgraph_session_event",
+        "description": (
+            "Record a structured event in a coding session. "
+            "Event types include: decision, constraint, todo, failure, resolved_item, "
+            "file_change, command, note, artifact, external_reference, context_pressure."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session to record the event in.",
+                },
+                "event_type": {
+                    "type": "string",
+                    "description": "Type of event (decision, constraint, todo, failure, etc.).",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Event content.",
+                    "default": "",
+                },
+                "auto_checkpoint": {
+                    "type": "boolean",
+                    "description": "Automatically checkpoint after this event.",
+                    "default": False,
+                },
+            },
+            "required": ["session_id", "event_type"],
+        },
+    },
+    {
+        "name": "contextgraph_checkpoint",
+        "description": (
+            "Checkpoint a coding session, compiling all events since the last checkpoint "
+            "into a structured delta pack with decisions, tasks, failures, and restoration instructions."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session to checkpoint.",
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Reason for the checkpoint.",
+                    "default": "manual",
+                },
+                "token_budget": {
+                    "type": "integer",
+                    "description": "Token budget for the delta pack.",
+                    "default": 1600,
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    {
+        "name": "contextgraph_resume",
+        "description": (
+            "Resume a coding session by retrieving the latest checkpoint and delta pack. "
+            "Returns the session state, restoration prompt, and structured context for continuing work."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "The session to resume.",
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
 ]
 
 
@@ -375,6 +480,41 @@ def _dispatch_tool(
             include_explanations=arguments.get("include_explanations", False),
         )
         return _serialize(pack)
+
+    if tool_name == "contextgraph_session_start":
+        session = service.create_session(
+            agent_id=agent_id,
+            title=arguments.get("title", ""),
+            source=arguments.get("source", "mcp"),
+            metadata=arguments.get("metadata"),
+        )
+        return _serialize(session)
+
+    if tool_name == "contextgraph_session_event":
+        result = service.record_session_event(
+            agent_id=agent_id,
+            session_id=arguments["session_id"],
+            event_type=arguments["event_type"],
+            content=arguments.get("content", ""),
+            auto_checkpoint=arguments.get("auto_checkpoint", False),
+        )
+        return _serialize(result)
+
+    if tool_name == "contextgraph_checkpoint":
+        pack = service.checkpoint_session(
+            agent_id=agent_id,
+            session_id=arguments["session_id"],
+            reason=arguments.get("reason", "manual"),
+            token_budget=arguments.get("token_budget", 1600),
+        )
+        return _serialize(pack)
+
+    if tool_name == "contextgraph_resume":
+        resume = service.resume_session(
+            requester_agent_id=agent_id,
+            session_id=arguments["session_id"],
+        )
+        return _serialize(resume)
 
     raise ValueError(f"Unknown tool: {tool_name}")
 

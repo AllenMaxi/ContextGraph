@@ -53,6 +53,21 @@ class TestCompileContextBasic(unittest.TestCase):
         statements = [c.statement for c in pack.included_claims]
         self.assertTrue(any("Alice" in s for s in statements))
 
+    def test_compression_ratio_computed(self) -> None:
+        self.service.store_memory(
+            agent_id=self.agent.agent_id,
+            content="The deployment pipeline uses Docker containers orchestrated by Kubernetes for all production services.",
+            visibility="private",
+        )
+        pack = self.service.compile_context(
+            agent_id=self.agent.agent_id,
+            query="deployment Docker Kubernetes",
+            token_budget=4000,
+        )
+        if pack.included_claims:
+            self.assertGreater(pack.source_tokens, 0)
+            self.assertGreater(pack.compression_ratio, 0.0)
+
     def test_compile_generates_summary(self) -> None:
         self.service.store_memory(
             agent_id=self.agent.agent_id,

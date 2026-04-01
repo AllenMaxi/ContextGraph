@@ -81,6 +81,11 @@ class Settings:
     # Agent Lifecycle
     agent_idle_threshold_days: int = _read_int("CG_AGENT_IDLE_THRESHOLD_DAYS", 30)
     agent_idle_scan_interval_hours: int = _read_int("CG_AGENT_IDLE_SCAN_INTERVAL_HOURS", 24)
+    # Skeptical Memory
+    claim_staleness_threshold_days: int = _read_int("CG_CLAIM_STALENESS_THRESHOLD_DAYS", 14)
+    # Memory Consolidation
+    enable_memory_consolidation: bool = _read_bool("CG_ENABLE_MEMORY_CONSOLIDATION", False)
+    memory_consolidation_interval_hours: int = _read_int("CG_MEMORY_CONSOLIDATION_INTERVAL_HOURS", 24)
     # Sentinel Pipeline
     sentinel_enabled: bool = _read_bool("CG_SENTINEL_ENABLED", True)
     sentinel_audit_depth: str = os.getenv("CG_SENTINEL_AUDIT_DEPTH", "auto")

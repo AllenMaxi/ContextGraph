@@ -498,6 +498,7 @@ class ContextPackClaimResponse(BaseModel):
     source_memory_section: str = ""
     source_label: str = ""
     locked: bool = False
+    staleness_warning: str = ""
 
 
 class ContextPackSourceResponse(BaseModel):
@@ -539,6 +540,9 @@ class ContextPackResponse(BaseModel):
     sources: list[ContextPackSourceResponse] = Field(default_factory=list)
     token_budget: int
     tokens_used: int
+    source_tokens: int = 0
+    compression_ratio: float = 0.0
+    stale_claim_count: int = 0
     generated_at: datetime
     explanation: ContextPackExplanationResponse | None = None
 

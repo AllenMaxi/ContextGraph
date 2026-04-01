@@ -3130,6 +3130,16 @@ class ContextGraphService:
                 filter_counts=filter_counts,
             )
 
+        # Compute compression ratio from source memories
+        source_memory_ids_seen: set[str] = set()
+        source_tokens_total = 0
+        for _claim, _score, memory in scored:
+            if memory.memory_id not in source_memory_ids_seen:
+                source_memory_ids_seen.add(memory.memory_id)
+                source_tokens_total += self._estimate_tokens(memory.content)
+        compression_ratio = round(source_tokens_total / tokens_used, 1) if tokens_used > 0 else 0.0
+        stale_claim_count = sum(1 for c in included_pack_claims + conflicting_pack_claims if c.staleness_warning)
+
         pack = ContextPack(
             pack_id=new_id("cpk"),
             agent_id=agent_id,
@@ -3139,6 +3149,9 @@ class ContextGraphService:
             token_budget=token_budget,
             tokens_used=tokens_used,
             generated_at=now,
+            source_tokens=source_tokens_total,
+            compression_ratio=compression_ratio,
+            stale_claim_count=stale_claim_count,
             summary=summary,
             excluded_claims=excluded_pack_claims if include_explanations else [],
             conflicting_claims=conflicting_pack_claims,
@@ -3177,6 +3190,18 @@ class ContextGraphService:
             )
         return pack
 
+    def _check_claim_staleness(self, claim: Claim) -> str:
+        """Return a staleness warning if claim is old without recent attestation."""
+        threshold_days = self.settings.claim_staleness_threshold_days
+        if threshold_days <= 0:
+            return ""
+        age = (utcnow() - claim.created_at).days
+        if age < threshold_days:
+            return ""
+        if claim.validation_status in (ValidationStatus.TRUSTED, ValidationStatus.ATTESTED):
+            return ""
+        return f"Claim is {age} days old with status '{claim.validation_status.value}' — verify before acting"
+
     def _build_context_pack_claim(
         self,
         claim: Claim,
@@ -3196,7 +3221,62 @@ class ContextGraphService:
             source_memory_section=claim.source_memory_section,
             source_label=memory.source_label if memory else "",
             locked=locked,
+            staleness_warning=self._check_claim_staleness(claim) if not locked else "",
         )
+
+    # ------------------------------------------------------------------
+    # Memory OS — Background Memory Consolidation
+    # ------------------------------------------------------------------
+
+    def run_memory_consolidation(self) -> dict[str, int]:
+        """Run a background memory consolidation sweep.
+
+        Actions:
+        1. Archive challenged claims older than 30 days with no attestation
+        2. Flag orphaned claims whose parent memory was archived/hidden
+        3. Promote well-attested claims meeting trust promotion thresholds
+        """
+        now = utcnow()
+        stats = {"archived_stale_challenged": 0, "promoted": 0, "flagged_orphaned": 0}
+
+        for claim in self.repository.list_claims():
+            # 1. Archive old challenged claims with no attestations
+            if (
+                claim.validation_status == ValidationStatus.CHALLENGED
+                and claim.attestation_count == 0
+                and (now - claim.created_at).days > 30
+            ):
+                claim.validation_status = ValidationStatus.REJECTED
+                claim.updated_at = now
+                self.repository.update_claim(claim)
+                stats["archived_stale_challenged"] += 1
+                continue
+
+            # 2. Flag orphaned claims (parent memory archived/hidden)
+            memory = self.repository.get_memory(claim.memory_id)
+            if (
+                memory is not None
+                and memory.curation_status != MemoryCurationStatus.ACTIVE
+                and claim.validation_status
+                not in (
+                    ValidationStatus.REJECTED,
+                    ValidationStatus.EXPIRED,
+                )
+            ):
+                claim.validation_status = ValidationStatus.EXPIRED
+                claim.updated_at = now
+                self.repository.update_claim(claim)
+                stats["flagged_orphaned"] += 1
+
+        # 3. Promote trusted claims (reuse existing method)
+        stats["promoted"] = self.promote_trusted_claims()
+
+        self._audit(
+            "memory_consolidation",
+            actor_agent_id="_system",
+            details={k: str(v) for k, v in stats.items()},
+        )
+        return stats
 
     # ------------------------------------------------------------------
     # Memory OS v2 — Reactive Delta Compaction

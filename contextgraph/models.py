@@ -90,6 +90,7 @@ class JobType(StrEnum):
     PROMOTE_TRUSTED_CLAIMS = "promote_trusted_claims"
     SENTINEL_AUDIT = "sentinel_audit"
     SENTINEL_CANARY = "sentinel_canary"
+    MEMORY_CONSOLIDATION = "memory_consolidation"
 
 
 class SubscriptionTarget(StrEnum):
@@ -404,6 +405,7 @@ class ContextPackClaim:
     source_memory_section: str = ""
     source_label: str = ""
     locked: bool = False  # True when paid claim not unlocked
+    staleness_warning: str = ""  # non-empty when claim is old without recent attestation
 
 
 @dataclass(slots=True)
@@ -440,6 +442,9 @@ class ContextPack:
     token_budget: int
     tokens_used: int
     generated_at: datetime
+    source_tokens: int = 0  # total tokens in source memories before compilation
+    compression_ratio: float = 0.0  # source_tokens / tokens_used (0 if tokens_used == 0)
+    stale_claim_count: int = 0  # number of claims flagged as stale
     summary: str = ""
     session_id: str = ""
     base_pack_id: str = ""

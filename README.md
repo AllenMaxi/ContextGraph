@@ -57,7 +57,8 @@ The fastest path to understand the repo is:
 2. run the coding-agent continuity demo in [`examples/reactive_delta_compaction_demo.py`](examples/reactive_delta_compaction_demo.py)
 3. inspect the generated `.contextgraph/` folder from that demo to see resume prompts, open tasks, failures, and branch/cache metadata
 4. run the governed retrieval demo in [`examples/context_pack_demo.py`](examples/context_pack_demo.py)
-5. skim the hook protocol in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md)
+5. integrate with Claude Code via [`docs/claude-code-integration.md`](docs/claude-code-integration.md)
+6. skim the hook protocol in [`docs/reactive-delta-compaction.md`](docs/reactive-delta-compaction.md)
 6. check the production notes in [`docs/production-readiness.md`](docs/production-readiness.md)
 
 Public API note: use `ContextGraph` from `contextgraph_sdk` in user code and examples. `ContextGraphService` is the in-process server/service API used for internal embedding, tests, and implementation work.
@@ -812,7 +813,9 @@ ContextGraph uses **memory-level** policy ownership.
 
 ### MCP (Model Context Protocol)
 
-ContextGraph ships as an MCP server. Tools exposed: `contextgraph_store`, `contextgraph_recall`, `contextgraph_relate`, `contextgraph_watch`, `contextgraph_compile_context`.
+ContextGraph ships as an MCP server. Tools exposed: `contextgraph_store`, `contextgraph_recall`, `contextgraph_relate`, `contextgraph_watch`, `contextgraph_compile_context`, `contextgraph_session_start`, `contextgraph_session_event`, `contextgraph_checkpoint`, `contextgraph_resume`.
+
+Session lifecycle tools enable coding agents to checkpoint decisions, open tasks, and context before compaction, then resume with full structured state. See the [Claude Code integration guide](docs/claude-code-integration.md) for setup.
 
 ```bash
 python -m contextgraph.mcp_server

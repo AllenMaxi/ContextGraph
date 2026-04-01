@@ -120,6 +120,10 @@ def main() -> None:
         print(f"  Excluded claims: {len(excluded)}")
         print(f"  Sources: {len(sources)}")
         print(f"  Tokens used: {pack['tokens_used']} / {pack['token_budget']}")
+        if pack.get("source_tokens", 0) > 0:
+            print(
+                f"  Compression: {pack['source_tokens']} -> {pack['tokens_used']} tokens ({pack['compression_ratio']}x)"
+            )
 
         if included:
             print("  Top claims:")
