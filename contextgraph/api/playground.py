@@ -10,6 +10,7 @@ No login required. The corpus is seeded lazily on first visit.
 from __future__ import annotations
 
 import json
+import logging
 from html import escape
 from typing import Any
 
@@ -32,8 +33,7 @@ _PLAYGROUND_AGENTS = {
 
 _DEFAULT_QUERY = "payment service architecture incidents"
 _DEFAULT_BUDGET = 2000
-
-_seeded_services: set[int] = set()  # tracks which service instances have been seeded
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,6 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
             agents_by_name[agent.name] = agent.agent_id
 
     if len(agents_by_name) >= 4:
-        _seeded_services.add(id(graph))
         return agents_by_name
 
     # Register agents
@@ -141,19 +140,12 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
         price=5.0,
     )
 
-    _seeded_services.add(id(graph))
     return agents_by_name
 
 
 def _get_playground_agents(graph: ContextGraphService) -> dict[str, str]:
     """Return playground agent name → agent_id map, seeding if needed."""
-    if id(graph) not in _seeded_services:
-        return _seed_playground_corpus(graph)
-    agents: dict[str, str] = {}
-    for agent in graph.repository.list_agents():
-        if agent.name.startswith("playground-"):
-            agents[agent.name] = agent.agent_id
-    return agents
+    return _seed_playground_corpus(graph)
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +173,8 @@ def register_playground_routes(app: Any, graph: ContextGraphService) -> None:
 
         packs: list[tuple[dict[str, Any], ContextPack | None]] = []
 
+        agent_org_map = _build_agent_org_map(graph)
+
         if query and alice_id:
             for agent_key, agent_id in [("alice", alice_id), ("carol", carol_id), ("bob", bob_id)]:
                 try:
@@ -192,12 +186,16 @@ def register_playground_routes(app: Any, graph: ContextGraphService) -> None:
                     )
                     packs.append((_PLAYGROUND_AGENTS[agent_key], pack))
                 except Exception:
+                    logger.exception(
+                        "Playground failed to compile context",
+                        extra={"agent_key": agent_key, "query": query, "token_budget": budget},
+                    )
                     packs.append((_PLAYGROUND_AGENTS[agent_key], None))
         else:
             for agent_key in ("alice", "carol", "bob"):
                 packs.append((_PLAYGROUND_AGENTS[agent_key], None))
 
-        return HTMLResponse(_render_playground(query or _DEFAULT_QUERY, budget, packs))
+        return HTMLResponse(_render_playground(query or _DEFAULT_QUERY, budget, packs, agent_org_map))
 
 
 # ---------------------------------------------------------------------------
@@ -524,13 +522,18 @@ _json_toggle_btn = "<button onclick=\"document.querySelectorAll('.pg-json-block'
 _copy_btn = "<button id='copy-btn' onclick='copyApiCall()'>Copy API call</button>"
 
 
-def _render_playground(query: str, budget: int, packs: list[tuple[dict[str, Any], ContextPack | None]]) -> str:
+def _render_playground(
+    query: str,
+    budget: int,
+    packs: list[tuple[dict[str, Any], ContextPack | None]],
+    agent_org_map: dict[str, str] | None = None,
+) -> str:
     has_results = any(p is not None for _, p in packs)
     columns_html = ""
 
     if has_results:
         for agent_info, pack in packs:
-            columns_html += _render_column(agent_info, pack)
+            columns_html += _render_column(agent_info, pack, agent_org_map)
     else:
         columns_html = (
             '<div class="pg-empty" style="flex:1;">'
@@ -597,7 +600,16 @@ def _render_playground(query: str, budget: int, packs: list[tuple[dict[str, Any]
 </html>"""
 
 
-def _render_column(agent_info: dict[str, Any], pack: ContextPack | None) -> str:
+def _build_agent_org_map(graph: ContextGraphService) -> dict[str, str]:
+    """Return agent_id → org_id map for playground agents."""
+    result: dict[str, str] = {}
+    for agent in graph.repository.list_agents():
+        if agent.name.startswith("playground-"):
+            result[agent.agent_id] = agent.org_id
+    return result
+
+
+def _render_column(agent_info: dict[str, Any], pack: ContextPack | None, agent_org_map: dict[str, str] | None = None) -> str:
     name = agent_info["name"].replace("playground-", "").capitalize()
     color = agent_info["color"]
     label = agent_info["label"]
@@ -655,10 +667,20 @@ def _render_column(agent_info: dict[str, Any], pack: ContextPack | None) -> str:
             dot_color = "var(--accent-red)" if is_conflict else "var(--accent-green)"
             text = escape(claim.statement[:120]) + ("..." if len(claim.statement) > 120 else "")
             tag = ""
+            # Show source org tag for cross-org claims
+            if agent_org_map:
+                source_org = agent_org_map.get(claim.source_agent_id, "")
+                viewer_org = agent_info["org"]
+                if source_org and source_org != viewer_org:
+                    org_label = source_org.replace("playground-", "")
+                    tag += f'<span class="pg-claim-tag" style="background:var(--accent-blue);color:#fff;">from {escape(org_label)}</span>'
+                elif source_org:
+                    org_label = source_org.replace("playground-", "")
+                    tag += f'<span class="pg-claim-tag" style="background:var(--bg-tertiary);color:var(--text-secondary);">{escape(org_label)}</span>'
             if claim.staleness_warning:
-                tag = '<span class="pg-claim-tag" style="background:var(--accent-orange);color:#fff;">stale</span>'
+                tag += '<span class="pg-claim-tag" style="background:var(--accent-orange);color:#fff;">stale</span>'
             elif is_conflict:
-                tag = '<span class="pg-claim-tag" style="background:var(--accent-red);color:#fff;">conflict</span>'
+                tag += '<span class="pg-claim-tag" style="background:var(--accent-red);color:#fff;">conflict</span>'
 
         wrap_start = f'<div{extra_id} class="{hidden_class.strip()}">' if i >= 3 else ""
         claims_html += f"""\

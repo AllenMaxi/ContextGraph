@@ -26,6 +26,21 @@ class TestPlaygroundSeed(unittest.TestCase):
         agents2 = _seed_playground_corpus(self.service)
         self.assertEqual(agents1, agents2)
 
+    def test_seed_is_independent_across_service_instances(self) -> None:
+        _seed_playground_corpus(self.service)
+
+        other_service = create_service(Settings(repository_backend="memory", sentinel_enabled=False))
+        try:
+            other_agents = _seed_playground_corpus(other_service)
+
+            self.assertIn("playground-alice", other_agents)
+            self.assertIn("playground-bob", other_agents)
+            other_snapshot = other_service.repository.snapshot()
+            self.assertGreaterEqual(other_snapshot["memories"], 6)
+            self.assertGreater(other_snapshot["claims"], 0)
+        finally:
+            other_service.close()
+
     def test_seed_creates_memories(self) -> None:
         _seed_playground_corpus(self.service)
         snapshot = self.service.repository.snapshot()
