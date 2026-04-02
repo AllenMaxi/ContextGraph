@@ -404,6 +404,7 @@ class ContextPackClaim:
     score: float
     source_memory_section: str = ""
     source_label: str = ""
+    visibility: str = ""
     locked: bool = False  # True when paid claim not unlocked
     staleness_warning: str = ""  # non-empty when claim is old without recent attestation
 

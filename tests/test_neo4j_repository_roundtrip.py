@@ -130,6 +130,8 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
                     score=2.4,
                     source_memory_section="root-cause",
                     source_label="INC-123",
+                    visibility=Visibility.ORG.value,
+                    staleness_warning="Verify against the latest incident review.",
                 )
             ],
             sources=[
@@ -162,6 +164,7 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
                     freshness_score=0.4,
                     validation_status="unreviewed",
                     score=0.7,
+                    visibility=Visibility.PUBLISHED.value,
                     locked=True,
                 )
             ],
@@ -184,6 +187,12 @@ class Neo4jRepositoryRoundTripTest(unittest.TestCase):
         self.assertEqual(round_trip.delta_from_pack_id, "dpk_1")
         self.assertEqual(round_trip.sources[0].source_uri, "https://example.com/incidents/123")
         self.assertTrue(round_trip.excluded_claims[0].locked)
+        self.assertEqual(round_trip.included_claims[0].visibility, Visibility.ORG.value)
+        self.assertEqual(
+            round_trip.included_claims[0].staleness_warning,
+            "Verify against the latest incident review.",
+        )
+        self.assertEqual(round_trip.excluded_claims[0].visibility, Visibility.PUBLISHED.value)
         self.assertEqual(round_trip.explanation.conflict_pairs, [("clm_1", "clm_3")])
 
     def test_session_delta_and_subscription_round_trip(self) -> None:

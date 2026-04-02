@@ -44,7 +44,7 @@ class TestPlaygroundSeed(unittest.TestCase):
     def test_seed_creates_memories(self) -> None:
         _seed_playground_corpus(self.service)
         snapshot = self.service.repository.snapshot()
-        self.assertGreaterEqual(snapshot["memories"], 6)
+        self.assertGreaterEqual(snapshot["memories"], 7)
         self.assertGreater(snapshot["claims"], 0)
 
     def test_alice_sees_more_than_bob(self) -> None:
@@ -63,6 +63,26 @@ class TestPlaygroundSeed(unittest.TestCase):
         bob_total = len(bob_pack.included_claims) + len(bob_pack.conflicting_claims)
         self.assertGreater(alice_total, bob_total)
 
+    def test_shared_demo_claim_is_visible_to_bob_but_not_carol(self) -> None:
+        agents = _seed_playground_corpus(self.service)
+        bob_pack = self.service.compile_context(
+            agent_id=agents["playground-bob"],
+            query="partner preview gRPC sandbox",
+            token_budget=4000,
+        )
+        carol_pack = self.service.compile_context(
+            agent_id=agents["playground-carol"],
+            query="partner preview gRPC sandbox",
+            token_budget=4000,
+        )
+        bob_statements = [c.statement for c in bob_pack.included_claims + bob_pack.conflicting_claims]
+        bob_visibilities = {c.visibility for c in bob_pack.included_claims + bob_pack.conflicting_claims}
+        carol_statements = [c.statement for c in carol_pack.included_claims + carol_pack.conflicting_claims]
+
+        self.assertTrue(any("Partner preview" in statement for statement in bob_statements))
+        self.assertIn("shared", bob_visibilities)
+        self.assertFalse(any("Partner preview" in statement for statement in carol_statements))
+
 
 class TestPlaygroundRoute(unittest.TestCase):
     def setUp(self) -> None:
@@ -77,6 +97,12 @@ class TestPlaygroundRoute(unittest.TestCase):
         self.service = create_service(Settings(repository_backend="memory", sentinel_enabled=False))
         app = create_app(self.service)
         self.client = TestClient(app)
+
+    def _column_html(self, html: str, agent_name: str) -> str:
+        for chunk in html.split('<div class="pg-col">'):
+            if f">{agent_name}</span>" in chunk:
+                return chunk
+        self.fail(f"Column for {agent_name} not found")
 
     def test_playground_renders_without_query(self) -> None:
         response = self.client.get("/playground")
@@ -97,8 +123,21 @@ class TestPlaygroundRoute(unittest.TestCase):
         response = self.client.get("/playground?q=payment+service+gRPC&budget=4000")
         self.assertEqual(response.status_code, 200)
         text = response.text.lower()
-        # Bob (external) should have the "only published claims visible" warning
-        self.assertIn("only published claims visible", text)
+        self.assertIn("published and explicitly shared claims visible", text)
+
+    def test_playground_renders_scope_badges_and_shared_access(self) -> None:
+        response = self.client.get("/playground?q=partner+preview+gRPC+sandbox&budget=4000")
+        self.assertEqual(response.status_code, 200)
+        bob_column = self._column_html(response.text, "Bob")
+        carol_column = self._column_html(response.text, "Carol")
+
+        self.assertIn("Partner preview", bob_column)
+        self.assertIn(">shared<", bob_column)
+        self.assertIn(">published<", bob_column)
+        self.assertIn("Published and explicitly shared claims visible", bob_column)
+        self.assertNotIn("Partner preview", carol_column)
+        self.assertIn(">org<", response.text)
+        self.assertIn(">private<", response.text)
 
     def test_playground_budget_clamped(self) -> None:
         # Budget below minimum gets clamped to 50

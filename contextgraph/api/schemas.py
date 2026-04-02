@@ -497,6 +497,7 @@ class ContextPackClaimResponse(BaseModel):
     score: float
     source_memory_section: str = ""
     source_label: str = ""
+    visibility: str = ""
     locked: bool = False
     staleness_warning: str = ""
 

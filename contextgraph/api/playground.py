@@ -46,35 +46,62 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
 
     Idempotent: skips if playground agents already exist.
     """
-    agents_by_name: dict[str, str] = {}
+    existing_agents = {
+        agent.name: agent for agent in graph.repository.list_agents() if agent.name.startswith("playground-")
+    }
 
-    # Check if already seeded
-    existing = graph.repository.list_agents()
-    for agent in existing:
-        if agent.name.startswith("playground-"):
-            agents_by_name[agent.name] = agent.agent_id
+    def ensure_agent(name: str, org_id: str, tags: list[str]) -> str:
+        existing = existing_agents.get(name)
+        if existing is not None:
+            return existing.agent_id
+        agent = graph.register_agent(name, org_id, tags)
+        existing_agents[name] = agent
+        return agent.agent_id
 
-    if len(agents_by_name) >= 4:
-        return agents_by_name
+    def ensure_memory(
+        owner_agent_id: str,
+        content: str,
+        *,
+        visibility: str,
+        access_list: list[str] | None = None,
+        price: float = 0.0,
+    ) -> None:
+        visible_memories = graph.list_memories(
+            requester_agent_id=owner_agent_id,
+            include_private_same_org=True,
+            include_inactive=True,
+            limit=1000,
+        )
+        for memory in visible_memories:
+            if memory.agent_id != owner_agent_id:
+                continue
+            if memory.content == content:
+                return
+        graph.store_memory(
+            agent_id=owner_agent_id,
+            content=content,
+            visibility=visibility,
+            access_list=access_list,
+            price=price,
+        )
 
-    # Register agents
-    alice = graph.register_agent("playground-alice", _PLAYGROUND_ORG_ACME, ["engineering"])
-    carol = graph.register_agent("playground-carol", _PLAYGROUND_ORG_ACME, ["engineering"])
-    bob = graph.register_agent("playground-bob", _PLAYGROUND_ORG_GLOBEX, ["integration"])
-    oncall = graph.register_agent("playground-oncall", _PLAYGROUND_ORG_ACME, ["operations"])
+    alice_id = ensure_agent("playground-alice", _PLAYGROUND_ORG_ACME, ["engineering"])
+    carol_id = ensure_agent("playground-carol", _PLAYGROUND_ORG_ACME, ["engineering"])
+    bob_id = ensure_agent("playground-bob", _PLAYGROUND_ORG_GLOBEX, ["integration"])
+    oncall_id = ensure_agent("playground-oncall", _PLAYGROUND_ORG_ACME, ["operations"])
 
     agents_by_name = {
-        "playground-alice": alice.agent_id,
-        "playground-carol": carol.agent_id,
-        "playground-bob": bob.agent_id,
-        "playground-oncall": oncall.agent_id,
+        "playground-alice": alice_id,
+        "playground-carol": carol_id,
+        "playground-bob": bob_id,
+        "playground-oncall": oncall_id,
     }
 
     # --- Memories ---
 
     # Alice: architecture decision (org-visible)
-    graph.store_memory(
-        agent_id=alice.agent_id,
+    ensure_memory(
+        alice_id,
         content=(
             "Architecture decision: the payment service migrates from REST to gRPC "
             "for internal service-to-service communication. REST remains for external APIs. "
@@ -84,8 +111,8 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
     )
 
     # Alice: auth details (org-visible)
-    graph.store_memory(
-        agent_id=alice.agent_id,
+    ensure_memory(
+        alice_id,
         content=(
             "The authentication service uses JWT tokens with RS256 signing. "
             "Token lifetime is 15 minutes with refresh tokens valid for 7 days. "
@@ -95,8 +122,8 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
     )
 
     # Alice: private postmortem
-    graph.store_memory(
-        agent_id=alice.agent_id,
+    ensure_memory(
+        alice_id,
         content=(
             "Internal postmortem: the gRPC migration was rushed without load testing. "
             "Connection pool defaults were insufficient for production traffic patterns. "
@@ -105,9 +132,21 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
         visibility="private",
     )
 
+    # Alice: partner preview note (shared to Bob only)
+    ensure_memory(
+        alice_id,
+        content=(
+            "Partner preview: Bob at Globex can access the staged gRPC sandbox endpoint "
+            "for payment service testing before the external rollout. This rollout note "
+            "is shared only with the named integration partner."
+        ),
+        visibility="shared",
+        access_list=[bob_id],
+    )
+
     # Oncall: incident report (published)
-    graph.store_memory(
-        agent_id=oncall.agent_id,
+    ensure_memory(
+        oncall_id,
         content=(
             "Incident INC-2024-042: payment service latency spike to 2.3s p99 "
             "caused by connection pool exhaustion. Root cause: gRPC migration "
@@ -118,8 +157,8 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
     )
 
     # Oncall: auth incident (published)
-    graph.store_memory(
-        agent_id=oncall.agent_id,
+    ensure_memory(
+        oncall_id,
         content=(
             "Incident INC-2024-043: authentication token validation failures "
             "affecting 3 percent of requests. Caused by clock skew between API gateway "
@@ -129,8 +168,8 @@ def _seed_playground_corpus(graph: ContextGraphService) -> dict[str, str]:
     )
 
     # Bob: integration report (published, priced)
-    graph.store_memory(
-        agent_id=bob.agent_id,
+    ensure_memory(
+        bob_id,
         content=(
             "Globex integration status: REST webhook delivery from Acme payment service "
             "has been reliable at 99.97 percent over the past quarter. No gRPC endpoint "
@@ -414,6 +453,15 @@ a:hover { text-decoration: underline; }
     margin-left: 4px;
     vertical-align: middle;
 }
+.pg-claim-tag-scope-private { background: #8957e5; color: #fff; }
+.pg-claim-tag-scope-org { background: var(--accent-blue); color: #fff; }
+.pg-claim-tag-scope-shared { background: #0aa2c0; color: #fff; }
+.pg-claim-tag-scope-published { background: var(--accent-green); color: #fff; }
+.pg-claim-tag-source-cross { background: var(--accent-blue); color: #fff; }
+.pg-claim-tag-source-same { background: var(--bg-tertiary); color: var(--text-secondary); }
+.pg-claim-tag-state-locked { background: var(--accent-red); color: #fff; }
+.pg-claim-tag-state-stale { background: var(--accent-orange); color: #fff; }
+.pg-claim-tag-state-conflict { background: var(--accent-red); color: #fff; }
 .pg-more-toggle {
     padding: 4px 0;
     color: var(--text-secondary);
@@ -556,7 +604,7 @@ def _render_playground(
 <div class="pg-topbar">
     <h1><span>&#x25C6;</span> ContextGraph Playground</h1>
     <div class="pg-topbar-right">
-        <span>Pre-seeded with 6 memories across 3 agents</span>
+        <span>Pre-seeded with 7 memories across 4 agents</span>
         <a href="/dashboard">Dashboard</a>
         <a href="https://github.com/AllenMaxi/ContextGraph" target="_blank">GitHub &#x2197;</a>
     </div>
@@ -609,7 +657,50 @@ def _build_agent_org_map(graph: ContextGraphService) -> dict[str, str]:
     return result
 
 
-def _render_column(agent_info: dict[str, Any], pack: ContextPack | None, agent_org_map: dict[str, str] | None = None) -> str:
+def _claim_tag(label: str, class_name: str) -> str:
+    return f'<span class="pg-claim-tag {class_name}">{escape(label)}</span>'
+
+
+def _claim_scope_tag(visibility: str) -> str:
+    scope_classes = {
+        "private": "pg-claim-tag-scope-private",
+        "org": "pg-claim-tag-scope-org",
+        "shared": "pg-claim-tag-scope-shared",
+        "published": "pg-claim-tag-scope-published",
+    }
+    css_class = scope_classes.get(visibility, "pg-claim-tag-source-same")
+    return _claim_tag(visibility or "unknown", css_class)
+
+
+def _claim_tags(
+    claim: Any,
+    *,
+    agent_info: dict[str, Any],
+    agent_org_map: dict[str, str] | None,
+    is_conflict: bool,
+) -> str:
+    tags = [_claim_scope_tag(str(getattr(claim, "visibility", "")))]
+    viewer_org = agent_info["org"]
+    if agent_org_map:
+        source_org = agent_org_map.get(claim.source_agent_id, "")
+        if source_org and source_org != viewer_org:
+            org_label = source_org.replace("playground-", "")
+            tags.append(_claim_tag(f"from {org_label}", "pg-claim-tag-source-cross"))
+        elif source_org:
+            org_label = source_org.replace("playground-", "")
+            tags.append(_claim_tag(org_label, "pg-claim-tag-source-same"))
+    if claim.locked:
+        tags.append(_claim_tag("locked", "pg-claim-tag-state-locked"))
+    if claim.staleness_warning:
+        tags.append(_claim_tag("stale", "pg-claim-tag-state-stale"))
+    elif is_conflict:
+        tags.append(_claim_tag("conflict", "pg-claim-tag-state-conflict"))
+    return "".join(tags)
+
+
+def _render_column(
+    agent_info: dict[str, Any], pack: ContextPack | None, agent_org_map: dict[str, str] | None = None
+) -> str:
     name = agent_info["name"].replace("playground-", "").capitalize()
     color = agent_info["color"]
     label = agent_info["label"]
@@ -652,40 +743,32 @@ def _render_column(agent_info: dict[str, Any], pack: ContextPack | None, agent_o
         summary_html = f'<div class="pg-summary" style="border-left-color:{color}">{summary_text}</div>'
 
     # Claims list
+    conflicting_ids = {claim.claim_id for claim in pack.conflicting_claims}
     all_claims = pack.included_claims + pack.conflicting_claims
     claims_html = ""
     for i, claim in enumerate(all_claims):
         hidden_class = " pg-hidden" if i >= 3 else ""
         extra_id = f' id="more-{col_id}"' if i == 3 else ""
+        is_conflict = claim.claim_id in conflicting_ids
 
         if claim.locked:
-            dot_color = color
+            dot_color = "var(--accent-red)"
             text = '<span style="color:var(--text-muted);font-style:italic;">Paid claim &mdash; locked</span>'
-            tag = '<span class="pg-claim-tag" style="background:var(--accent-red);color:#fff;">&#x1F512;</span>'
         else:
-            is_conflict = claim.claim_id in {c.claim_id for c in pack.conflicting_claims}
             dot_color = "var(--accent-red)" if is_conflict else "var(--accent-green)"
             text = escape(claim.statement[:120]) + ("..." if len(claim.statement) > 120 else "")
-            tag = ""
-            # Show source org tag for cross-org claims
-            if agent_org_map:
-                source_org = agent_org_map.get(claim.source_agent_id, "")
-                viewer_org = agent_info["org"]
-                if source_org and source_org != viewer_org:
-                    org_label = source_org.replace("playground-", "")
-                    tag += f'<span class="pg-claim-tag" style="background:var(--accent-blue);color:#fff;">from {escape(org_label)}</span>'
-                elif source_org:
-                    org_label = source_org.replace("playground-", "")
-                    tag += f'<span class="pg-claim-tag" style="background:var(--bg-tertiary);color:var(--text-secondary);">{escape(org_label)}</span>'
-            if claim.staleness_warning:
-                tag += '<span class="pg-claim-tag" style="background:var(--accent-orange);color:#fff;">stale</span>'
-            elif is_conflict:
-                tag += '<span class="pg-claim-tag" style="background:var(--accent-red);color:#fff;">conflict</span>'
+
+        tags_html = _claim_tags(
+            claim,
+            agent_info=agent_info,
+            agent_org_map=agent_org_map,
+            is_conflict=is_conflict,
+        )
 
         wrap_start = f'<div{extra_id} class="{hidden_class.strip()}">' if i >= 3 else ""
         claims_html += f"""\
 {wrap_start}<div class="pg-claim">
-    <span class="pg-claim-dot" style="background:{dot_color}"></span>{text}{tag}
+    <span class="pg-claim-dot" style="background:{dot_color}"></span>{text}{tags_html}
 </div>"""
 
     # Close the hidden wrapper
@@ -697,17 +780,25 @@ def _render_column(agent_info: dict[str, Any], pack: ContextPack | None, agent_o
     # Also show locked claims from excluded
     for claim in pack.excluded_claims:
         if claim.locked:
+            tags_html = _claim_tags(
+                claim,
+                agent_info=agent_info,
+                agent_org_map=agent_org_map,
+                is_conflict=False,
+            )
             claims_html += (
                 '<div class="pg-claim">'
                 '<span class="pg-claim-dot" style="background:var(--accent-red)"></span>'
                 '<span style="color:var(--text-muted);font-style:italic;">Paid claim &mdash; locked</span>'
-                '<span class="pg-claim-tag" style="background:var(--accent-red);color:#fff;">&#x1F512;</span>'
+                f"{tags_html}"
                 "</div>"
             )
 
     # Warnings
     warnings_html = ""
     warning_items = []
+    visible_claims = all_claims + [claim for claim in pack.excluded_claims if claim.locked]
+    visible_scopes = {claim.visibility for claim in visible_claims if claim.visibility}
     if conflict_count > 0:
         warning_items.append(
             f'<div class="pg-warn pg-warn-red">&#x26A0; {conflict_count} conflict{"s" if conflict_count > 1 else ""} detected</div>'
@@ -723,7 +814,14 @@ def _render_column(agent_info: dict[str, Any], pack: ContextPack | None, agent_o
     if total_count == 0 and locked_count == 0:
         warning_items.append('<div class="pg-warn pg-warn-gray">No accessible claims for this agent</div>')
     elif label == "external":
-        warning_items.append('<div class="pg-warn pg-warn-gray">Only published claims visible</div>')
+        if "shared" in visible_scopes and "published" in visible_scopes:
+            warning_items.append(
+                '<div class="pg-warn pg-warn-gray">Published and explicitly shared claims visible</div>'
+            )
+        elif "shared" in visible_scopes:
+            warning_items.append('<div class="pg-warn pg-warn-gray">Only explicitly shared claims visible</div>')
+        else:
+            warning_items.append('<div class="pg-warn pg-warn-gray">Only published claims visible</div>')
     elif label == "teammate":
         warning_items.append('<div class="pg-warn pg-warn-gray">No private claims visible</div>')
 

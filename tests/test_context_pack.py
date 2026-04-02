@@ -191,6 +191,7 @@ class TestPermissionSensitivePacks(unittest.TestCase):
         self.assertTrue(any("revenue" in s for s in statements))
         self.assertTrue(any("product line" in s for s in statements))
         self.assertFalse(any("Phoenix" in s for s in statements))
+        self.assertTrue(all(claim.visibility in {"org", "published"} for claim in all_claims))
 
     def test_other_org_sees_only_published(self) -> None:
         pack = self.service.compile_context(
@@ -205,6 +206,7 @@ class TestPermissionSensitivePacks(unittest.TestCase):
         # Should only see published
         for claim in all_claims:
             self.assertNotEqual(claim.statement, "")
+            self.assertEqual(claim.visibility, "published")
 
     def test_three_agents_different_packs_same_corpus(self) -> None:
         """Acceptance test: same query, three agents, three different packs."""
@@ -250,6 +252,7 @@ class TestLockedPaidClaims(unittest.TestCase):
         for claim in locked:
             # Locked claims should have empty statement
             self.assertEqual(claim.statement, "")
+            self.assertEqual(claim.visibility, "published")
 
     def test_owner_sees_own_paid_claims_unlocked(self) -> None:
         pack = self.service.compile_context(
@@ -438,6 +441,49 @@ class TestMemoryExtensions(unittest.TestCase):
             self.assertEqual(source.source_uri, "https://incidents.acme.com/001")
 
 
+class TestContextPackClaimVisibility(unittest.TestCase):
+    def setUp(self) -> None:
+        self.service = _make_service()
+        self.alice = self.service.register_agent(name="alice", org_id="acme")
+        self.bob = self.service.register_agent(name="bob", org_id="globex")
+        self.carol = self.service.register_agent(name="carol", org_id="acme")
+
+        self.service.store_memory(
+            agent_id=self.alice.agent_id,
+            content="Private migration note for the scope demo.",
+            visibility="private",
+        )
+        self.service.store_memory(
+            agent_id=self.alice.agent_id,
+            content="Org rollout note for the scope demo.",
+            visibility="org",
+        )
+        self.service.store_memory(
+            agent_id=self.alice.agent_id,
+            content="Shared partner sandbox note for the scope demo.",
+            visibility="shared",
+            access_list=[self.bob.agent_id],
+        )
+        self.service.store_memory(
+            agent_id=self.alice.agent_id,
+            content="Published status page note for the scope demo.",
+            visibility="published",
+        )
+
+    def test_visibility_propagates_to_pack_claims(self) -> None:
+        alice_pack = self.service.compile_context(self.alice.agent_id, "scope demo", 4000)
+        bob_pack = self.service.compile_context(self.bob.agent_id, "scope demo", 4000)
+        carol_pack = self.service.compile_context(self.carol.agent_id, "scope demo", 4000)
+
+        alice_visibilities = {claim.visibility for claim in alice_pack.included_claims + alice_pack.conflicting_claims}
+        bob_visibilities = {claim.visibility for claim in bob_pack.included_claims + bob_pack.conflicting_claims}
+        carol_visibilities = {claim.visibility for claim in carol_pack.included_claims + carol_pack.conflicting_claims}
+
+        self.assertTrue({"private", "org", "shared", "published"}.issubset(alice_visibilities))
+        self.assertEqual(bob_visibilities, {"shared", "published"})
+        self.assertEqual(carol_visibilities, {"org", "published"})
+
+
 class TestMCPCompileContextTool(unittest.TestCase):
     def setUp(self) -> None:
         s = Settings(repository_backend="memory")
@@ -487,6 +533,8 @@ class TestSDKCompileContext(unittest.TestCase):
         )
         self.assertIn("pack_id", result)
         self.assertIn("included_claims", result)
+        if result["included_claims"]:
+            self.assertIn("visibility", result["included_claims"][0])
 
     def test_sdk_get_context_pack(self) -> None:
         self.client.store(

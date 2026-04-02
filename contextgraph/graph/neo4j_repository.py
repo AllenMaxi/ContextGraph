@@ -968,7 +968,9 @@ class Neo4jRepository:
             score=float(data.get("score", 0.0) or 0.0),
             source_memory_section=str(data.get("source_memory_section", "")),
             source_label=str(data.get("source_label", "")),
+            visibility=str(data.get("visibility", "")),
             locked=self._parse_bool(data.get("locked", False)),
+            staleness_warning=str(data.get("staleness_warning", "")),
         )
 
     def _context_pack_source_from_data(self, value: Any) -> ContextPackSource:

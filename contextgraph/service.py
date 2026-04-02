@@ -3237,6 +3237,7 @@ class ContextGraphService:
             score=round(score, 4),
             source_memory_section=claim.source_memory_section,
             source_label=memory.source_label if memory else "",
+            visibility=claim.visibility.value,
             locked=locked,
             staleness_warning=self._check_claim_staleness(claim) if not locked else "",
         )
