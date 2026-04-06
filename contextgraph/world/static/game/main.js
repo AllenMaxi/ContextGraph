@@ -67,7 +67,7 @@ class BootScene extends Phaser.Scene {
 
     // Create socket
     this.socket = new WorldSocket(this);
-    this.socket.connect('viewer');
+    this.socket.connect();
 
     // Listen for world_snapshot to transition
     this.events.on('ws:world_snapshot', (msg) => {
