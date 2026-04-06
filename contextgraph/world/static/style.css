@@ -1,0 +1,310 @@
+/* ContextGraph World — Dark Theme */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0f172a;
+  overflow: hidden;
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #e2e8f0;
+}
+
+#game-container {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.4s ease;
+}
+
+#game-container canvas {
+  border-radius: 12px;
+  box-shadow: 0 0 60px rgba(99, 102, 241, 0.15), 0 0 120px rgba(99, 102, 241, 0.05);
+}
+
+.game-dimmed #game-container canvas {
+  filter: brightness(0.4);
+  pointer-events: none;
+}
+
+/* ===== Inspect Panel ===== */
+
+.inspect-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 420px;
+  height: 100vh;
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  border-left: 1px solid rgba(99, 102, 241, 0.2);
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+  z-index: 1000;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+.inspect-panel.hidden {
+  transform: translateX(100%);
+  pointer-events: none;
+}
+
+.inspect-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+.inspect-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.inspect-panel::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+}
+
+/* Header */
+
+.inspect-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 20px 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(10px);
+}
+
+.inspect-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+}
+
+.inspect-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f1f5f9;
+  flex: 1;
+}
+
+.inspect-status {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-left: 8px;
+  vertical-align: middle;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.inspect-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.inspect-close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+/* Sections */
+
+.inspect-section {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.inspect-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+/* Bucket Grid */
+
+.bucket-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bucket-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.2s;
+}
+
+.bucket-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.bucket-item-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.bucket-item-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: #f1f5f9;
+}
+
+.bucket-decisions { border-left: 3px solid #6366f1; }
+.bucket-tasks { border-left: 3px solid #f59e0b; }
+.bucket-failures { border-left: 3px solid #ef4444; }
+.bucket-resolved { border-left: 3px solid #10b981; }
+.bucket-commands { border-left: 3px solid #06b6d4; }
+.bucket-files { border-left: 3px solid #8b5cf6; }
+
+/* Timeline */
+
+.timeline-list {
+  list-style: none;
+  position: relative;
+  padding-left: 20px;
+}
+
+.timeline-item {
+  position: relative;
+  padding: 8px 0 8px 16px;
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -6px;
+  top: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6366f1;
+  border: 2px solid #1e293b;
+  z-index: 1;
+}
+
+.timeline-line {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.timeline-time {
+  font-size: 11px;
+  color: #64748b;
+  display: block;
+  margin-top: 2px;
+}
+
+/* Tool Badges */
+
+.tool-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  transition: all 0.2s;
+}
+
+.tool-badge:hover {
+  background: rgba(99, 102, 241, 0.2);
+  transform: translateY(-1px);
+}
+
+/* Context Bar */
+
+.context-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.context-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #6366f1, #a78bfa);
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* File Changes */
+
+.file-added {
+  color: #34d399;
+}
+
+.file-modified {
+  color: #fbbf24;
+}
+
+.file-removed {
+  color: #f87171;
+}
+
+/* Session Info */
+
+.session-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.session-info-key {
+  color: #94a3b8;
+}
+
+.session-info-val {
+  color: #e2e8f0;
+  font-weight: 600;
+}
