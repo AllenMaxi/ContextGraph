@@ -5,42 +5,43 @@ import asyncio
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from contextgraph.events import EventBus
 from contextgraph.service import ContextGraphService
 
 from .gateway import WorldGateway
 
-from starlette.responses import FileResponse, HTMLResponse
-from starlette.staticfiles import StaticFiles
-from starlette.websockets import WebSocket, WebSocketDisconnect
-
 logger = logging.getLogger(__name__)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
-def register_world_routes(app, event_bus: EventBus, graph_service: ContextGraphService) -> None:
+def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextGraphService) -> None:
     """Mount all World visualization routes onto *app*."""
+    from starlette.responses import FileResponse, HTMLResponse
+    from starlette.staticfiles import StaticFiles
+    from starlette.websockets import WebSocket, WebSocketDisconnect
 
-    gateway = WorldGateway(max_viewers=_get_max_viewers(graph_service))
+    gateway = WorldGateway(event_bus=event_bus, graph_service=graph_service)
 
     # Seed spatial state with existing agents
     try:
         agents = graph_service.repository.list_agents()
-        gateway.seed_agents(agents)
+        for agent in agents:
+            gateway.spatial.register_agent(agent.agent_id, agent.name)
         logger.info("World: seeded %d agents", len(agents))
     except Exception:
-        logger.warning("World: failed to seed agents from repository", exc_info=True)
+        logger.warning("World: could not seed agents from repository")
 
-    # Background task: subscribe to EventBus and process events
+    # Background task: subscribe to EventBus and forward to gateway
     async def _event_loop() -> None:
         queue = event_bus.subscribe()
         try:
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=5.0)
-                    await gateway.process_event(event)
+                    await gateway.process_bus_event(event)
                 except asyncio.TimeoutError:
                     continue
                 except Exception:
@@ -54,48 +55,32 @@ def register_world_routes(app, event_bus: EventBus, graph_service: ContextGraphS
     async def _start_event_loop() -> None:
         asyncio.create_task(_event_loop())
 
-    # Static files (may not exist yet — created by frontend tasks)
+    # Static files
     if _STATIC_DIR.exists():
         app.mount("/world/static", StaticFiles(directory=str(_STATIC_DIR)), name="world_static")
-    else:
-        logger.info("World: static dir not found at %s — skipping static mount", _STATIC_DIR)
 
-    # Serve index.html at GET /world
     @app.get("/world")
-    async def world_index():
+    async def world_index() -> Any:
         index = _STATIC_DIR / "index.html"
         if index.exists():
-            return FileResponse(str(index))
-        return HTMLResponse(
-            "<html><body><h1>ContextGraph World</h1>"
-            "<p>Frontend not built yet. Static assets missing.</p></body></html>",
-            status_code=200,
-        )
+            return FileResponse(str(index), media_type="text/html")
+        return HTMLResponse("<h1>ContextGraph World</h1><p>Static files not found.</p>")
 
-    # WebSocket endpoint
     @app.websocket("/ws/world")
-    async def world_websocket(websocket: WebSocket):
-        # Optionally validate API key from ?key= query param
-        api_key = websocket.query_params.get("key")
-        if api_key is not None:
-            expected = getattr(graph_service.settings, "admin_key", "")
-            if expected and api_key != expected:
-                await websocket.close(code=4001)
-                return
-
+    async def world_websocket(websocket: WebSocket) -> None:
         await websocket.accept()
 
-        viewer = await gateway.add_viewer(websocket)
-        if viewer is None:
-            await websocket.close(code=4008)  # capacity exceeded
-            return
+        # Optional API key validation
+        api_key = websocket.query_params.get("key", "")
+        if api_key:
+            try:
+                graph_service.authenticate_agent(api_key)
+            except Exception:
+                await websocket.close(code=4003, reason="Invalid API key")
+                return
 
-        # Send initial world snapshot
-        try:
-            await websocket.send_text(json.dumps(gateway.get_world_snapshot()))
-        except Exception:
-            await gateway.remove_viewer(viewer)
-            return
+        room = "lobby"
+        await gateway.add_viewer(websocket, room=room)
 
         try:
             while True:
@@ -105,31 +90,24 @@ def register_world_routes(app, event_bus: EventBus, graph_service: ContextGraphS
                 except json.JSONDecodeError:
                     continue
 
-                action = msg.get("action")
+                msg_type = msg.get("type", "")
 
-                if action == "join_room":
-                    room = msg.get("room")
-                    await gateway.set_viewer_room(viewer, room)
-                    if room:
-                        await websocket.send_text(json.dumps(gateway.get_room_snapshot(room)))
+                if msg_type == "join_room":
+                    room = msg.get("room", "lobby")
+                    gateway.switch_viewer_room(websocket, room)
+                    snapshot = gateway._build_snapshot(room)
+                    await websocket.send(json.dumps(snapshot))
 
-                elif action == "leave_room":
-                    await gateway.set_viewer_room(viewer, None)
-                    await websocket.send_text(json.dumps(gateway.get_world_snapshot()))
+                elif msg_type == "leave_room":
+                    room = "lobby"
+                    gateway.switch_viewer_room(websocket, "lobby")
+                    snapshot = gateway._build_snapshot("lobby")
+                    await websocket.send(json.dumps(snapshot))
 
-                elif action == "ping":
-                    await websocket.send_text(json.dumps({"type": "pong"}))
+                elif msg_type == "ping":
+                    await websocket.send(json.dumps({"type": "pong"}))
 
         except WebSocketDisconnect:
-            pass
+            gateway.remove_viewer(websocket)
         except Exception:
-            logger.exception("World: WebSocket error")
-        finally:
-            await gateway.remove_viewer(viewer)
-
-
-def _get_max_viewers(graph_service: ContextGraphService) -> int:
-    try:
-        return graph_service.settings.world_max_viewers
-    except AttributeError:
-        return 50
+            gateway.remove_viewer(websocket)
