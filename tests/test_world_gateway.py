@@ -20,7 +20,7 @@ from contextgraph.world.models import GameEventType
 def make_ws() -> AsyncMock:
     """Return a mock WebSocket with an async send method."""
     ws = AsyncMock()
-    ws.send = AsyncMock()
+    ws.send_text = AsyncMock()
     return ws
 
 
@@ -115,14 +115,14 @@ class TestAddViewer:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws)
-        ws.send.assert_called_once()
+        ws.send_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_snapshot_is_valid_json(self) -> None:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws)
-        payload = ws.send.call_args[0][0]
+        payload = ws.send_text.call_args[0][0]
         data = json.loads(payload)
         assert "type" in data
 
@@ -131,7 +131,7 @@ class TestAddViewer:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        payload = ws.send.call_args[0][0]
+        payload = ws.send_text.call_args[0][0]
         data = json.loads(payload)
         assert data["type"] == GameEventType.WORLD_SNAPSHOT
 
@@ -140,7 +140,7 @@ class TestAddViewer:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="project_x")
-        payload = ws.send.call_args[0][0]
+        payload = ws.send_text.call_args[0][0]
         data = json.loads(payload)
         assert data["type"] == GameEventType.ROOM_SNAPSHOT
 
@@ -223,10 +223,10 @@ class TestBroadcastToRoom:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        ws.send.reset_mock()  # ignore snapshot call
+        ws.send_text.reset_mock()  # ignore snapshot call
         msg = {"type": "test", "data": {}}
         await gw.broadcast_to_room("lobby", msg)
-        ws.send.assert_called_once()
+        ws.send_text.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_does_not_send_to_viewers_in_other_room(self) -> None:
@@ -235,22 +235,22 @@ class TestBroadcastToRoom:
         ws_proj = make_ws()
         await gw.add_viewer(ws_lobby, room="lobby")
         await gw.add_viewer(ws_proj, room="project_x")
-        ws_lobby.send.reset_mock()
-        ws_proj.send.reset_mock()
+        ws_lobby.send_text.reset_mock()
+        ws_proj.send_text.reset_mock()
         msg = {"type": "test", "data": {}}
         await gw.broadcast_to_room("lobby", msg)
-        ws_lobby.send.assert_called_once()
-        ws_proj.send.assert_not_called()
+        ws_lobby.send_text.assert_called_once()
+        ws_proj.send_text.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_sends_json_encoded_message(self) -> None:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        ws.send.reset_mock()
+        ws.send_text.reset_mock()
         msg = {"type": "agent_move", "agent_id": "agt_1", "data": {}}
         await gw.broadcast_to_room("lobby", msg)
-        payload = ws.send.call_args[0][0]
+        payload = ws.send_text.call_args[0][0]
         decoded = json.loads(payload)
         assert decoded["type"] == "agent_move"
 
@@ -259,8 +259,8 @@ class TestBroadcastToRoom:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        ws.send.reset_mock()
-        ws.send.side_effect = Exception("connection closed")
+        ws.send_text.reset_mock()
+        ws.send_text.side_effect = Exception("connection closed")
         msg = {"type": "test", "data": {}}
         await gw.broadcast_to_room("lobby", msg)
         assert id(ws) not in gw._viewers
@@ -297,14 +297,14 @@ class TestProcessSessionEvent:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        ws.send.reset_mock()
+        ws.send_text.reset_mock()
 
         # Register agent first so it has a room
         gw.spatial.register_agent("agt_1", "Agent One")
         event = make_session_event(agent_id="agt_1", event_type="file_change")
         await gw.process_session_event(event)
         # Should have broadcast at least one message
-        assert ws.send.call_count >= 1
+        assert ws.send_text.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_session_event_with_zone_moves_agent(self) -> None:
@@ -355,7 +355,7 @@ class TestProcessBusEvent:
         gw = make_gateway()
         ws = make_ws()
         await gw.add_viewer(ws, room="lobby")
-        ws.send.reset_mock()
+        ws.send_text.reset_mock()
 
         event = Event(
             event_id="e1",
@@ -365,7 +365,7 @@ class TestProcessBusEvent:
             agent_id="agt_2",
         )
         await gw.process_bus_event(event)
-        assert ws.send.call_count >= 1
+        assert ws.send_text.call_count >= 1
 
     @pytest.mark.asyncio
     async def test_normal_bus_event_updates_spatial(self) -> None:

@@ -34,7 +34,7 @@ class WorldGateway:
         """Register a new viewer and send it a snapshot of the current room state."""
         self._viewers[id(ws)] = {"ws": ws, "room": room}
         snapshot = self._build_snapshot(room)
-        await ws.send(json.dumps(snapshot))
+        await ws.send_text(json.dumps(snapshot))
 
     def remove_viewer(self, ws: Any) -> None:
         """Remove a viewer from the registry."""
@@ -61,7 +61,7 @@ class WorldGateway:
             if entry["room"] != room:
                 continue
             try:
-                await entry["ws"].send(payload)
+                await entry["ws"].send_text(payload)
             except Exception:
                 dead.append(viewer_id)
 

@@ -40,7 +40,7 @@ async def test_full_session_event_round_trip(gateway):
     agent = gateway.spatial.get_agent("alice")
     assert agent.zone is not None
     assert agent.zone.value == "code_desk"
-    assert ws.send.call_count >= 1
+    assert ws.send_text.call_count >= 1
 
 
 @pytest.mark.asyncio
@@ -58,7 +58,7 @@ async def test_bus_event_agent_registered(gateway):
     )
     await gateway.process_bus_event(event)
     assert gateway.spatial.get_agent("new-bot") is not None
-    assert ws.send.call_count >= 1
+    assert ws.send_text.call_count >= 1
 
 
 @pytest.mark.asyncio
@@ -100,8 +100,8 @@ async def test_viewer_room_isolation(gateway):
 
     await gateway.process_session_event(_session_event("alice", "file_change", "src/main.py"))
 
-    assert ws_api.send.call_count >= 1
-    assert ws_lobby.send.call_count == 0
+    assert ws_api.send_text.call_count >= 1
+    assert ws_lobby.send_text.call_count == 0
 
 
 @pytest.mark.asyncio
@@ -120,7 +120,7 @@ async def test_agent_despawn(gateway):
     )
     await gateway.process_bus_event(event)
     assert gateway.spatial.get_agent("alice") is None
-    assert ws.send.call_count >= 1
+    assert ws.send_text.call_count >= 1
 
 
 @pytest.mark.asyncio

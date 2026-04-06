@@ -1,6 +1,4 @@
 """Route registration for ContextGraph World visualization."""
-from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -67,7 +65,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
         return HTMLResponse("<h1>ContextGraph World</h1><p>Static files not found.</p>")
 
     @app.websocket("/ws/world")
-    async def world_websocket(websocket: WebSocket) -> None:
+    async def world_websocket(websocket: WebSocket):
         await websocket.accept()
 
         # Optional API key validation
@@ -96,16 +94,16 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
                     room = msg.get("room", "lobby")
                     gateway.switch_viewer_room(websocket, room)
                     snapshot = gateway._build_snapshot(room)
-                    await websocket.send(json.dumps(snapshot))
+                    await websocket.send_text(json.dumps(snapshot))
 
                 elif msg_type == "leave_room":
                     room = "lobby"
                     gateway.switch_viewer_room(websocket, "lobby")
                     snapshot = gateway._build_snapshot("lobby")
-                    await websocket.send(json.dumps(snapshot))
+                    await websocket.send_text(json.dumps(snapshot))
 
                 elif msg_type == "ping":
-                    await websocket.send(json.dumps({"type": "pong"}))
+                    await websocket.send_text(json.dumps({"type": "pong"}))
 
         except WebSocketDisconnect:
             gateway.remove_viewer(websocket)

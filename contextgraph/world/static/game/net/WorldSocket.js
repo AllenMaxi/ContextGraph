@@ -28,11 +28,12 @@ export default class WorldSocket {
   /* ------------------------------------------------------------------ */
 
   connect(key) {
-    this._key = key || 'viewer';
+    this._key = key || '';
     this._intentionallyClosed = false;
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${location.host}/ws/world?key=${encodeURIComponent(this._key)}`;
+    const base = `${proto}://${location.host}/ws/world`;
+    const url = this._key ? `${base}?key=${encodeURIComponent(this._key)}` : base;
 
     this.ws = new WebSocket(url);
 
@@ -91,11 +92,11 @@ export default class WorldSocket {
   }
 
   joinRoom(roomId) {
-    this.send({ action: 'join_room', room: roomId });
+    this.send({ type: 'join_room', room: roomId });
   }
 
   leaveRoom() {
-    this.send({ action: 'leave_room' });
+    this.send({ type: 'leave_room' });
   }
 
   /* ------------------------------------------------------------------ */
