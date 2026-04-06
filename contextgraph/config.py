@@ -78,6 +78,9 @@ class Settings:
     enable_ucp: bool = _read_bool("CG_ENABLE_UCP", False)
     # Dashboard
     enable_dashboard: bool = _read_bool("CG_ENABLE_DASHBOARD", True)
+    # World Visualization
+    enable_world: bool = _read_bool("CG_ENABLE_WORLD", False)
+    world_max_viewers: int = _read_int("CG_WORLD_MAX_VIEWERS", 50)
     # Agent Lifecycle
     agent_idle_threshold_days: int = _read_int("CG_AGENT_IDLE_THRESHOLD_DAYS", 30)
     agent_idle_scan_interval_hours: int = _read_int("CG_AGENT_IDLE_SCAN_INTERVAL_HOURS", 24)
