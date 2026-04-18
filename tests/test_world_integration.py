@@ -1,4 +1,5 @@
 """Integration test: CG event → gateway → game event broadcast."""
+
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 

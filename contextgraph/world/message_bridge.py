@@ -1,4 +1,5 @@
 """Message bridge — user prompts and assistant replies as speech bubbles."""
+
 from __future__ import annotations
 
 import asyncio
@@ -41,7 +42,9 @@ def set_bubble(
     if spatial.get_agent(actor_id) is None:
         if actor_id == "user":
             spatial.register_agent(
-                "user", "User", archetype=AgentArchetype.USER,
+                "user",
+                "User",
+                archetype=AgentArchetype.USER,
             )
         else:
             return {"ok": False, "error": "unknown actor"}
@@ -50,11 +53,16 @@ def set_bubble(
     tagged = f"[{role[0]}]{bubble}"
     spatial.update_visual(actor_id, bubble=tagged)
     agent = spatial.get_agent(actor_id)
-    _schedule(gateway.broadcast_to_room(agent.room, GameEvent(
-        type=GameEventType.AGENT_STATE,
-        agent_id=actor_id,
-        data=agent.to_dict(),
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            agent.room,
+            GameEvent(
+                type=GameEventType.AGENT_STATE,
+                agent_id=actor_id,
+                data=agent.to_dict(),
+            ).to_dict(),
+        )
+    )
     return {"ok": True, "bubble": bubble}
 
 

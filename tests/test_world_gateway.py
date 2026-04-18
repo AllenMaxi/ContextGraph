@@ -1,4 +1,5 @@
 """Tests for contextgraph.world.gateway — WorldGateway."""
+
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ from contextgraph.world.models import GameEventType
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def make_ws() -> AsyncMock:
     """Return a mock WebSocket with an async send method."""
@@ -62,6 +64,7 @@ def make_gateway() -> WorldGateway:
 # Init
 # ---------------------------------------------------------------------------
 
+
 class TestInit:
     def test_creates_empty_viewers(self) -> None:
         gw = make_gateway()
@@ -79,6 +82,7 @@ class TestInit:
 
     def test_creates_spatial_state(self) -> None:
         from contextgraph.world.spatial import SpatialState
+
         gw = make_gateway()
         assert isinstance(gw.spatial, SpatialState)
 
@@ -86,6 +90,7 @@ class TestInit:
 # ---------------------------------------------------------------------------
 # add_viewer
 # ---------------------------------------------------------------------------
+
 
 class TestAddViewer:
     @pytest.mark.asyncio
@@ -157,6 +162,7 @@ class TestAddViewer:
 # remove_viewer
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveViewer:
     @pytest.mark.asyncio
     async def test_removes_viewer(self) -> None:
@@ -188,6 +194,7 @@ class TestRemoveViewer:
 # switch_viewer_room
 # ---------------------------------------------------------------------------
 
+
 class TestSwitchViewerRoom:
     @pytest.mark.asyncio
     async def test_changes_room(self) -> None:
@@ -215,6 +222,7 @@ class TestSwitchViewerRoom:
 # ---------------------------------------------------------------------------
 # broadcast_to_room
 # ---------------------------------------------------------------------------
+
 
 class TestBroadcastToRoom:
     @pytest.mark.asyncio
@@ -275,6 +283,7 @@ class TestBroadcastToRoom:
 # process_session_event
 # ---------------------------------------------------------------------------
 
+
 class TestProcessSessionEvent:
     @pytest.mark.asyncio
     async def test_registers_agent_if_new(self) -> None:
@@ -320,6 +329,7 @@ class TestProcessSessionEvent:
 # ---------------------------------------------------------------------------
 # process_bus_event — spawn / despawn / normal
 # ---------------------------------------------------------------------------
+
 
 class TestProcessBusEvent:
     @pytest.mark.asyncio
@@ -388,6 +398,7 @@ class TestProcessBusEvent:
 # ---------------------------------------------------------------------------
 # _build_snapshot
 # ---------------------------------------------------------------------------
+
 
 class TestBuildSnapshot:
     def test_lobby_snapshot_has_world_snapshot_type(self) -> None:

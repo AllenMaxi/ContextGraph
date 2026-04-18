@@ -1,4 +1,5 @@
 """Tests for ContextGraph World V2 — anchors, layouts, meetings, blocker tracker."""
+
 from __future__ import annotations
 
 import asyncio
@@ -240,8 +241,12 @@ class TestSpatialV2:
 
         # Create a meeting
         meeting = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         state.register_agent("a2", "Bob")
         state.move_agent_to_room("a2", "proj")
@@ -262,8 +267,12 @@ class TestSpatialV2:
         state.move_agent_to_room("a2", "proj")
 
         meeting = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         result = state.create_meeting(meeting)
         assert result is True
@@ -279,12 +288,20 @@ class TestSpatialV2:
         state.register_agent("a4", "Dave")
 
         m1 = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         m2 = Meeting(
-            meeting_id="m2", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.BLOCKER_ASSIST, agent_a="a3", agent_b="a4",
+            meeting_id="m2",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.BLOCKER_ASSIST,
+            agent_a="a3",
+            agent_b="a4",
         )
         assert state.create_meeting(m1) is True
         assert state.create_meeting(m2) is False
@@ -302,8 +319,12 @@ class TestSpatialV2:
         home_a2 = state.get_agent("a2").home_anchor_id
 
         meeting = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         state.create_meeting(meeting)
         ended = state.end_meeting("m1")
@@ -322,8 +343,12 @@ class TestSpatialV2:
         state.register_agent("a2", "Bob")
 
         meeting = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         state.create_meeting(meeting)
         state.remove_agent("a1")
@@ -395,26 +420,34 @@ class TestBlockerTracker:
 class TestTranslatorV2:
     def test_coding_event_has_activity(self):
         evt = SessionEvent(
-            event_id="e1", session_id="s1", agent_id="a1",
-            event_type="file_change", content="edit", created_at=datetime.now(),
+            event_id="e1",
+            session_id="s1",
+            agent_id="a1",
+            event_type="file_change",
+            content="edit",
+            created_at=datetime.now(),
         )
         tr = translate_session_event(evt)
         assert tr.activity == Activity.CODING
 
     def test_error_event_has_activity(self):
         evt = SessionEvent(
-            event_id="e1", session_id="s1", agent_id="a1",
-            event_type="failure", content="err", created_at=datetime.now(),
+            event_id="e1",
+            session_id="s1",
+            agent_id="a1",
+            event_type="failure",
+            content="err",
+            created_at=datetime.now(),
         )
         tr = translate_session_event(evt)
         assert tr.activity == Activity.DEBUGGING
 
     def test_claim_reviewed_has_meeting_trigger(self):
         event = Event(
-            event_id="e1", event_type=EventType.CLAIM_REVIEWED,
+            event_id="e1",
+            event_type=EventType.CLAIM_REVIEWED,
             timestamp=time.time(),
-            data={"reviewer_agent_id": "r1", "source_agent_id": "s1",
-                  "claim_id": "c1", "decision": "accepted"},
+            data={"reviewer_agent_id": "r1", "source_agent_id": "s1", "claim_id": "c1", "decision": "accepted"},
             agent_id="r1",
         )
         tr = translate_bus_event(event)
@@ -424,9 +457,11 @@ class TestTranslatorV2:
 
     def test_memory_stored_has_activity(self):
         event = Event(
-            event_id="e1", event_type=EventType.MEMORY_STORED,
+            event_id="e1",
+            event_type=EventType.MEMORY_STORED,
             timestamp=time.time(),
-            data={}, agent_id="a1",
+            data={},
+            agent_id="a1",
         )
         tr = translate_bus_event(event)
         assert tr.activity == Activity.RESEARCHING
@@ -497,8 +532,12 @@ class TestGatewayV2:
         _ = gw.spatial.get_agent("a1").anchor_id
 
         evt = SessionEvent(
-            event_id="e1", session_id="s1", agent_id="a1",
-            event_type="artifact", content="ref", created_at=datetime.now(),
+            event_id="e1",
+            session_id="s1",
+            agent_id="a1",
+            event_type="artifact",
+            content="ref",
+            created_at=datetime.now(),
         )
         await gw.process_session_event(evt)
 
@@ -544,15 +583,23 @@ class TestGatewayV2:
 
         # First failure
         evt1 = SessionEvent(
-            event_id="e1", session_id="s1", agent_id="a1",
-            event_type="failure", content="err1", created_at=datetime.now(),
+            event_id="e1",
+            session_id="s1",
+            agent_id="a1",
+            event_type="failure",
+            content="err1",
+            created_at=datetime.now(),
         )
         await gw.process_session_event(evt1)
 
         # Second failure — should trigger blocker assist
         evt2 = SessionEvent(
-            event_id="e2", session_id="s1", agent_id="a1",
-            event_type="error", content="err2", created_at=datetime.now(),
+            event_id="e2",
+            session_id="s1",
+            agent_id="a1",
+            event_type="error",
+            content="err2",
+            created_at=datetime.now(),
         )
         await gw.process_session_event(evt2)
 
@@ -573,8 +620,12 @@ class TestGatewayV2:
 
         # Create meeting manually
         meeting = Meeting(
-            meeting_id="m1", room_id="proj", circle_id="c1",
-            trigger=MeetingTrigger.CLAIM_REVIEW, agent_a="a1", agent_b="a2",
+            meeting_id="m1",
+            room_id="proj",
+            circle_id="c1",
+            trigger=MeetingTrigger.CLAIM_REVIEW,
+            agent_a="a1",
+            agent_b="a2",
         )
         gw.spatial.create_meeting(meeting)
 
@@ -582,8 +633,12 @@ class TestGatewayV2:
 
         # Process event for a1 — should be ignored during meeting
         evt = SessionEvent(
-            event_id="e1", session_id="s1", agent_id="a1",
-            event_type="file_change", content="edit", created_at=datetime.now(),
+            event_id="e1",
+            session_id="s1",
+            agent_id="a1",
+            event_type="file_change",
+            content="edit",
+            created_at=datetime.now(),
         )
         await gw.process_session_event(evt)
 
@@ -749,10 +804,14 @@ class TestNewModels:
 
     def test_meeting_to_dict(self):
         m = Meeting(
-            meeting_id="m1", room_id="r1", circle_id="c1",
+            meeting_id="m1",
+            room_id="r1",
+            circle_id="c1",
             trigger=MeetingTrigger.CLAIM_REVIEW,
-            agent_a="a1", agent_b="a2",
-            bubble_a="Hi", bubble_b="Hello",
+            agent_a="a1",
+            agent_b="a2",
+            bubble_a="Hi",
+            bubble_b="Hello",
         )
         d = m.to_dict()
         assert d["meeting_id"] == "m1"
@@ -761,9 +820,13 @@ class TestNewModels:
 
     def test_agent_visual_new_fields_in_dict(self):
         av = AgentVisual(
-            agent_id="a1", name="Test", color_index=0,
-            anchor_id="anc_1", home_anchor_id="anc_1",
-            meeting_id="m1", activity=Activity.CODING,
+            agent_id="a1",
+            name="Test",
+            color_index=0,
+            anchor_id="anc_1",
+            home_anchor_id="anc_1",
+            meeting_id="m1",
+            activity=Activity.CODING,
             facing=Facing.LEFT,
         )
         d = av.to_dict()

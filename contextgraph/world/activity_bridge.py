@@ -5,6 +5,7 @@ to /v1/world/activity with a simple {actor, action, room, bubble, ...}
 payload. This module maps each action to a zone + visual state and
 pushes the change through the gateway.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -112,13 +113,15 @@ def apply_activity(gateway: WorldGateway, event_bus: EventBus, payload: dict) ->
     existing = spatial.get_agent(actor)
     spawned = False
     if existing is None:
-        event_bus.publish(Event(
-            event_id=f"activity-spawn-{actor}-{datetime.utcnow().timestamp()}",
-            event_type=EventType.AGENT_REGISTERED,
-            data={"name": name},
-            timestamp=datetime.utcnow(),
-            agent_id=actor,
-        ))
+        event_bus.publish(
+            Event(
+                event_id=f"activity-spawn-{actor}-{datetime.utcnow().timestamp()}",
+                event_type=EventType.AGENT_REGISTERED,
+                data={"name": name},
+                timestamp=datetime.utcnow(),
+                agent_id=actor,
+            )
+        )
         # Register directly too, in case loop hasn't drained yet
         spatial.register_agent(actor, name)
         spawned = True
@@ -134,12 +137,26 @@ def apply_activity(gateway: WorldGateway, event_bus: EventBus, payload: dict) ->
         spatial.move_agent_to_room(actor, room)
         updated = spatial.get_agent(actor)
         if updated is not None:
-            _schedule(gateway.broadcast_to_room(old_room, GameEvent(
-                type=GameEventType.AGENT_DESPAWN, agent_id=actor, data={},
-            ).to_dict()))
-            _schedule(gateway.broadcast_to_room(room, GameEvent(
-                type=GameEventType.AGENT_SPAWN, agent_id=actor, data=updated.to_dict(),
-            ).to_dict()))
+            _schedule(
+                gateway.broadcast_to_room(
+                    old_room,
+                    GameEvent(
+                        type=GameEventType.AGENT_DESPAWN,
+                        agent_id=actor,
+                        data={},
+                    ).to_dict(),
+                )
+            )
+            _schedule(
+                gateway.broadcast_to_room(
+                    room,
+                    GameEvent(
+                        type=GameEventType.AGENT_SPAWN,
+                        agent_id=actor,
+                        data=updated.to_dict(),
+                    ).to_dict(),
+                )
+            )
         moved_room = True
 
     # Apply visual + zone based on action
@@ -161,19 +178,32 @@ def apply_activity(gateway: WorldGateway, event_bus: EventBus, payload: dict) ->
 
     updated = spatial.get_agent(actor)
     if updated is not None:
-        _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-            type=GameEventType.AGENT_STATE, agent_id=actor, data=updated.to_dict(),
-        ).to_dict()))
+        _schedule(
+            gateway.broadcast_to_room(
+                updated.room,
+                GameEvent(
+                    type=GameEventType.AGENT_STATE,
+                    agent_id=actor,
+                    data=updated.to_dict(),
+                ).to_dict(),
+            )
+        )
         if updated.anchor_id:
-            _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-                type=GameEventType.AGENT_MOVE, agent_id=actor,
-                data={
-                    "x": updated.x,
-                    "y": updated.y,
-                    "room": updated.room,
-                    "zone": updated.zone.value if updated.zone else None,
-                },
-            ).to_dict()))
+            _schedule(
+                gateway.broadcast_to_room(
+                    updated.room,
+                    GameEvent(
+                        type=GameEventType.AGENT_MOVE,
+                        agent_id=actor,
+                        data={
+                            "x": updated.x,
+                            "y": updated.y,
+                            "room": updated.room,
+                            "zone": updated.zone.value if updated.zone else None,
+                        },
+                    ).to_dict(),
+                )
+            )
 
     return {
         "spawned": spawned,

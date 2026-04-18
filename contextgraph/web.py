@@ -98,6 +98,7 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
         if not app_settings.enable_streaming:
             from .events import EventBus
+
             event_bus = EventBus()
         register_world_routes(app, event_bus, graph)
     if app_settings.enable_ucp:

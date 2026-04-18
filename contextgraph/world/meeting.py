@@ -1,4 +1,5 @@
 """Meeting orchestrator — manages the lifecycle of two-agent meetings."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 # Meeting phase durations in seconds
 PHASE_DURATIONS = {
-    MeetingPhase.GATHERING: 2.0,    # time for agents to walk to seats
+    MeetingPhase.GATHERING: 2.0,  # time for agents to walk to seats
     MeetingPhase.FACING: 0.3,
     MeetingPhase.BUBBLE_A: 1.8,
     MeetingPhase.BUBBLE_B: 1.8,
     MeetingPhase.ORB_EXCHANGE: 0.9,
     MeetingPhase.LINGERING: 0.7,
-    MeetingPhase.DISPERSING: 0.0,   # instant — agents start walking back
+    MeetingPhase.DISPERSING: 0.0,  # instant — agents start walking back
 }
 
 PHASE_ORDER = [
@@ -122,10 +123,9 @@ class MeetingOrchestrator:
 
         # Find nearest helper in same room
         candidates = [
-            a for a in self.spatial.get_agents_in_room(blocked.room)
-            if a.agent_id != blocked_agent_id
-            and a.meeting_id is None
-            and a.activity != Activity.MEETING
+            a
+            for a in self.spatial.get_agents_in_room(blocked.room)
+            if a.agent_id != blocked_agent_id and a.meeting_id is None and a.activity != Activity.MEETING
         ]
         if not candidates:
             return False
@@ -133,6 +133,7 @@ class MeetingOrchestrator:
         # Pick nearest by distance
         def dist(a):
             return ((a.x - blocked.x) ** 2 + (a.y - blocked.y) ** 2) ** 0.5
+
         helper = min(candidates, key=dist)
 
         return await self._start_meeting(
@@ -184,26 +185,32 @@ class MeetingOrchestrator:
         self.spatial.move_agent_to_anchor(agent_b, circle.seat_b)
 
         # Broadcast meeting_started
-        await self._broadcast(room_id, GameEvent(
-            type=GameEventType.MEETING_STARTED,
-            agent_id=agent_a,
-            data=meeting.to_dict(),
-        ).to_dict())
+        await self._broadcast(
+            room_id,
+            GameEvent(
+                type=GameEventType.MEETING_STARTED,
+                agent_id=agent_a,
+                data=meeting.to_dict(),
+            ).to_dict(),
+        )
 
         # Broadcast agent paths to seats
         for aid, seat_id in [(agent_a, circle.seat_a), (agent_b, circle.seat_b)]:
             agent = self.spatial.get_agent(aid)
             if agent:
-                await self._broadcast(room_id, GameEvent(
-                    type=GameEventType.AGENT_PATH,
-                    agent_id=aid,
-                    data={
-                        "from_anchor_id": agent.home_anchor_id,
-                        "to_anchor_id": seat_id,
-                        "room_id": room_id,
-                        "speed": 1.0,
-                    },
-                ).to_dict())
+                await self._broadcast(
+                    room_id,
+                    GameEvent(
+                        type=GameEventType.AGENT_PATH,
+                        agent_id=aid,
+                        data={
+                            "from_anchor_id": agent.home_anchor_id,
+                            "to_anchor_id": seat_id,
+                            "room_id": room_id,
+                            "speed": 1.0,
+                        },
+                    ).to_dict(),
+                )
 
         # Run lifecycle in background
         task = asyncio.create_task(self._run_lifecycle(meeting))
@@ -218,11 +225,14 @@ class MeetingOrchestrator:
                 self.spatial.update_meeting_phase(meeting.meeting_id, phase)
 
                 # Broadcast phase update
-                await self._broadcast(meeting.room_id, GameEvent(
-                    type=GameEventType.MEETING_UPDATED,
-                    agent_id=meeting.agent_a,
-                    data=meeting.to_dict(),
-                ).to_dict())
+                await self._broadcast(
+                    meeting.room_id,
+                    GameEvent(
+                        type=GameEventType.MEETING_UPDATED,
+                        agent_id=meeting.agent_a,
+                        data=meeting.to_dict(),
+                    ).to_dict(),
+                )
 
                 # Apply phase-specific effects
                 if phase == MeetingPhase.FACING:
@@ -242,26 +252,32 @@ class MeetingOrchestrator:
             # End the meeting
             ended = self.spatial.end_meeting(meeting.meeting_id)
             if ended:
-                await self._broadcast(meeting.room_id, GameEvent(
-                    type=GameEventType.MEETING_ENDED,
-                    agent_id=meeting.agent_a,
-                    data=ended.to_dict(),
-                ).to_dict())
+                await self._broadcast(
+                    meeting.room_id,
+                    GameEvent(
+                        type=GameEventType.MEETING_ENDED,
+                        agent_id=meeting.agent_a,
+                        data=ended.to_dict(),
+                    ).to_dict(),
+                )
 
                 # Broadcast agents returning to home anchors
                 for aid in (meeting.agent_a, meeting.agent_b):
                     agent = self.spatial.get_agent(aid)
                     if agent and agent.home_anchor_id:
-                        await self._broadcast(meeting.room_id, GameEvent(
-                            type=GameEventType.AGENT_PATH,
-                            agent_id=aid,
-                            data={
-                                "from_anchor_id": agent.anchor_id,
-                                "to_anchor_id": agent.home_anchor_id,
-                                "room_id": meeting.room_id,
-                                "speed": 1.0,
-                            },
-                        ).to_dict())
+                        await self._broadcast(
+                            meeting.room_id,
+                            GameEvent(
+                                type=GameEventType.AGENT_PATH,
+                                agent_id=aid,
+                                data={
+                                    "from_anchor_id": agent.anchor_id,
+                                    "to_anchor_id": agent.home_anchor_id,
+                                    "room_id": meeting.room_id,
+                                    "speed": 1.0,
+                                },
+                            ).to_dict(),
+                        )
                         await self._broadcast_agent_state(aid, meeting.room_id)
 
         except asyncio.CancelledError:
@@ -276,11 +292,14 @@ class MeetingOrchestrator:
     async def _broadcast_agent_state(self, agent_id: str, room_id: str) -> None:
         agent = self.spatial.get_agent(agent_id)
         if agent:
-            await self._broadcast(room_id, GameEvent(
-                type=GameEventType.AGENT_STATE,
-                agent_id=agent_id,
-                data=agent.to_dict(),
-            ).to_dict())
+            await self._broadcast(
+                room_id,
+                GameEvent(
+                    type=GameEventType.AGENT_STATE,
+                    agent_id=agent_id,
+                    data=agent.to_dict(),
+                ).to_dict(),
+            )
 
     # ------------------------------------------------------------------
     # Cleanup

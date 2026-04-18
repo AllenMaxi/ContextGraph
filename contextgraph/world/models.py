@@ -1,4 +1,5 @@
 """Game-specific data models for ContextGraph World."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -55,14 +56,14 @@ class Facing(StrEnum):
 
 
 class AgentArchetype(StrEnum):
-    ARCHMAGE = "archmage"      # main Claude session
-    SCOUT = "scout"            # Explore
-    ORACLE = "oracle"          # Plan
-    SCRIBE = "scribe"          # code-reviewer
+    ARCHMAGE = "archmage"  # main Claude session
+    SCOUT = "scout"  # Explore
+    ORACLE = "oracle"  # Plan
+    SCRIBE = "scribe"  # code-reviewer
     APPRENTICE = "apprentice"  # general-purpose
-    ARTIFICER = "artificer"    # statusline-setup
-    SAGE = "sage"              # claude-code-guide
-    USER = "user"              # human user avatar
+    ARTIFICER = "artificer"  # statusline-setup
+    SAGE = "sage"  # claude-code-guide
+    USER = "user"  # human user avatar
     UNKNOWN = "unknown"
 
 
@@ -120,9 +121,11 @@ class MeetingTrigger(StrEnum):
 
 # ── Anchor & Layout ──────────────────────────────────────────────────
 
+
 @dataclass
 class Anchor:
     """A named position in a room that agents can walk to."""
+
     anchor_id: str
     x: float
     y: float
@@ -132,7 +135,8 @@ class Anchor:
     def to_dict(self) -> dict:
         return {
             "anchor_id": self.anchor_id,
-            "x": self.x, "y": self.y,
+            "x": self.x,
+            "y": self.y,
             "zone": self.zone.value if self.zone else None,
             "wander_radius": self.wander_radius,
         }
@@ -141,6 +145,7 @@ class Anchor:
 @dataclass
 class MeetingCircle:
     """A fixed meeting spot with two seat anchors."""
+
     circle_id: str
     x: float
     y: float
@@ -151,15 +156,18 @@ class MeetingCircle:
     def to_dict(self) -> dict:
         return {
             "circle_id": self.circle_id,
-            "x": self.x, "y": self.y,
+            "x": self.x,
+            "y": self.y,
             "radius": self.radius,
-            "seat_a": self.seat_a, "seat_b": self.seat_b,
+            "seat_a": self.seat_a,
+            "seat_b": self.seat_b,
         }
 
 
 @dataclass
 class RoomLayout:
     """Complete spatial layout for a room."""
+
     room_id: str
     anchors: dict[str, Anchor] = field(default_factory=dict)
     edges: list[tuple[str, str]] = field(default_factory=list)
@@ -191,6 +199,7 @@ class RoomLayout:
             return [start, end]
 
         import heapq
+
         dist: dict[str, float] = {aid: float("inf") for aid in self.anchors}
         prev: dict[str, str | None] = {aid: None for aid in self.anchors}
         dist[start] = 0.0
@@ -226,9 +235,11 @@ class RoomLayout:
 
 # ── Meeting ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class Meeting:
     """An active two-agent meeting."""
+
     meeting_id: str
     room_id: str
     circle_id: str
@@ -254,6 +265,7 @@ class Meeting:
 
 
 # ── Agent ────────────────────────────────────────────────────────────
+
 
 @dataclass
 class AgentVisual:
@@ -281,10 +293,16 @@ class AgentVisual:
 
     def to_dict(self) -> dict:
         return {
-            "agent_id": self.agent_id, "name": self.name, "color_index": self.color_index,
-            "expression": self.expression.value, "accessory": self.accessory.value,
-            "glow": self.glow.value, "bubble": self.bubble,
-            "x": self.x, "y": self.y, "room": self.room,
+            "agent_id": self.agent_id,
+            "name": self.name,
+            "color_index": self.color_index,
+            "expression": self.expression.value,
+            "accessory": self.accessory.value,
+            "glow": self.glow.value,
+            "bubble": self.bubble,
+            "x": self.x,
+            "y": self.y,
+            "room": self.room,
             "zone": self.zone.value if self.zone else None,
             "anchor_id": self.anchor_id,
             "home_anchor_id": self.home_anchor_id,

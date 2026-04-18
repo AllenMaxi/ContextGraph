@@ -7,6 +7,7 @@ special about them.
 
 Enable with env var CG_ENABLE_WORLD_DEMO=true.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -139,13 +140,15 @@ class DemoAgentRuntime:
 
     def _spawn_all(self) -> None:
         for p in PERSONAS:
-            self._event_bus.publish(Event(
-                event_id=f"demo-spawn-{p.agent_id}",
-                event_type=EventType.AGENT_REGISTERED,
-                data={"name": p.name},
-                timestamp=datetime.utcnow(),
-                agent_id=p.agent_id,
-            ))
+            self._event_bus.publish(
+                Event(
+                    event_id=f"demo-spawn-{p.agent_id}",
+                    event_type=EventType.AGENT_REGISTERED,
+                    data={"name": p.name},
+                    timestamp=datetime.utcnow(),
+                    agent_id=p.agent_id,
+                )
+            )
 
     # ------------------------------------------------------------------
     # Per-tick driver
@@ -174,11 +177,14 @@ class DemoAgentRuntime:
         agent = self._gateway.spatial.get_agent(persona.agent_id)
         if agent is None:
             return
-        await self._gateway.broadcast_to_room(agent.room, GameEvent(
-            type=GameEventType.AGENT_STATE,
-            agent_id=persona.agent_id,
-            data=agent.to_dict(),
-        ).to_dict())
+        await self._gateway.broadcast_to_room(
+            agent.room,
+            GameEvent(
+                type=GameEventType.AGENT_STATE,
+                agent_id=persona.agent_id,
+                data=agent.to_dict(),
+            ).to_dict(),
+        )
 
     async def _visit_zone(self, persona: Persona) -> None:
         """Emit a bus event matching the persona's role → gateway moves them to zone."""
@@ -213,20 +219,25 @@ class DemoAgentRuntime:
             )
             updated = self._gateway.spatial.get_agent(persona.agent_id)
             if updated is not None:
-                await self._gateway.broadcast_to_room(updated.room, GameEvent(
-                    type=GameEventType.AGENT_STATE,
-                    agent_id=persona.agent_id,
-                    data=updated.to_dict(),
-                ).to_dict())
+                await self._gateway.broadcast_to_room(
+                    updated.room,
+                    GameEvent(
+                        type=GameEventType.AGENT_STATE,
+                        agent_id=persona.agent_id,
+                        data=updated.to_dict(),
+                    ).to_dict(),
+                )
             return
 
-        self._event_bus.publish(Event(
-            event_id=f"demo-{event_type.value}-{self._tick}-{persona.agent_id}",
-            event_type=event_type,
-            data=data,
-            timestamp=datetime.utcnow(),
-            agent_id=persona.agent_id,
-        ))
+        self._event_bus.publish(
+            Event(
+                event_id=f"demo-{event_type.value}-{self._tick}-{persona.agent_id}",
+                event_type=event_type,
+                data=data,
+                timestamp=datetime.utcnow(),
+                agent_id=persona.agent_id,
+            )
+        )
 
     async def _move_room(self, persona: Persona) -> None:
         """Move the agent directly between rooms (not expressible as a bus event)."""
@@ -266,8 +277,11 @@ class DemoAgentRuntime:
         updated = self._gateway.spatial.get_agent(persona.agent_id)
         if updated is None:
             return
-        await self._gateway.broadcast_to_room(updated.room, GameEvent(
-            type=GameEventType.AGENT_STATE,
-            agent_id=persona.agent_id,
-            data=updated.to_dict(),
-        ).to_dict())
+        await self._gateway.broadcast_to_room(
+            updated.room,
+            GameEvent(
+                type=GameEventType.AGENT_STATE,
+                agent_id=persona.agent_id,
+                data=updated.to_dict(),
+            ).to_dict(),
+        )

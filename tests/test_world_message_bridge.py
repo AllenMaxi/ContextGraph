@@ -1,4 +1,5 @@
 """Tests for message_bridge — speech bubbles for user + assistant."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -27,18 +28,25 @@ def test_set_bubble_sets_agent_bubble_and_broadcasts(gateway, monkeypatch):
     from contextgraph.world import identity_bridge, message_bridge
 
     identity_bridge.register_identity(
-        gateway, actor_id="claude", name="Claude",
-        archetype=AgentArchetype.ARCHMAGE, tools_count=2, skills_count=1,
+        gateway,
+        actor_id="claude",
+        name="Claude",
+        archetype=AgentArchetype.ARCHMAGE,
+        tools_count=2,
+        skills_count=1,
     )
 
     broadcasts = []
 
     async def capture(room, msg):
         broadcasts.append((room, msg))
+
     monkeypatch.setattr(gateway, "broadcast_to_room", capture)
 
     res = message_bridge.set_bubble(
-        gateway, actor_id="claude", role="assistant",
+        gateway,
+        actor_id="claude",
+        role="assistant",
         text="Reading auth code",
     )
     assert res["ok"] is True
@@ -52,8 +60,12 @@ def test_set_bubble_truncates_long_text(gateway):
     from contextgraph.world import identity_bridge, message_bridge
 
     identity_bridge.register_identity(
-        gateway, actor_id="claude", name="Claude",
-        archetype=AgentArchetype.ARCHMAGE, tools_count=2, skills_count=1,
+        gateway,
+        actor_id="claude",
+        name="Claude",
+        archetype=AgentArchetype.ARCHMAGE,
+        tools_count=2,
+        skills_count=1,
     )
     long = "x" * 500
     message_bridge.set_bubble(gateway, actor_id="claude", role="user", text=long)
@@ -68,8 +80,12 @@ def test_set_bubble_truncates_long_text(gateway):
 
 def test_set_bubble_spawns_user_if_missing(gateway):
     from contextgraph.world import message_bridge
+
     res = message_bridge.set_bubble(
-        gateway, actor_id="user", role="user", text="hello",
+        gateway,
+        actor_id="user",
+        role="user",
+        text="hello",
     )
     assert res["ok"] is True
     user = gateway.spatial.get_agent("user")
@@ -78,6 +94,7 @@ def test_set_bubble_spawns_user_if_missing(gateway):
 
 
 # ── Task 16: HTTP /message endpoint ──────────────────────────────────
+
 
 def test_http_message_endpoint():
     from fastapi import FastAPI
@@ -93,8 +110,13 @@ def test_http_message_endpoint():
     register_world_routes(app, event_bus, service)
     client = TestClient(app)
 
-    r = client.post("/v1/world/message", json={
-        "actor": "user", "role": "user", "text": "Hello Claude",
-    })
+    r = client.post(
+        "/v1/world/message",
+        json={
+            "actor": "user",
+            "role": "user",
+            "text": "Hello Claude",
+        },
+    )
     assert r.status_code == 200
     assert r.json()["ok"] is True

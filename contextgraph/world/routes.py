@@ -1,4 +1,5 @@
 """Route registration for ContextGraph World visualization."""
+
 import asyncio
 import json
 import logging
@@ -61,6 +62,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
         asyncio.create_task(_event_loop())
         if os.environ.get("CG_ENABLE_WORLD_DEMO", "").lower() in ("1", "true", "yes"):
             from .demo_runtime import DemoAgentRuntime
+
             runtime = DemoAgentRuntime(gateway=gateway, event_bus=event_bus)
             runtime.start()
             app.state.world_demo_runtime = runtime
@@ -93,6 +95,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
           }
         """
         from .activity_bridge import apply_activity
+
         _ensure_background_started()
         try:
             result = apply_activity(gateway, event_bus, payload or {})
@@ -105,6 +108,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
     async def world_identity(payload: dict) -> dict:
         from .identity_bridge import register_identity
         from .models import AgentArchetype
+
         _ensure_background_started()
         try:
             actor = str(payload.get("actor", "")).strip()
@@ -117,8 +121,12 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
             tools_count = int(payload.get("tools_count", 0) or 0)
             skills_count = int(payload.get("skills_count", 0) or 0)
             return register_identity(
-                gateway, actor_id=actor, name=name, archetype=archetype,
-                tools_count=tools_count, skills_count=skills_count,
+                gateway,
+                actor_id=actor,
+                name=name,
+                archetype=archetype,
+                tools_count=tools_count,
+                skills_count=skills_count,
             )
         except Exception as exc:
             logger.exception("World: /identity failed")
@@ -127,14 +135,17 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
     @app.post("/v1/world/identity/upgrade")
     async def world_identity_upgrade(payload: dict) -> dict:
         from .identity_bridge import upgrade_identity
+
         _ensure_background_started()
         try:
             actor = str(payload.get("actor", "")).strip()
             tools_count = int(payload.get("tools_count", 0) or 0)
             skills_count = int(payload.get("skills_count", 0) or 0)
             return upgrade_identity(
-                gateway, actor_id=actor,
-                tools_count=tools_count, skills_count=skills_count,
+                gateway,
+                actor_id=actor,
+                tools_count=tools_count,
+                skills_count=skills_count,
             )
         except Exception as exc:
             logger.exception("World: /identity/upgrade failed")
@@ -143,6 +154,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
     @app.post("/v1/world/spawn")
     async def world_spawn(payload: dict) -> dict:
         from .identity_bridge import spawn_subagent
+
         _ensure_background_started()
         try:
             parent = str(payload.get("parent", "")).strip()
@@ -151,6 +163,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
             invocation_id = str(payload.get("invocation_id", "")).strip()
             if not invocation_id:
                 import uuid
+
                 invocation_id = uuid.uuid4().hex[:8]
             return spawn_subagent(
                 gateway,
@@ -166,12 +179,15 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
     @app.post("/v1/world/despawn")
     async def world_despawn(payload: dict) -> dict:
         from .identity_bridge import despawn_subagent
+
         _ensure_background_started()
         try:
             actor = str(payload.get("actor", "")).strip()
             summary = str(payload.get("result_summary") or "").strip()
             return despawn_subagent(
-                gateway, actor_id=actor, result_summary=summary,
+                gateway,
+                actor_id=actor,
+                result_summary=summary,
             )
         except Exception as exc:
             logger.exception("World: /despawn failed")
@@ -180,6 +196,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
     @app.post("/v1/world/message")
     async def world_message(payload: dict) -> dict:
         from .message_bridge import set_bubble
+
         _ensure_background_started()
         try:
             actor = str(payload.get("actor", "")).strip()

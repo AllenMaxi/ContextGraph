@@ -1,4 +1,5 @@
 """Tests for contextgraph.world.spatial — SpatialState."""
+
 from __future__ import annotations
 
 from contextgraph.world.models import (
@@ -14,6 +15,7 @@ from contextgraph.world.spatial import SpatialState
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def make_state(*agent_specs: tuple[str, str]) -> SpatialState:
     """Return a SpatialState with the given (agent_id, name) pairs registered."""
     state = SpatialState()
@@ -25,6 +27,7 @@ def make_state(*agent_specs: tuple[str, str]) -> SpatialState:
 # ---------------------------------------------------------------------------
 # register_agent
 # ---------------------------------------------------------------------------
+
 
 class TestRegisterAgent:
     def test_creates_agent_in_lobby(self):
@@ -79,6 +82,7 @@ class TestRegisterAgent:
 # get_agent / get_all_agents
 # ---------------------------------------------------------------------------
 
+
 class TestGetters:
     def test_get_agent_returns_none_for_unknown(self):
         state = SpatialState()
@@ -100,6 +104,7 @@ class TestGetters:
 # get_agents_in_room
 # ---------------------------------------------------------------------------
 
+
 class TestGetAgentsInRoom:
     def test_all_new_agents_in_lobby(self):
         state = make_state(("a1", "A"), ("a2", "B"))
@@ -119,6 +124,7 @@ class TestGetAgentsInRoom:
 # ---------------------------------------------------------------------------
 # get_room_list
 # ---------------------------------------------------------------------------
+
 
 class TestGetRoomList:
     def test_lobby_returns_demo_rooms_but_not_lobby(self):
@@ -149,6 +155,7 @@ class TestGetRoomList:
 # ---------------------------------------------------------------------------
 # move_agent_to_room
 # ---------------------------------------------------------------------------
+
 
 class TestMoveAgentToRoom:
     def test_move_to_non_lobby_sets_happy_green(self):
@@ -184,6 +191,7 @@ class TestMoveAgentToRoom:
 # move_agent_to_zone
 # ---------------------------------------------------------------------------
 
+
 class TestMoveAgentToZone:
     def test_zone_is_set(self):
         state = make_state(("a1", "A"))
@@ -218,6 +226,7 @@ class TestMoveAgentToZone:
 # ---------------------------------------------------------------------------
 # update_visual
 # ---------------------------------------------------------------------------
+
 
 class TestUpdateVisual:
     def test_update_expression(self):
@@ -257,6 +266,7 @@ class TestUpdateVisual:
 # ---------------------------------------------------------------------------
 # remove_agent
 # ---------------------------------------------------------------------------
+
 
 class TestRemoveAgent:
     def test_remove_deletes_agent(self):

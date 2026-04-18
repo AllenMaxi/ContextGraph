@@ -1,4 +1,5 @@
 """WebSocket gateway — bridges ContextGraph events to game viewers."""
+
 from __future__ import annotations
 
 import json

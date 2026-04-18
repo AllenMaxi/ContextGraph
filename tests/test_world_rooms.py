@@ -1,4 +1,5 @@
 """Tests for contextgraph.world.rooms — room layout definitions and position helpers."""
+
 from __future__ import annotations
 
 import math
@@ -34,8 +35,18 @@ class TestAgentColors:
 
     def test_exact_colors(self):
         expected = [
-            "#6366f1", "#f97316", "#06b6d4", "#ec4899", "#10b981", "#f59e0b",
-            "#f43f5e", "#0ea5e9", "#8b5cf6", "#14b8a6", "#84cc16", "#d946ef",
+            "#6366f1",
+            "#f97316",
+            "#06b6d4",
+            "#ec4899",
+            "#10b981",
+            "#f59e0b",
+            "#f43f5e",
+            "#0ea5e9",
+            "#8b5cf6",
+            "#14b8a6",
+            "#84cc16",
+            "#d946ef",
         ]
         assert expected == AGENT_COLORS
 

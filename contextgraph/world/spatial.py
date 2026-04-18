@@ -1,4 +1,5 @@
 """Spatial state tracker — manages agent positions, rooms, anchors, and meetings."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,6 +46,7 @@ class SpatialState:
         # IdentityStore is optional — callers without persistence get an
         # ephemeral in-memory store rooted at a temp path.
         from .identity_store import IdentityStore as _IdentityStore
+
         if identity_store is None:
             identity_store = _IdentityStore(Path("/tmp/_cg_test_identities.json"))
         self._identity_store = identity_store
@@ -158,9 +160,7 @@ class SpatialState:
             return None
         return (old_rank, new_rank)
 
-    def set_parent(
-        self, agent_id: str, parent_agent_id: str | None
-    ) -> AgentVisual | None:
+    def set_parent(self, agent_id: str, parent_agent_id: str | None) -> AgentVisual | None:
         agent = self._agents.get(agent_id)
         if agent is None:
             return None
@@ -240,7 +240,9 @@ class SpatialState:
         agent.meeting_id = None
 
         layout = get_layout(room)
-        occupied = {a.anchor_id for a in self._agents.values() if a.room == room and a.agent_id != agent_id and a.anchor_id}
+        occupied = {
+            a.anchor_id for a in self._agents.values() if a.room == room and a.agent_id != agent_id and a.anchor_id
+        }
 
         if room == "lobby":
             agent.expression = Expression.SLEEPY
@@ -282,8 +284,7 @@ class SpatialState:
         agent.zone = zone
         layout = get_layout(agent.room)
         occupied = {
-            a.anchor_id for a in self._agents.values()
-            if a.zone == zone and a.agent_id != agent_id and a.anchor_id
+            a.anchor_id for a in self._agents.values() if a.zone == zone and a.agent_id != agent_id and a.anchor_id
         }
         anchor_id = assign_home_anchor(layout, zone=zone, occupied=occupied)
 
@@ -294,11 +295,7 @@ class SpatialState:
             agent.home_anchor_id = anchor_id
         else:
             # Fallback to legacy
-            exclude = [
-                (a.x, a.y)
-                for a in self._agents.values()
-                if a.zone == zone and a.agent_id != agent_id
-            ]
+            exclude = [(a.x, a.y) for a in self._agents.values() if a.zone == zone and a.agent_id != agent_id]
             agent.x, agent.y = get_zone_position(zone, exclude=exclude)
 
     def move_agent_to_anchor(self, agent_id: str, anchor_id: str) -> None:

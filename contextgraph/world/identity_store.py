@@ -4,6 +4,7 @@ Keyed by ``agent_id``.  Once ``archetype`` and ``color_index`` are assigned
 for a given ``agent_id`` they never change.  Rank and counters may update
 on upgrade events.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -82,9 +83,7 @@ class IdentityStore:
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {aid: rec.to_dict() for aid, rec in self._records.items()}
-        fd, tmp = tempfile.mkstemp(
-            dir=str(self.path.parent), prefix=".identities-", suffix=".json"
-        )
+        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".identities-", suffix=".json")
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(payload, fh, indent=2, sort_keys=True)

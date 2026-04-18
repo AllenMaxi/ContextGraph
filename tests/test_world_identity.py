@@ -1,4 +1,5 @@
 """Tests for agent identity, archetype, rank assignment."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +15,7 @@ from contextgraph.world.models import (
 )
 
 # ── Task 1: AgentArchetype ───────────────────────────────────────────
+
 
 def test_archetype_enum_values():
     assert AgentArchetype.ARCHMAGE == "archmage"
@@ -33,6 +35,7 @@ def test_archetype_count():
 
 # ── Task 2: AgentRank + rank_for_counts ──────────────────────────────
 
+
 def test_rank_enum_values():
     assert AgentRank.NOVICE == "novice"
     assert AgentRank.ADEPT == "adept"
@@ -41,18 +44,21 @@ def test_rank_enum_values():
     assert AgentRank.AVATAR == "avatar"
 
 
-@pytest.mark.parametrize("total,expected", [
-    (0, AgentRank.NOVICE),
-    (5, AgentRank.NOVICE),
-    (6, AgentRank.ADEPT),
-    (15, AgentRank.ADEPT),
-    (16, AgentRank.MAGE),
-    (30, AgentRank.MAGE),
-    (31, AgentRank.HIGH_MAGE),
-    (60, AgentRank.HIGH_MAGE),
-    (61, AgentRank.AVATAR),
-    (999, AgentRank.AVATAR),
-])
+@pytest.mark.parametrize(
+    "total,expected",
+    [
+        (0, AgentRank.NOVICE),
+        (5, AgentRank.NOVICE),
+        (6, AgentRank.ADEPT),
+        (15, AgentRank.ADEPT),
+        (16, AgentRank.MAGE),
+        (30, AgentRank.MAGE),
+        (31, AgentRank.HIGH_MAGE),
+        (60, AgentRank.HIGH_MAGE),
+        (61, AgentRank.AVATAR),
+        (999, AgentRank.AVATAR),
+    ],
+)
 def test_rank_for_counts(total, expected):
     tools = total // 2
     skills = total - tools
@@ -60,6 +66,7 @@ def test_rank_for_counts(total, expected):
 
 
 # ── Task 3: AgentVisual identity fields ──────────────────────────────
+
 
 def test_agent_visual_identity_fields_default():
     v = AgentVisual(agent_id="claude", name="Claude", color_index=0)
@@ -91,12 +98,14 @@ def test_agent_visual_to_dict_includes_identity():
 
 # ── Task 4: New event types ──────────────────────────────────────────
 
+
 def test_new_event_types():
     assert GameEventType.AGENT_UPGRADE == "agent_upgrade"
     assert GameEventType.HANDOFF_ORB == "handoff_orb"
 
 
 # ── Task 5: IdentityStore ────────────────────────────────────────────
+
 
 def test_identity_store_roundtrip(tmp_path):
     from contextgraph.world.identity_store import IdentityRecord, IdentityStore
@@ -127,6 +136,7 @@ def test_identity_store_roundtrip(tmp_path):
 
 def test_identity_store_get_missing(tmp_path):
     from contextgraph.world.identity_store import IdentityStore
+
     store = IdentityStore(tmp_path / "identities.json")
     assert store.get("nobody") is None
 
@@ -136,11 +146,17 @@ def test_identity_store_atomic_write(tmp_path):
 
     store_path = tmp_path / "identities.json"
     store = IdentityStore(store_path)
-    store.upsert(IdentityRecord(
-        agent_id="claude", name="Claude",
-        archetype=AgentArchetype.ARCHMAGE, rank=AgentRank.NOVICE,
-        color_index=0, tools_count=0, skills_count=0,
-    ))
+    store.upsert(
+        IdentityRecord(
+            agent_id="claude",
+            name="Claude",
+            archetype=AgentArchetype.ARCHMAGE,
+            rank=AgentRank.NOVICE,
+            color_index=0,
+            tools_count=0,
+            skills_count=0,
+        )
+    )
     store.save()
 
     data = json.loads(store_path.read_text())
@@ -150,21 +166,24 @@ def test_identity_store_atomic_write(tmp_path):
 
 # ── Task 6: SpatialState + IdentityStore ─────────────────────────────
 
+
 def test_spatial_state_uses_identity_store(tmp_path):
     from contextgraph.world.identity_store import IdentityRecord, IdentityStore
     from contextgraph.world.spatial import SpatialState
 
     store_path = tmp_path / "identities.json"
     store = IdentityStore(store_path)
-    store.upsert(IdentityRecord(
-        agent_id="claude",
-        name="Claude",
-        archetype=AgentArchetype.ARCHMAGE,
-        rank=AgentRank.MAGE,
-        color_index=4,
-        tools_count=18,
-        skills_count=4,
-    ))
+    store.upsert(
+        IdentityRecord(
+            agent_id="claude",
+            name="Claude",
+            archetype=AgentArchetype.ARCHMAGE,
+            rank=AgentRank.MAGE,
+            color_index=4,
+            tools_count=18,
+            skills_count=4,
+        )
+    )
 
     state = SpatialState(identity_store=store)
     agent = state.register_agent("claude", "Claude")
@@ -180,15 +199,14 @@ def test_spatial_state_creates_identity_on_first_register(tmp_path):
     store_path = tmp_path / "identities.json"
     store = IdentityStore(store_path)
     state = SpatialState(identity_store=store)
-    state.register_agent(
-        "claude.Explore.1", "Explore-1", archetype=AgentArchetype.SCOUT
-    )
+    state.register_agent("claude.Explore.1", "Explore-1", archetype=AgentArchetype.SCOUT)
     rec = store.get("claude.Explore.1")
     assert rec is not None
     assert rec.archetype == AgentArchetype.SCOUT
 
 
 # ── Task 7: update_rank ───────────────────────────────────────────────
+
 
 def test_update_rank_changes_agent_and_store(tmp_path):
     from contextgraph.world.identity_store import IdentityStore
@@ -228,6 +246,7 @@ def test_update_rank_noop_if_unchanged(tmp_path):
 
 # ── Task 8: set_parent ───────────────────────────────────────────────
 
+
 def test_set_parent(tmp_path):
     from contextgraph.world.identity_store import IdentityStore
     from contextgraph.world.spatial import SpatialState
@@ -235,9 +254,7 @@ def test_set_parent(tmp_path):
     store = IdentityStore(tmp_path / "identities.json")
     state = SpatialState(identity_store=store)
     state.register_agent("claude", "Claude", archetype=AgentArchetype.ARCHMAGE)
-    state.register_agent(
-        "claude.Explore.1", "Scout", archetype=AgentArchetype.SCOUT
-    )
+    state.register_agent("claude.Explore.1", "Scout", archetype=AgentArchetype.SCOUT)
     state.set_parent("claude.Explore.1", "claude")
     child = state.get_agent("claude.Explore.1")
     assert child.parent_agent_id == "claude"

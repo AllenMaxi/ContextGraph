@@ -4,6 +4,7 @@ Callers (HTTP routes or internal systems) invoke these functions; they
 update ``SpatialState`` and broadcast the right ``GameEvent`` through
 the ``WorldGateway``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,18 +55,25 @@ def register_identity(
     was_new = spatial.get_agent(actor_id) is None
 
     spatial.register_agent(
-        actor_id, name or actor_id,
-        archetype=archetype, parent_agent_id=parent_agent_id,
+        actor_id,
+        name or actor_id,
+        archetype=archetype,
+        parent_agent_id=parent_agent_id,
     )
     spatial.update_rank(actor_id, tools_count, skills_count)
     updated = spatial.get_agent(actor_id)
 
     evt_type = GameEventType.AGENT_SPAWN if was_new else GameEventType.AGENT_STATE
-    _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-        type=evt_type,
-        agent_id=actor_id,
-        data=updated.to_dict(),
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            updated.room,
+            GameEvent(
+                type=evt_type,
+                agent_id=actor_id,
+                data=updated.to_dict(),
+            ).to_dict(),
+        )
+    )
 
     return {"ok": True, "created": was_new, "agent": updated.to_dict()}
 
@@ -95,22 +103,32 @@ def upgrade_identity(
             "rank": updated.rank.value,
         }
     old_rank, new_rank = change
-    _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-        type=GameEventType.AGENT_UPGRADE,
-        agent_id=actor_id,
-        data={
-            "old_rank": old_rank.value,
-            "new_rank": new_rank.value,
-            "tools_count": tools_count,
-            "skills_count": skills_count,
-        },
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            updated.room,
+            GameEvent(
+                type=GameEventType.AGENT_UPGRADE,
+                agent_id=actor_id,
+                data={
+                    "old_rank": old_rank.value,
+                    "new_rank": new_rank.value,
+                    "tools_count": tools_count,
+                    "skills_count": skills_count,
+                },
+            ).to_dict(),
+        )
+    )
     # Follow with state so lazy clients still sync
-    _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-        type=GameEventType.AGENT_STATE,
-        agent_id=actor_id,
-        data=updated.to_dict(),
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            updated.room,
+            GameEvent(
+                type=GameEventType.AGENT_STATE,
+                agent_id=actor_id,
+                data=updated.to_dict(),
+            ).to_dict(),
+        )
+    )
 
     return {
         "ok": True,
@@ -138,8 +156,10 @@ def spawn_subagent(
     spatial = gateway.spatial
     was_new = spatial.get_agent(actor_id) is None
     spatial.register_agent(
-        actor_id, name,
-        archetype=archetype, parent_agent_id=parent_actor_id,
+        actor_id,
+        name,
+        archetype=archetype,
+        parent_agent_id=parent_actor_id,
     )
     spatial.update_rank(actor_id, tools_count=0, skills_count=0)
 
@@ -150,11 +170,16 @@ def spawn_subagent(
 
     updated = spatial.get_agent(actor_id)
     evt_type = GameEventType.AGENT_SPAWN if was_new else GameEventType.AGENT_STATE
-    _schedule(gateway.broadcast_to_room(updated.room, GameEvent(
-        type=evt_type,
-        agent_id=actor_id,
-        data=updated.to_dict(),
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            updated.room,
+            GameEvent(
+                type=evt_type,
+                agent_id=actor_id,
+                data=updated.to_dict(),
+            ).to_dict(),
+        )
+    )
 
     return {
         "ok": True,
@@ -186,28 +211,43 @@ def despawn_subagent(
         short = short[:107] + "..."
     if short:
         spatial.update_visual(actor_id, bubble=short)
-        _schedule(gateway.broadcast_to_room(room, GameEvent(
-            type=GameEventType.AGENT_STATE,
-            agent_id=actor_id,
-            data=spatial.get_agent(actor_id).to_dict(),
-        ).to_dict()))
+        _schedule(
+            gateway.broadcast_to_room(
+                room,
+                GameEvent(
+                    type=GameEventType.AGENT_STATE,
+                    agent_id=actor_id,
+                    data=spatial.get_agent(actor_id).to_dict(),
+                ).to_dict(),
+            )
+        )
 
     if parent is not None:
-        _schedule(gateway.broadcast_to_room(room, GameEvent(
-            type=GameEventType.HANDOFF_ORB,
-            agent_id=actor_id,
-            data={
-                "from_agent": actor_id,
-                "to_agent": parent_id,
-                "color": "green",
-            },
-        ).to_dict()))
+        _schedule(
+            gateway.broadcast_to_room(
+                room,
+                GameEvent(
+                    type=GameEventType.HANDOFF_ORB,
+                    agent_id=actor_id,
+                    data={
+                        "from_agent": actor_id,
+                        "to_agent": parent_id,
+                        "color": "green",
+                    },
+                ).to_dict(),
+            )
+        )
 
-    _schedule(gateway.broadcast_to_room(room, GameEvent(
-        type=GameEventType.AGENT_DESPAWN,
-        agent_id=actor_id,
-        data={"parent_agent_id": parent_id},
-    ).to_dict()))
+    _schedule(
+        gateway.broadcast_to_room(
+            room,
+            GameEvent(
+                type=GameEventType.AGENT_DESPAWN,
+                agent_id=actor_id,
+                data={"parent_agent_id": parent_id},
+            ).to_dict(),
+        )
+    )
 
     spatial.remove_agent(actor_id)
     return {"ok": True, "actor_id": actor_id, "parent": parent_id}

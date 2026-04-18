@@ -1,4 +1,5 @@
 """Room templates, zone definitions, anchor layouts, and position helpers."""
+
 from __future__ import annotations
 
 import hashlib
@@ -8,8 +9,18 @@ from collections.abc import Sequence
 from .models import Anchor, MeetingCircle, RoomLayout, ZoneType
 
 AGENT_COLORS = [
-    "#6366f1", "#f97316", "#06b6d4", "#ec4899", "#10b981", "#f59e0b",
-    "#f43f5e", "#0ea5e9", "#8b5cf6", "#14b8a6", "#84cc16", "#d946ef",
+    "#6366f1",
+    "#f97316",
+    "#06b6d4",
+    "#ec4899",
+    "#10b981",
+    "#f59e0b",
+    "#f43f5e",
+    "#0ea5e9",
+    "#8b5cf6",
+    "#14b8a6",
+    "#84cc16",
+    "#d946ef",
 ]
 
 ROOM_THEME_KEYS = ("library", "observatory", "alchemy", "workshop")
@@ -22,10 +33,10 @@ DEMO_ROOM_SPECS: dict[str, dict[str, str]] = {
 
 # Legacy zone rectangles — kept for backward-compat with existing tests
 ROOM_ZONES: dict[ZoneType, dict[str, float]] = {
-    ZoneType.CODE_DESK:       {"x": 80,  "y": 120, "w": 300, "h": 200},
-    ZoneType.MEMORY_LIBRARY:  {"x": 640, "y": 120, "w": 300, "h": 200},
-    ZoneType.REVIEW_STATION:  {"x": 80,  "y": 440, "w": 300, "h": 200},
-    ZoneType.DEBUG_LAB:       {"x": 640, "y": 440, "w": 300, "h": 200},
+    ZoneType.CODE_DESK: {"x": 80, "y": 120, "w": 300, "h": 200},
+    ZoneType.MEMORY_LIBRARY: {"x": 640, "y": 120, "w": 300, "h": 200},
+    ZoneType.REVIEW_STATION: {"x": 80, "y": 440, "w": 300, "h": 200},
+    ZoneType.DEBUG_LAB: {"x": 640, "y": 440, "w": 300, "h": 200},
 }
 
 LOBBY_ZONES: dict[str, dict[str, float]] = {
@@ -54,13 +65,11 @@ def get_room_display_name(room_id: str) -> str:
 
 def get_demo_room_info() -> list[dict[str, str]]:
     """Return the always-visible demo room catalog for world navigation."""
-    return [
-        {"room_id": room_id, **spec}
-        for room_id, spec in DEMO_ROOM_SPECS.items()
-    ]
+    return [{"room_id": room_id, **spec} for room_id, spec in DEMO_ROOM_SPECS.items()]
 
 
 # ── Legacy position helpers (kept for backward compat) ───────────────
+
 
 def get_zone_position(
     zone: ZoneType,
@@ -98,6 +107,7 @@ def get_lobby_door_position(door_index: int) -> tuple[float, float]:
 # Top 50px reserved for HUD. Usable: y=50..560.
 # Each room has a theme-specific staged layout, plus a central meeting circle.
 
+
 def _build_project_room_layout(room_id: str) -> RoomLayout:
     """Build the canonical layout for any project room.
 
@@ -106,7 +116,12 @@ def _build_project_room_layout(room_id: str) -> RoomLayout:
     """
     theme_key = get_room_theme_key(room_id)
 
-    themed_positions: dict[str, dict[ZoneType | str, tuple[float, float] | tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]] = {
+    themed_positions: dict[
+        str,
+        dict[
+            ZoneType | str, tuple[float, float] | tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
+        ],
+    ] = {
         "library": {
             "center": (512.0, 326.0),
             "meeting_a": (476.0, 326.0),
@@ -169,12 +184,18 @@ def _build_project_room_layout(room_id: str) -> RoomLayout:
         a1_id = f"{zone_name}_a"
         a2_id = f"{zone_name}_b"
         anchors[a1_id] = Anchor(
-            anchor_id=a1_id, x=a1x, y=a1y,
-            zone=zone_type, wander_radius=40.0,
+            anchor_id=a1_id,
+            x=a1x,
+            y=a1y,
+            zone=zone_type,
+            wander_radius=40.0,
         )
         anchors[a2_id] = Anchor(
-            anchor_id=a2_id, x=a2x, y=a2y,
-            zone=zone_type, wander_radius=40.0,
+            anchor_id=a2_id,
+            x=a2x,
+            y=a2y,
+            zone=zone_type,
+            wander_radius=40.0,
         )
 
         door_id = f"{zone_name}_door"
@@ -184,8 +205,12 @@ def _build_project_room_layout(room_id: str) -> RoomLayout:
         edges.append((a2_id, door_id))
         edges.append((door_id, "center"))
 
-    anchors["idle_left"] = Anchor(anchor_id="idle_left", x=themed["idle_left"][0], y=themed["idle_left"][1], wander_radius=32.0)
-    anchors["idle_right"] = Anchor(anchor_id="idle_right", x=themed["idle_right"][0], y=themed["idle_right"][1], wander_radius=32.0)
+    anchors["idle_left"] = Anchor(
+        anchor_id="idle_left", x=themed["idle_left"][0], y=themed["idle_left"][1], wander_radius=32.0
+    )
+    anchors["idle_right"] = Anchor(
+        anchor_id="idle_right", x=themed["idle_right"][0], y=themed["idle_right"][1], wander_radius=32.0
+    )
     edges.append(("idle_left", "center"))
     edges.append(("idle_right", "center"))
 
@@ -201,8 +226,11 @@ def _build_project_room_layout(room_id: str) -> RoomLayout:
 
     meeting = MeetingCircle(
         circle_id=f"{room_id}_circle",
-        x=cx, y=cy, radius=44.0,
-        seat_a=seat_a_id, seat_b=seat_b_id,
+        x=cx,
+        y=cy,
+        radius=44.0,
+        seat_a=seat_a_id,
+        seat_b=seat_b_id,
     )
 
     return RoomLayout(
@@ -228,9 +256,15 @@ def _build_lobby_layout() -> RoomLayout:
 
     # Scattered idle anchors
     idle_positions = [
-        ("idle_1", 248, 246), ("idle_2", 392, 224), ("idle_3", 632, 224),
-        ("idle_4", 776, 246), ("idle_5", 308, 390), ("idle_6", 432, 430),
-        ("idle_7", 592, 430), ("idle_8", 716, 390), ("idle_9", 512, 196),
+        ("idle_1", 248, 246),
+        ("idle_2", 392, 224),
+        ("idle_3", 632, 224),
+        ("idle_4", 776, 246),
+        ("idle_5", 308, 390),
+        ("idle_6", 432, 430),
+        ("idle_7", 592, 430),
+        ("idle_8", 716, 390),
+        ("idle_9", 512, 196),
         ("idle_10", 512, 458),
     ]
     for aid, ax, ay in idle_positions:
@@ -239,10 +273,18 @@ def _build_lobby_layout() -> RoomLayout:
 
     # Connect nearby anchors for smoother paths
     neighbor_pairs = [
-        ("idle_1", "idle_2"), ("idle_2", "idle_9"), ("idle_9", "idle_3"),
-        ("idle_3", "idle_4"), ("idle_1", "idle_5"), ("idle_5", "idle_6"),
-        ("idle_6", "idle_10"), ("idle_10", "idle_7"), ("idle_7", "idle_8"),
-        ("idle_4", "idle_8"), ("idle_2", "idle_6"), ("idle_3", "idle_7"),
+        ("idle_1", "idle_2"),
+        ("idle_2", "idle_9"),
+        ("idle_9", "idle_3"),
+        ("idle_3", "idle_4"),
+        ("idle_1", "idle_5"),
+        ("idle_5", "idle_6"),
+        ("idle_6", "idle_10"),
+        ("idle_10", "idle_7"),
+        ("idle_7", "idle_8"),
+        ("idle_4", "idle_8"),
+        ("idle_2", "idle_6"),
+        ("idle_3", "idle_7"),
     ]
     edges.extend(neighbor_pairs)
 
@@ -256,8 +298,11 @@ def _build_lobby_layout() -> RoomLayout:
 
     meeting = MeetingCircle(
         circle_id="lobby_circle",
-        x=512.0, y=336.0, radius=52.0,
-        seat_a=seat_a_id, seat_b=seat_b_id,
+        x=512.0,
+        y=336.0,
+        radius=52.0,
+        seat_a=seat_a_id,
+        seat_b=seat_b_id,
     )
 
     return RoomLayout(
@@ -297,17 +342,15 @@ def get_layout(room_id: str) -> RoomLayout:
 
 def get_home_anchors_for_zone(layout: RoomLayout, zone: ZoneType) -> list[str]:
     """Return anchor IDs that belong to a specific zone."""
-    return [
-        aid for aid, a in layout.anchors.items()
-        if a.zone == zone
-    ]
+    return [aid for aid, a in layout.anchors.items() if a.zone == zone]
 
 
 def get_idle_anchors(layout: RoomLayout) -> list[str]:
     """Return anchor IDs suitable for idle placement (no zone, not seats/center)."""
     exclude_prefixes = ("meeting_seat_", "center")
     return [
-        aid for aid, a in layout.anchors.items()
+        aid
+        for aid, a in layout.anchors.items()
         if a.zone is None and not aid.startswith(exclude_prefixes) and not aid.endswith("_door")
     ]
 

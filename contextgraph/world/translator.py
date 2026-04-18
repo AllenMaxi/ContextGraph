@@ -1,4 +1,5 @@
 """Event translation layer: maps ContextGraph events to game visual state changes."""
+
 from __future__ import annotations
 
 import time
@@ -159,6 +160,7 @@ def translate_bus_event(event: Event) -> TranslationResult:
 # ══════════════════════════════════════════════════════════════════════
 # Blocker Assist Tracker
 # ══════════════════════════════════════════════════════════════════════
+
 
 class BlockerTracker:
     """Tracks failure/blocker/error events per agent to detect blocker assist scenarios.
