@@ -4,8 +4,10 @@ import unittest
 
 from contextgraph.world.models import (
     Accessory,
+    Activity,
     AgentVisual,
     Expression,
+    Facing,
     GameEvent,
     GameEventType,
     GlowColor,
@@ -75,7 +77,7 @@ class GameEventTypeEnumTest(unittest.TestCase):
         self.assertEqual(GameEventType.ROOM_SNAPSHOT, "room_snapshot")
 
     def test_count(self) -> None:
-        self.assertEqual(len(GameEventType), 7)
+        self.assertEqual(len(GameEventType), 13)
 
 
 class AgentVisualTest(unittest.TestCase):
@@ -89,6 +91,11 @@ class AgentVisualTest(unittest.TestCase):
         self.assertEqual(av.y, 0.0)
         self.assertEqual(av.room, "lobby")
         self.assertIsNone(av.zone)
+        self.assertIsNone(av.anchor_id)
+        self.assertIsNone(av.home_anchor_id)
+        self.assertIsNone(av.meeting_id)
+        self.assertEqual(av.activity.value, "idle")
+        self.assertEqual(av.facing.value, "right")
 
     def test_to_dict_required_fields(self) -> None:
         av = AgentVisual(agent_id="agt_1", name="Alice", color_index=2)
@@ -108,6 +115,11 @@ class AgentVisualTest(unittest.TestCase):
         self.assertEqual(d["y"], 0.0)
         self.assertEqual(d["room"], "lobby")
         self.assertIsNone(d["zone"])
+        self.assertIsNone(d["anchor_id"])
+        self.assertIsNone(d["home_anchor_id"])
+        self.assertIsNone(d["meeting_id"])
+        self.assertEqual(d["activity"], "idle")
+        self.assertEqual(d["facing"], "right")
 
     def test_to_dict_custom_values(self) -> None:
         av = AgentVisual(
@@ -166,18 +178,21 @@ class RoomInfoTest(unittest.TestCase):
     def test_defaults(self) -> None:
         ri = RoomInfo(room_id="room_1", name="Lobby")
         self.assertEqual(ri.agent_count, 0)
+        self.assertIsNone(ri.theme_key)
 
     def test_to_dict(self) -> None:
-        ri = RoomInfo(room_id="room_1", name="Lobby", agent_count=3)
+        ri = RoomInfo(room_id="room_1", name="Lobby", agent_count=3, theme_key="library")
         d = ri.to_dict()
         self.assertEqual(d["room_id"], "room_1")
         self.assertEqual(d["name"], "Lobby")
         self.assertEqual(d["agent_count"], 3)
+        self.assertEqual(d["theme_key"], "library")
 
     def test_to_dict_default_count(self) -> None:
         ri = RoomInfo(room_id="room_2", name="Code Room")
         d = ri.to_dict()
         self.assertEqual(d["agent_count"], 0)
+        self.assertIsNone(d["theme_key"])
 
 
 if __name__ == "__main__":
