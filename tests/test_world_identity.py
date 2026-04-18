@@ -148,3 +148,98 @@ def test_identity_store_atomic_write(tmp_path):
     data = json.loads(store_path.read_text())
     assert "claude" in data
     assert data["claude"]["archetype"] == "archmage"
+
+
+# ── Task 6: SpatialState + IdentityStore ─────────────────────────────
+
+def test_spatial_state_uses_identity_store(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+    from contextgraph.world.spatial import SpatialState
+
+    store_path = tmp_path / "identities.json"
+    store = IdentityStore(store_path)
+    store.upsert(IdentityRecord(
+        agent_id="claude",
+        name="Claude",
+        archetype=AgentArchetype.ARCHMAGE,
+        rank=AgentRank.MAGE,
+        color_index=4,
+        tools_count=18,
+        skills_count=4,
+    ))
+
+    state = SpatialState(identity_store=store)
+    agent = state.register_agent("claude", "Claude")
+    assert agent.archetype == AgentArchetype.ARCHMAGE
+    assert agent.rank == AgentRank.MAGE
+    assert agent.color_index == 4
+
+
+def test_spatial_state_creates_identity_on_first_register(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore
+    from contextgraph.world.spatial import SpatialState
+
+    store_path = tmp_path / "identities.json"
+    store = IdentityStore(store_path)
+    state = SpatialState(identity_store=store)
+    state.register_agent(
+        "claude.Explore.1", "Explore-1", archetype=AgentArchetype.SCOUT
+    )
+    rec = store.get("claude.Explore.1")
+    assert rec is not None
+    assert rec.archetype == AgentArchetype.SCOUT
+
+
+# ── Task 7: update_rank ───────────────────────────────────────────────
+
+def test_update_rank_changes_agent_and_store(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore
+    from contextgraph.world.spatial import SpatialState
+
+    store = IdentityStore(tmp_path / "identities.json")
+    state = SpatialState(identity_store=store)
+    state.register_agent("claude", "Claude", archetype=AgentArchetype.ARCHMAGE)
+
+    result = state.update_rank("claude", tools_count=20, skills_count=5)
+    assert result is not None
+    old_rank, new_rank = result
+    assert old_rank == AgentRank.NOVICE
+    assert new_rank == AgentRank.MAGE
+
+    agent = state.get_agent("claude")
+    assert agent.rank == AgentRank.MAGE
+    assert agent.tools_count == 20
+    assert agent.skills_count == 5
+
+    rec = store.get("claude")
+    assert rec.rank == AgentRank.MAGE
+    assert rec.tools_count == 20
+
+
+def test_update_rank_noop_if_unchanged(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore
+    from contextgraph.world.spatial import SpatialState
+
+    store = IdentityStore(tmp_path / "identities.json")
+    state = SpatialState(identity_store=store)
+    state.register_agent("claude", "Claude", archetype=AgentArchetype.ARCHMAGE)
+    state.update_rank("claude", tools_count=2, skills_count=1)
+    result = state.update_rank("claude", tools_count=3, skills_count=1)
+    assert result is None
+
+
+# ── Task 8: set_parent ───────────────────────────────────────────────
+
+def test_set_parent(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore
+    from contextgraph.world.spatial import SpatialState
+
+    store = IdentityStore(tmp_path / "identities.json")
+    state = SpatialState(identity_store=store)
+    state.register_agent("claude", "Claude", archetype=AgentArchetype.ARCHMAGE)
+    state.register_agent(
+        "claude.Explore.1", "Scout", archetype=AgentArchetype.SCOUT
+    )
+    state.set_parent("claude.Explore.1", "claude")
+    child = state.get_agent("claude.Explore.1")
+    assert child.parent_agent_id == "claude"
