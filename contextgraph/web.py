@@ -53,6 +53,10 @@ def create_app(service: ContextGraphService | None = None) -> Any:
 
     @app.middleware("http")
     async def rate_limit_middleware(request: Any, call_next: Any) -> Any:
+        # Exempt static assets, world UI pages, and favicon from rate limiting
+        path = request.url.path
+        if path.startswith("/world") or path == "/favicon.ico":
+            return await call_next(request)
         api_key = request.headers.get("x-agent-key", request.client.host if request.client else "unknown")
         now = time.monotonic()
         window = _rate_buckets[api_key]

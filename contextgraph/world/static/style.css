@@ -1,4 +1,4 @@
-/* ContextGraph World — Dark Theme */
+/* ContextGraph World — Habbo-style theme */
 
 * {
   margin: 0;
@@ -7,10 +7,10 @@
 }
 
 body {
-  background: #0f172a;
+  background: #1B3047;
   overflow: hidden;
   font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #e2e8f0;
+  color: #1f2937;
 }
 
 #game-container {
@@ -23,8 +23,10 @@ body {
 }
 
 #game-container canvas {
-  border-radius: 12px;
-  box-shadow: 0 0 60px rgba(99, 102, 241, 0.15), 0 0 120px rgba(99, 102, 241, 0.05);
+  border-radius: 0;
+  box-shadow: none;
+  width: 100vw !important;
+  height: 100vh !important;
 }
 
 .game-dimmed #game-container canvas {
@@ -40,9 +42,9 @@ body {
   right: 0;
   width: 420px;
   height: 100vh;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
-  border-left: 1px solid rgba(99, 102, 241, 0.2);
-  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.5);
+  background: #ffffff;
+  border-left: 1px solid #d9e1ea;
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.25);
   overflow-y: auto;
   z-index: 1000;
   transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
@@ -59,11 +61,11 @@ body {
 }
 
 .inspect-panel::-webkit-scrollbar-track {
-  background: transparent;
+  background: #f1f5f9;
 }
 
 .inspect-panel::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, 0.3);
+  background: #4A90D9;
   border-radius: 3px;
 }
 
@@ -73,27 +75,28 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 24px 20px 20px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, transparent 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 20px;
+  background: #1B3047;
+  color: #ffffff;
+  border-bottom: 2px solid #4A90D9;
   position: sticky;
   top: 0;
   z-index: 2;
-  backdrop-filter: blur(10px);
 }
 
 .inspect-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
+  border-radius: 4px;
   flex-shrink: 0;
-  box-shadow: 0 0 12px rgba(0, 0, 0, 0.3);
+  background: #34649C;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .inspect-name {
   font-size: 18px;
   font-weight: 700;
-  color: #f1f5f9;
+  color: #ffffff;
   flex: 1;
 }
 
@@ -111,9 +114,9 @@ body {
   width: 32px;
   height: 32px;
   border: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: #94a3b8;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-radius: 4px;
   cursor: pointer;
   font-size: 18px;
   display: flex;
@@ -124,15 +127,15 @@ body {
 }
 
 .inspect-close:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
+  background: #E9AD58;
+  color: #1B3047;
 }
 
 /* Sections */
 
 .inspect-section {
   padding: 18px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid #e5ecf3;
 }
 
 .inspect-label {
@@ -140,7 +143,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: #64748b;
+  color: #4A90D9;
   margin-bottom: 12px;
 }
 
@@ -154,34 +157,34 @@ body {
 
 .bucket-item {
   padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  background: #f4f8fc;
+  border: 1px solid #d9e4ef;
   transition: background 0.2s;
 }
 
 .bucket-item:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: #e8f0f8;
 }
 
 .bucket-item-label {
   font-size: 11px;
-  color: #94a3b8;
+  color: #5a7290;
   margin-bottom: 4px;
 }
 
 .bucket-item-value {
   font-size: 20px;
   font-weight: 800;
-  color: #f1f5f9;
+  color: #1B3047;
 }
 
-.bucket-decisions { border-left: 3px solid #6366f1; }
-.bucket-tasks { border-left: 3px solid #f59e0b; }
+.bucket-decisions { border-left: 3px solid #4A90D9; }
+.bucket-tasks { border-left: 3px solid #E9AD58; }
 .bucket-failures { border-left: 3px solid #ef4444; }
-.bucket-resolved { border-left: 3px solid #10b981; }
-.bucket-commands { border-left: 3px solid #06b6d4; }
-.bucket-files { border-left: 3px solid #8b5cf6; }
+.bucket-resolved { border-left: 3px solid #7EC8A4; }
+.bucket-commands { border-left: 3px solid #8B9DC3; }
+.bucket-files { border-left: 3px solid #34649C; }
 
 /* Timeline */
 
@@ -195,7 +198,7 @@ body {
   position: relative;
   padding: 8px 0 8px 16px;
   font-size: 13px;
-  color: #cbd5e1;
+  color: #334155;
   line-height: 1.4;
 }
 
@@ -206,9 +209,10 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #6366f1;
-  border: 2px solid #1e293b;
+  background: #4A90D9;
+  border: 2px solid #ffffff;
   z-index: 1;
+  box-shadow: 0 0 0 1px #4A90D9;
 }
 
 .timeline-line {
@@ -217,12 +221,12 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgba(99, 102, 241, 0.2);
+  background: #d9e4ef;
 }
 
 .timeline-time {
   font-size: 11px;
-  color: #64748b;
+  color: #5a7290;
   display: block;
   margin-top: 2px;
 }
@@ -239,17 +243,17 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 4px 10px;
-  border-radius: 20px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(99, 102, 241, 0.12);
-  color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: #4A90D9;
+  color: #ffffff;
+  border: 1px solid #3D7FC4;
   transition: all 0.2s;
 }
 
 .tool-badge:hover {
-  background: rgba(99, 102, 241, 0.2);
+  background: #5BA0E6;
   transform: translateY(-1px);
 }
 
@@ -258,7 +262,7 @@ body {
 .context-bar {
   width: 100%;
   height: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: #e5ecf3;
   border-radius: 4px;
   overflow: hidden;
   margin-top: 8px;
@@ -267,22 +271,22 @@ body {
 .context-bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, #6366f1, #a78bfa);
+  background: linear-gradient(90deg, #4A90D9, #E9AD58);
   transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* File Changes */
 
 .file-added {
-  color: #34d399;
+  color: #15803d;
 }
 
 .file-modified {
-  color: #fbbf24;
+  color: #b45309;
 }
 
 .file-removed {
-  color: #f87171;
+  color: #b91c1c;
 }
 
 /* Session Info */
@@ -301,10 +305,10 @@ body {
 }
 
 .session-info-key {
-  color: #94a3b8;
+  color: #5a7290;
 }
 
 .session-info-val {
-  color: #e2e8f0;
+  color: #1B3047;
   font-weight: 600;
 }

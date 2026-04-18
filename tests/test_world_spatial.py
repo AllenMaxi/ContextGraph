@@ -9,6 +9,7 @@ from contextgraph.world.models import (
     GlowColor,
     ZoneType,
 )
+from contextgraph.world.rooms import DEMO_ROOM_SPECS
 from contextgraph.world.spatial import SpatialState
 
 
@@ -123,9 +124,13 @@ class TestGetAgentsInRoom:
 # ---------------------------------------------------------------------------
 
 class TestGetRoomList:
-    def test_lobby_excluded_from_room_list(self):
+    def test_lobby_returns_demo_rooms_but_not_lobby(self):
         state = make_state(("a1", "A"), ("a2", "B"))
-        assert state.get_room_list() == []
+        rooms = state.get_room_list()
+        room_ids = {room.room_id for room in rooms}
+        assert "lobby" not in room_ids
+        assert set(DEMO_ROOM_SPECS).issubset(room_ids)
+        assert all(room.agent_count == 0 for room in rooms if room.room_id in DEMO_ROOM_SPECS)
 
     def test_room_list_counts_agents(self):
         state = make_state(("a1", "A"), ("a2", "B"), ("a3", "C"))
@@ -139,9 +144,9 @@ class TestGetRoomList:
     def test_room_list_room_info_has_name(self):
         state = make_state(("a1", "A"))
         state.move_agent_to_room("a1", "code_desk")
-        rooms = state.get_room_list()
-        assert len(rooms) == 1
-        assert rooms[0].name  # non-empty string
+        rooms = {room.room_id: room for room in state.get_room_list()}
+        assert "code_desk" in rooms
+        assert rooms["code_desk"].name  # non-empty string
 
 
 # ---------------------------------------------------------------------------

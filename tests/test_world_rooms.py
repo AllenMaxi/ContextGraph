@@ -8,11 +8,15 @@ import pytest
 from contextgraph.world.models import ZoneType
 from contextgraph.world.rooms import (
     AGENT_COLORS,
+    DEMO_ROOM_SPECS,
     LOBBY_ZONES,
     ROOM_ZONES,
     color_index_for_agent,
+    get_demo_room_info,
     get_lobby_door_position,
     get_lobby_idle_position,
+    get_room_display_name,
+    get_room_theme_key,
     get_zone_position,
 )
 
@@ -70,7 +74,7 @@ class TestLobbyZones:
         assert "idle" in LOBBY_ZONES
 
     def test_idle_rect(self):
-        assert LOBBY_ZONES["idle"] == {"x": 200, "y": 250, "w": 600, "h": 300}
+        assert LOBBY_ZONES["idle"] == {"x": 220, "y": 190, "w": 580, "h": 300}
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +101,31 @@ class TestColorIndexForAgent:
         indices = {color_index_for_agent(f"agent-{i}") for i in range(50)}
         # With 50 agents and 12 slots, at least a few distinct values expected
         assert len(indices) > 1
+
+
+class TestRoomThemeKey:
+    def test_is_deterministic(self):
+        assert get_room_theme_key("stable_room") == get_room_theme_key("stable_room")
+
+    def test_uses_allowed_theme_keys(self):
+        assert get_room_theme_key("project_alpha") in {"library", "observatory", "alchemy", "workshop"}
+
+    def test_demo_rooms_use_explicit_theme_mapping(self):
+        for room_id, spec in DEMO_ROOM_SPECS.items():
+            assert get_room_theme_key(room_id) == spec["theme_key"]
+
+
+class TestRoomCatalog:
+    def test_demo_room_catalog_has_all_demo_rooms(self):
+        rooms = get_demo_room_info()
+        assert len(rooms) == len(DEMO_ROOM_SPECS)
+        assert {room["room_id"] for room in rooms} == set(DEMO_ROOM_SPECS)
+
+    def test_demo_room_display_name_is_human_friendly(self):
+        assert get_room_display_name("ancient_library") == "Ancient Library"
+
+    def test_custom_room_display_name_falls_back_to_title_case(self):
+        assert get_room_display_name("project_alpha") == "Project Alpha"
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +186,10 @@ class TestGetLobbyDoorPosition:
         x, y = get_lobby_door_position(0)
         assert x == 160
 
-    def test_y_is_100(self):
+    def test_y_is_112(self):
         for i in range(5):
             _, y = get_lobby_door_position(i)
-            assert y == 100
+            assert y == 112
 
     def test_spacing_is_160(self):
         x0, _ = get_lobby_door_position(0)

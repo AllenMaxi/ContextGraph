@@ -200,3 +200,69 @@ def test_despawn_subagent_missing_actor(gateway):
         gateway, actor_id="never_was", result_summary="",
     )
     assert res["ok"] is False
+
+
+# ── Tasks 14-15: HTTP endpoints ───────────────────────────────────────
+
+def _make_http_client():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from contextgraph.events import EventBus
+    from contextgraph.world.routes import register_world_routes
+
+    app = FastAPI()
+    event_bus = EventBus()
+    service = MagicMock()
+    service.repository.list_agents.return_value = []
+    register_world_routes(app, event_bus, service)
+    return TestClient(app)
+
+
+def test_http_identity_endpoint():
+    client = _make_http_client()
+    r = client.post("/v1/world/identity", json={
+        "actor": "claude", "name": "Claude",
+        "archetype": "archmage",
+        "tools_count": 5, "skills_count": 2,
+    })
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+def test_http_identity_upgrade_endpoint():
+    client = _make_http_client()
+    client.post("/v1/world/identity", json={
+        "actor": "claude", "name": "Claude",
+        "archetype": "archmage",
+        "tools_count": 5, "skills_count": 0,
+    })
+    r = client.post("/v1/world/identity/upgrade", json={
+        "actor": "claude", "tools_count": 20, "skills_count": 5,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["rank_changed"] is True
+    assert body["new_rank"] == "mage"
+
+
+def test_http_spawn_and_despawn():
+    client = _make_http_client()
+    client.post("/v1/world/identity", json={
+        "actor": "claude", "name": "Claude",
+        "archetype": "archmage", "tools_count": 2, "skills_count": 1,
+    })
+    r = client.post("/v1/world/spawn", json={
+        "parent": "claude", "subagent_type": "Explore",
+        "description": "find files", "invocation_id": "42",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["actor_id"] == "claude.Explore.42"
+
+    r = client.post("/v1/world/despawn", json={
+        "actor": body["actor_id"], "result_summary": "done",
+    })
+    assert r.status_code == 200
+    assert r.json()["ok"] is True

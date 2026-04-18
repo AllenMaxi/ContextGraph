@@ -1,0 +1,20 @@
+{
+  "name": "[TODO: marketplace-name]",
+  "interface": {
+    "displayName": "[TODO: Marketplace Display Name]"
+  },
+  "plugins": [
+    {
+      "name": "caveman",
+      "source": {
+        "source": "local",
+        "path": "./plugins/caveman"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

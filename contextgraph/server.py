@@ -17,3 +17,7 @@ def run() -> None:
         port=settings.port,
         reload=settings.debug,
     )
+
+
+if __name__ == "__main__":
+    run()

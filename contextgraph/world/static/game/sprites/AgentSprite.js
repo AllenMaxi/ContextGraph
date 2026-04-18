@@ -1,9 +1,15 @@
 /**
- * AgentSprite — Cute penguin-robot agent character.
+ * AgentSprite — Wizard agent using real sprite sheet art.
  *
- * Built entirely with Phaser graphics primitives (no sprite sheets).
- * Each agent has a unique color, expressive face, floating idle animation,
- * speech bubbles, and a status glow.
+ * Uses the 2D Game Wizard Character Sprite pack (OGA-BY 3.0)
+ * with 3 wizard variants and frame-by-frame animations:
+ * idle, walk, attack, hurt.
+ *
+ * Movement: organic curved wander, walk bob + lean, landing sparkles.
+ * Personality: idle behaviors (glancing, spell casting, stretching).
+ * Effects: ambient aura, wand trail, expression transitions.
+ *
+ * Art credit: CraftPix / OpenGameArt — OGA-BY 3.0 License
  */
 
 const COLORS = [
@@ -11,6 +17,8 @@ const COLORS = [
   0x10b981, 0xf59e0b, 0xf43f5e, 0x0ea5e9,
   0x8b5cf6, 0x14b8a6, 0x84cc16, 0xd946ef,
 ];
+
+const WIZARD_TYPES = ['wizard', 'wizard_fire', 'wizard_ice'];
 
 const GLOW_MAP = {
   green:  0x10b981,
@@ -20,13 +28,15 @@ const GLOW_MAP = {
   blue:   0x3b82f6,
 };
 
+const GOLD = 0xd4a54a;
+
+// Display size for the wizard sprite on screen
+const SPRITE_W = 64;
+const SPRITE_H = 68;
+
 export { COLORS };
 
 export default class AgentSprite extends Phaser.GameObjects.Container {
-  /**
-   * @param {Phaser.Scene} scene
-   * @param {object} data — AgentVisual dict from backend
-   */
   constructor(scene, data) {
     const x = data.x || 100;
     const y = data.y || 100;
@@ -36,11 +46,25 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     this.agentName = data.name || data.agent_id;
     this.colorIndex = data.color_index ?? 0;
     this.bodyColor = COLORS[this.colorIndex % COLORS.length];
+    this.wizardType = WIZARD_TYPES[this.colorIndex % WIZARD_TYPES.length];
     this.currentExpression = 'happy';
     this.currentGlow = 'gray';
+    this.currentActivity = data.activity || 'idle';
+    this.anchorId = data.anchor_id || null;
+    this.homeAnchorId = data.home_anchor_id || null;
+    this.meetingId = data.meeting_id || null;
 
     this._bubbleTimer = null;
     this._walkTween = null;
+    this._bobTween = null;
+    this._isWalking = false;
+    this._wanderTimer = null;
+    this._wanderRadius = 40;
+    this._trailEmitter = null;
+    this._auraEmitter = null;
+    this._idleBehaviorTimer = null;
+    this._wanderHomeX = x;
+    this._wanderHomeY = y;
 
     this._build();
     this._setExpression(data.expression || 'happy');
@@ -50,18 +74,30 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
       this.showBubble(data.bubble);
     }
 
+    // Y-sort depth: updated every frame
+    this.setDepth(y);
+
     // Interactivity
-    this.setSize(64, 80);
+    this.setSize(SPRITE_W + 12, SPRITE_H + 34);
     this.setInteractive({ useHandCursor: true });
     this.on('pointerdown', () => {
       scene.events.emit('inspect-agent', data.agent_id);
       window.dispatchEvent(new CustomEvent('inspect-agent', { detail: { agentId: data.agent_id } }));
     });
 
+    this.on('pointerover', () => {
+      this.setScale(1.06);
+    });
+    this.on('pointerout', () => {
+      this.setScale(1.0);
+    });
+
     scene.add.existing(this);
 
-    // Idle float animation
-    this._startIdleAnimation();
+    // Start behaviors
+    this._startIdleWander();
+    this._startIdleBehaviors();
+    // Ambient aura removed — clean Habbo aesthetic
   }
 
   /* ================================================================== */
@@ -69,292 +105,406 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
   /* ================================================================== */
 
   _build() {
-    const g = this.scene.add.graphics();
-    this._bodyGfx = g;
+    // ── Ground shadow ──
+    this._shadowGfx = this.scene.add.graphics();
+    this._drawShadow();
+    this.add(this._shadowGfx);
 
-    // --- Shadow / glow under feet ---
+    // ── Magical aura / glow ring ──
     this._glowGfx = this.scene.add.graphics();
     this._drawGlow(0x64748b);
     this.add(this._glowGfx);
 
-    // --- Feet ---
-    this._feetGfx = this.scene.add.graphics();
-    this._feetGfx.fillStyle(this._darken(this.bodyColor, 0.6), 1);
-    this._feetGfx.fillEllipse(-12, 30, 16, 10);
-    this._feetGfx.fillEllipse(12, 30, 16, 10);
-    this.add(this._feetGfx);
-    this._leftFootBaseY = 30;
-    this._rightFootBaseY = 30;
+    // ── The actual wizard sprite ──
+    const firstFrame = `${this.wizardType}_idle_1`;
+    this._sprite = this.scene.add.sprite(0, 0, firstFrame);
+    this._sprite.setDisplaySize(SPRITE_W, SPRITE_H);
+    this._sprite.setOrigin(0.5, 0.5);
+    this.add(this._sprite);
 
-    // --- Body (main ellipse) ---
-    g.fillStyle(this.bodyColor, 1);
-    g.fillEllipse(0, 0, 52, 58);
+    // Play idle animation
+    this._sprite.play(`${this.wizardType}_idle`);
 
-    // --- Belly highlight ---
-    g.fillStyle(0xffffff, 0.15);
-    g.fillEllipse(0, 4, 36, 40);
+    // ── Name tag ──
+    this._nameTagBg = this.scene.add.graphics();
+    this.add(this._nameTagBg);
 
-    // --- Inner belly ---
-    g.fillStyle(0xffffff, 0.08);
-    g.fillEllipse(0, 6, 26, 30);
-
-    this.add(g);
-
-    // --- Eyes ---
-    this._leftEye = this._createEye(-11, -8);
-    this._rightEye = this._createEye(11, -8);
-
-    // --- Mouth ---
-    this._mouthGfx = this.scene.add.graphics();
-    this.add(this._mouthGfx);
-
-    // --- Name tag ---
-    this._nameTag = this.scene.add.text(0, 44, this.agentName, {
+    this._nameTag = this.scene.add.text(0, SPRITE_H / 2 + 20, this.agentName, {
       fontFamily: 'Nunito, sans-serif',
-      fontSize: '12px',
+      fontSize: '10px',
       fontStyle: 'bold',
-      color: '#e2e8f0',
-      stroke: '#0f172a',
-      strokeThickness: 3,
-    }).setOrigin(0.5, 0);
+      color: '#4b311e',
+    }).setOrigin(0.5, 0.5);
     this.add(this._nameTag);
+    this._refreshNameTag();
   }
 
   /* ================================================================== */
-  /*  Eye helper                                                         */
+  /*  Y-Sort Depth                                                       */
   /* ================================================================== */
 
-  _createEye(ox, oy) {
-    const container = this.scene.add.container(ox, oy);
-
-    // White sclera
-    const sclera = this.scene.add.graphics();
-    sclera.fillStyle(0xffffff, 1);
-    sclera.fillEllipse(0, 0, 16, 18);
-    container.add(sclera);
-
-    // Pupil
-    const pupil = this.scene.add.graphics();
-    pupil.fillStyle(0x1e293b, 1);
-    pupil.fillCircle(0, 1, 5);
-    container.add(pupil);
-
-    // Shine
-    const shine = this.scene.add.graphics();
-    shine.fillStyle(0xffffff, 0.9);
-    shine.fillCircle(2, -2, 2);
-    container.add(shine);
-
-    container._sclera = sclera;
-    container._pupil = pupil;
-    container._shine = shine;
-
-    this.add(container);
-    return container;
+  _updateDepth() {
+    this.setDepth(this.y);
   }
 
   /* ================================================================== */
-  /*  Draw glow ellipse                                                  */
+  /*  Organic Idle Wander                                                */
+  /* ================================================================== */
+
+  _startIdleWander() {
+    if (this._wanderTimer) return;
+    this._scheduleWander();
+  }
+
+  _scheduleWander() {
+    // Longer intervals: 4-12 seconds (feels more natural)
+    const delay = 4000 + Math.random() * 8000;
+    this._wanderTimer = this.scene.time.delayedCall(delay, () => {
+      this._doWander();
+    });
+  }
+
+  _doWander() {
+    if (this._isWalking || this.meetingId) {
+      this._scheduleWander();
+      return;
+    }
+
+    // 30% chance: pause and look around before moving (anticipation)
+    const doPause = Math.random() < 0.3;
+    const startMove = () => {
+      // Pick target within wander radius
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 15 + Math.random() * this._wanderRadius * 0.5;
+      const tx = this._wanderHomeX + Math.cos(angle) * dist;
+      const ty = this._wanderHomeY + Math.sin(angle) * dist;
+
+      // Compute a curved path via Bezier midpoint
+      const mx = (this.x + tx) / 2;
+      const my = (this.y + ty) / 2;
+      // Perpendicular offset for the curve
+      const dx = tx - this.x;
+      const dy = ty - this.y;
+      const perpX = -dy;
+      const perpY = dx;
+      const perpLen = Math.sqrt(perpX * perpX + perpY * perpY) || 1;
+      const curveAmount = (Math.random() - 0.5) * 40;
+      const midX = mx + (perpX / perpLen) * curveAmount;
+      const midY = my + (perpY / perpLen) * curveAmount;
+
+      // Walk through midpoint then to target
+      this._wanderCurved(midX, midY, tx, ty);
+    };
+
+    if (doPause) {
+      // Quick glance before moving
+      this._sprite.setFlipX(!this._sprite.flipX);
+      this.scene.time.delayedCall(400 + Math.random() * 600, () => {
+        this._sprite.setFlipX(!this._sprite.flipX);
+        startMove();
+      });
+    } else {
+      startMove();
+    }
+
+    this._scheduleWander();
+  }
+
+  _wanderCurved(midX, midY, tx, ty) {
+    if (this._isWalking) return;
+
+    const totalDist = Phaser.Math.Distance.Between(this.x, this.y, midX, midY)
+      + Phaser.Math.Distance.Between(midX, midY, tx, ty);
+    const totalDur = Math.max(800, totalDist * 4);
+
+    // Flip sprite based on overall direction
+    if (tx < this.x) {
+      this._sprite.setFlipX(true);
+    } else if (tx > this.x) {
+      this._sprite.setFlipX(false);
+    }
+
+    this._isWalking = true;
+    this._sprite.play(`${this.wizardType}_walk`);
+    this._startBob();
+
+    // Lean into walk direction
+    const leanAngle = tx < this.x ? -0.04 : 0.04;
+    this.scene.tweens.add({
+      targets: this._sprite,
+      rotation: leanAngle,
+      duration: 200,
+      ease: 'Sine.easeOut',
+    });
+
+    // Phase 1: walk to midpoint
+    if (this._walkTween) this._walkTween.stop();
+    this._walkTween = this.scene.tweens.add({
+      targets: this,
+      x: midX, y: midY,
+      duration: totalDur * 0.5,
+      ease: 'Cubic.easeIn',
+      onUpdate: () => this._updateDepth(),
+      onComplete: () => {
+        // Phase 2: walk to target
+        this._walkTween = this.scene.tweens.add({
+          targets: this,
+          x: tx, y: ty,
+          duration: totalDur * 0.5,
+          ease: 'Cubic.easeOut',
+          onUpdate: () => this._updateDepth(),
+          onComplete: () => {
+            this._finishWalk();
+          },
+        });
+      },
+    });
+  }
+
+  _finishWalk() {
+    this._isWalking = false;
+    this._walkTween = null;
+    this._stopBob();
+    this._stopTrail();
+    this._updateDepth();
+
+    // Lean back to upright
+    this.scene.tweens.add({
+      targets: this._sprite,
+      rotation: 0,
+      duration: 150,
+      ease: 'Sine.easeOut',
+    });
+
+    // Landing sparkle burst
+    this._emitLandingSparkle();
+
+    // Return to expression-appropriate animation
+    this._setExpression(this.currentExpression);
+  }
+
+  _stopIdleWander() {
+    if (this._wanderTimer) {
+      this._wanderTimer.remove(false);
+      this._wanderTimer = null;
+    }
+  }
+
+  /* ================================================================== */
+  /*  Walk Bob (vertical bounce during walking)                          */
+  /* ================================================================== */
+
+  _startBob() {
+    if (this._bobTween) return;
+    this._bobTween = this.scene.tweens.add({
+      targets: this._sprite,
+      y: { from: 0, to: -2 },
+      duration: 150,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  _stopBob() {
+    if (this._bobTween) {
+      this._bobTween.stop();
+      this._bobTween = null;
+      this._sprite.y = 0;
+    }
+  }
+
+  /* ================================================================== */
+  /*  Landing Sparkle                                                    */
+  /* ================================================================== */
+
+  _emitLandingSparkle() {
+    // Removed
+  }
+
+  /* ================================================================== */
+  /*  Idle Personality Behaviors                                          */
+  /* ================================================================== */
+
+  _startIdleBehaviors() {
+    this._scheduleIdleBehavior();
+  }
+
+  _scheduleIdleBehavior() {
+    const delay = 8000 + Math.random() * 12000;
+    this._idleBehaviorTimer = this.scene.time.delayedCall(delay, () => {
+      this._doIdleBehavior();
+    });
+  }
+
+  _doIdleBehavior() {
+    if (this._isWalking || this.meetingId) {
+      this._scheduleIdleBehavior();
+      return;
+    }
+
+    const roll = Math.random();
+
+    if (roll < 0.5) {
+      // Look around: flip sprite briefly
+      this._sprite.setFlipX(!this._sprite.flipX);
+      this.scene.time.delayedCall(800 + Math.random() * 400, () => {
+        if (!this._isWalking) {
+          this._sprite.setFlipX(!this._sprite.flipX);
+        }
+      });
+    } else if (roll < 0.8) {
+      // Idle gesture: attack anim (no sparkles)
+      this._sprite.play(`${this.wizardType}_attack`);
+      this._sprite.once('animationcomplete', () => {
+        if (!this._isWalking) {
+          this._sprite.play(`${this.wizardType}_idle`);
+        }
+      });
+    } else {
+      // Small stretch
+      this.scene.tweens.add({
+        targets: this._sprite,
+        scaleY: this._sprite.scaleY * 1.05,
+        duration: 400,
+        yoyo: true,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    this._scheduleIdleBehavior();
+  }
+
+  _stopIdleBehaviors() {
+    if (this._idleBehaviorTimer) {
+      this._idleBehaviorTimer.remove(false);
+      this._idleBehaviorTimer = null;
+    }
+  }
+
+  /* ================================================================== */
+  /*  Ambient Aura (per-character magic emanation)                       */
+  /* ================================================================== */
+
+  _startAmbientAura() {
+    // Removed — clean Habbo aesthetic
+  }
+
+  _stopAmbientAura() {
+    if (this._auraEmitter) {
+      this._auraEmitter.destroy();
+      this._auraEmitter = null;
+    }
+  }
+
+  /* ================================================================== */
+  /*  Magical Aura / Glow                                                */
   /* ================================================================== */
 
   _drawGlow(color) {
     this._glowGfx.clear();
-    this._glowGfx.fillStyle(color, 0.25);
-    this._glowGfx.fillEllipse(0, 34, 56, 14);
-    this._glowGfx.fillStyle(color, 0.10);
-    this._glowGfx.fillEllipse(0, 34, 72, 20);
+    this._glowGfx.fillStyle(color, 0.15);
+    this._glowGfx.fillEllipse(0, SPRITE_H / 2 + 6, SPRITE_W * 0.8, 16);
   }
 
   /* ================================================================== */
-  /*  Color helper                                                       */
+  /*  Expressions → Animation mapping (with transitions)                 */
   /* ================================================================== */
 
-  _darken(hex, factor) {
-    const r = ((hex >> 16) & 0xff) * factor;
-    const g = ((hex >> 8) & 0xff) * factor;
-    const b = (hex & 0xff) * factor;
-    return (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
-  }
-
-  /* ================================================================== */
-  /*  Expressions                                                        */
-  /* ================================================================== */
-
-  setExpression(name) {
-    this._setExpression(name);
-  }
+  setExpression(name) { this._setExpression(name); }
 
   _setExpression(name) {
     if (!name) return;
+    const prev = this.currentExpression;
     this.currentExpression = name;
 
-    // Reset eyes
-    this._resetEye(this._leftEye);
-    this._resetEye(this._rightEye);
+    // Don't interrupt walk animation
+    if (this._isWalking) return;
+
+    // Subtle cross-fade when expression changes
+    if (prev !== name) {
+      this.scene.tweens.add({
+        targets: this._sprite,
+        alpha: { from: 0.85, to: 1 },
+        duration: 200,
+      });
+    }
 
     switch (name) {
-      case 'happy':
-        this._drawHappy();
-        break;
       case 'worried':
-        this._drawWorried();
-        break;
-      case 'sleepy':
-        this._drawSleepy();
-        break;
-      case 'thinking':
-        this._drawThinking();
+        this._sprite.play(`${this.wizardType}_hurt`);
+        this._sprite.once('animationcomplete', () => {
+          if (!this._isWalking) {
+            this._sprite.play(`${this.wizardType}_idle`);
+          }
+        });
         break;
       case 'focused':
-        this._drawFocused();
+      case 'thinking':
+        this._sprite.play(`${this.wizardType}_idle_slow`);
+        break;
+      case 'sleepy':
+        this._sprite.play(`${this.wizardType}_idle_slow`);
         break;
       case 'social':
-        this._drawSocial();
+        this._sprite.play(`${this.wizardType}_attack`);
+        // Sparkle burst for social expression
+        const offsetX = this._sprite.flipX ? -12 : 12;
+        if (this.scene.textures.exists('particle_sparkle')) {
+          const burst = this.scene.add.particles(this.x + offsetX, this.y - 10, 'particle_sparkle', {
+            speed: { min: 10, max: 25 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.4, end: 0 },
+            alpha: { start: 0.6, end: 0 },
+            lifespan: 400,
+            tint: this.bodyColor,
+            quantity: 8,
+            blendMode: 'ADD',
+          }).setDepth(this.y + 1);
+          this.scene.time.delayedCall(600, () => burst.destroy());
+        }
+        this._sprite.once('animationcomplete', () => {
+          if (!this._isWalking) {
+            this._sprite.play(`${this.wizardType}_idle`);
+          }
+        });
         break;
+      case 'happy':
       default:
-        this._drawHappy();
+        this._sprite.play(`${this.wizardType}_idle`);
+        break;
     }
   }
 
-  _resetEye(eye) {
-    eye._sclera.clear();
-    eye._sclera.fillStyle(0xffffff, 1);
-    eye._sclera.fillEllipse(0, 0, 16, 18);
-
-    eye._pupil.clear();
-    eye._pupil.fillStyle(0x1e293b, 1);
-    eye._pupil.fillCircle(0, 1, 5);
-
-    eye._shine.clear();
-    eye._shine.fillStyle(0xffffff, 0.9);
-    eye._shine.fillCircle(2, -2, 2);
-
-    eye.setScale(1, 1);
-  }
-
-  _drawMouth(type) {
-    this._mouthGfx.clear();
-    this._mouthGfx.lineStyle(2, 0x1e293b, 0.8);
-
-    switch (type) {
-      case 'smile': {
-        // Cute smile arc
-        const curve = new Phaser.Curves.Spline([
-          new Phaser.Math.Vector2(-6, 8),
-          new Phaser.Math.Vector2(0, 12),
-          new Phaser.Math.Vector2(6, 8),
-        ]);
-        curve.draw(this._mouthGfx, 16);
-        break;
-      }
-      case 'bigsmile': {
-        const curve = new Phaser.Curves.Spline([
-          new Phaser.Math.Vector2(-8, 7),
-          new Phaser.Math.Vector2(0, 14),
-          new Phaser.Math.Vector2(8, 7),
-        ]);
-        curve.draw(this._mouthGfx, 16);
-        break;
-      }
-      case 'frown': {
-        const curve = new Phaser.Curves.Spline([
-          new Phaser.Math.Vector2(-5, 12),
-          new Phaser.Math.Vector2(0, 9),
-          new Phaser.Math.Vector2(5, 12),
-        ]);
-        curve.draw(this._mouthGfx, 16);
-        break;
-      }
-      case 'o': {
-        this._mouthGfx.fillStyle(0x1e293b, 0.6);
-        this._mouthGfx.fillCircle(0, 10, 3);
-        break;
-      }
-      case 'flat': {
-        this._mouthGfx.lineBetween(-4, 10, 4, 10);
-        break;
-      }
-    }
-  }
-
-  _drawHappy() {
-    this._drawMouth('smile');
-  }
-
-  _drawWorried() {
-    // Wide eyes
-    [this._leftEye, this._rightEye].forEach(eye => {
-      eye._sclera.clear();
-      eye._sclera.fillStyle(0xffffff, 1);
-      eye._sclera.fillEllipse(0, 0, 18, 20);
-    });
-    this._drawMouth('frown');
-  }
-
-  _drawSleepy() {
-    // Thin horizontal lines for eyes
-    [this._leftEye, this._rightEye].forEach(eye => {
-      eye._sclera.clear();
-      eye._sclera.fillStyle(0xffffff, 0);
-      eye._pupil.clear();
-      eye._pupil.lineStyle(2.5, 0x1e293b, 0.7);
-      eye._pupil.lineBetween(-6, 0, 6, 0);
-      eye._shine.clear();
-    });
-    this._drawMouth('o');
-  }
-
-  _drawThinking() {
-    // Pupils shifted right
-    [this._leftEye, this._rightEye].forEach(eye => {
-      eye._pupil.clear();
-      eye._pupil.fillStyle(0x1e293b, 1);
-      eye._pupil.fillCircle(3, 0, 5);
-      eye._shine.clear();
-      eye._shine.fillStyle(0xffffff, 0.9);
-      eye._shine.fillCircle(5, -2, 2);
-    });
-    this._drawMouth('flat');
-  }
-
-  _drawFocused() {
-    // Slightly squinted
-    [this._leftEye, this._rightEye].forEach(eye => {
-      eye._sclera.clear();
-      eye._sclera.fillStyle(0xffffff, 1);
-      eye._sclera.fillEllipse(0, 0, 16, 13);
-    });
-    this._drawMouth('flat');
-  }
-
-  _drawSocial() {
-    // Big wide eyes, big smile
-    [this._leftEye, this._rightEye].forEach(eye => {
-      eye._sclera.clear();
-      eye._sclera.fillStyle(0xffffff, 1);
-      eye._sclera.fillEllipse(0, 0, 18, 21);
-      eye._pupil.clear();
-      eye._pupil.fillStyle(0x1e293b, 1);
-      eye._pupil.fillCircle(0, 1, 6);
-      eye._shine.clear();
-      eye._shine.fillStyle(0xffffff, 0.9);
-      eye._shine.fillCircle(2, -2, 2.5);
-    });
-    this._drawMouth('bigsmile');
-  }
-
   /* ================================================================== */
-  /*  Glow                                                               */
+  /*  Glow (with smooth transition)                                      */
   /* ================================================================== */
 
-  setGlow(colorName) {
-    this._setGlow(colorName);
-  }
+  setGlow(colorName) { this._setGlow(colorName); }
 
   _setGlow(colorName) {
+    const prev = this.currentGlow;
     this.currentGlow = colorName;
     const hex = GLOW_MAP[colorName] || GLOW_MAP.gray;
-    this._drawGlow(hex);
+
+    if (prev !== colorName) {
+      // Smooth transition: fade out → redraw → fade in
+      this.scene.tweens.add({
+        targets: this._glowGfx,
+        alpha: 0,
+        duration: 150,
+        onComplete: () => {
+          this._drawGlow(hex);
+          this.scene.tweens.add({
+            targets: this._glowGfx,
+            alpha: 1,
+            duration: 150,
+          });
+        },
+      });
+    } else {
+      this._drawGlow(hex);
+    }
   }
 
   /* ================================================================== */
@@ -363,15 +513,11 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
 
   showBubble(text) {
     this.hideBubble();
-
     if (!text) return;
 
-    // Truncate long text
     const display = text.length > 60 ? text.substring(0, 57) + '...' : text;
+    const bubbleContainer = this.scene.add.container(0, -SPRITE_H / 2 - 14);
 
-    const bubbleContainer = this.scene.add.container(0, -48);
-
-    // Measure text
     const txt = this.scene.add.text(0, 0, display, {
       fontFamily: 'Nunito, sans-serif',
       fontSize: '11px',
@@ -381,44 +527,57 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
       align: 'center',
     }).setOrigin(0.5, 1);
 
-    const padX = 12;
-    const padY = 8;
+    const padX = 14;
+    const padY = 10;
     const bw = txt.width + padX * 2;
     const bh = txt.height + padY * 2;
 
-    // Background rounded rect
     const bg = this.scene.add.graphics();
-    bg.fillStyle(0xffffff, 0.95);
-    bg.fillRoundedRect(-bw / 2, -bh, bw, bh, 10);
-    // Triangle pointer
-    bg.fillStyle(0xffffff, 0.95);
-    bg.fillTriangle(-5, 0, 5, 0, 0, 7);
-    // Subtle shadow
-    bg.lineStyle(1, 0x94a3b8, 0.3);
-    bg.strokeRoundedRect(-bw / 2, -bh, bw, bh, 10);
+    bg.fillStyle(0x000000, 0.15);
+    bg.fillRoundedRect(-bw / 2 + 3, -bh + 3, bw, bh, 14);
+    bg.fillStyle(0xffffff, 0.98);
+    bg.fillRoundedRect(-bw / 2, -bh, bw, bh, 14);
+    bg.fillStyle(0xffffff, 0.98);
+    bg.fillTriangle(-7, 0, 7, 0, 0, 10);
+    bg.lineStyle(1, 0xcccccc, 0.6);
+    bg.strokeRoundedRect(-bw / 2, -bh, bw, bh, 14);
 
     txt.setY(-padY);
-
     bubbleContainer.add(bg);
     bubbleContainer.add(txt);
     this.add(bubbleContainer);
-
     this._bubble = bubbleContainer;
 
-    // Auto-dismiss
+    bubbleContainer.setScale(0);
+    this.scene.tweens.add({
+      targets: bubbleContainer,
+      scaleX: 1, scaleY: 1,
+      duration: 300,
+      ease: 'Back.easeOut',
+    });
+
     this._bubbleTimer = this.scene.time.delayedCall(8000, () => {
       this.hideBubble();
     });
   }
 
   hideBubble() {
-    if (this._bubbleTimer) {
-      this._bubbleTimer.remove(false);
-      this._bubbleTimer = null;
-    }
-    if (this._bubble) {
-      this._bubble.destroy();
-      this._bubble = null;
+    if (this._bubbleTimer) { this._bubbleTimer.remove(false); this._bubbleTimer = null; }
+    if (this._bubble) { this._bubble.destroy(); this._bubble = null; }
+  }
+
+  /* ================================================================== */
+  /*  Walking trail particles                                            */
+  /* ================================================================== */
+
+  _startTrail() {
+    // Removed
+  }
+
+  _stopTrail() {
+    if (this._trailEmitter) {
+      this._trailEmitter.destroy();
+      this._trailEmitter = null;
     }
   }
 
@@ -426,52 +585,104 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
   /*  Movement                                                           */
   /* ================================================================== */
 
-  moveTo(tx, ty, duration) {
-    if (this._walkTween) {
-      this._walkTween.stop();
-    }
+  moveTo(tx, ty, duration, isWander = false) {
+    if (this._walkTween) this._walkTween.stop();
 
     const dist = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
     const dur = duration || Math.max(400, dist * 3);
 
-    // Foot animation during walk
-    const footTween = this.scene.tweens.add({
-      targets: this._feetGfx,
-      angle: { from: -8, to: 8 },
-      duration: 150,
-      yoyo: true,
-      repeat: Math.floor(dur / 300),
-      ease: 'Sine.easeInOut',
+    // Flip sprite based on direction
+    if (tx < this.x) {
+      this._sprite.setFlipX(true);
+    } else if (tx > this.x) {
+      this._sprite.setFlipX(false);
+    }
+
+    // Play walk animation
+    this._isWalking = true;
+    if (!isWander) this._startTrail();
+    this._sprite.play(`${this.wizardType}_walk`);
+    this._startBob();
+
+    // Lean into walk direction
+    const leanAngle = tx < this.x ? -0.04 : 0.04;
+    this.scene.tweens.add({
+      targets: this._sprite,
+      rotation: leanAngle,
+      duration: 200,
+      ease: 'Sine.easeOut',
     });
 
     this._walkTween = this.scene.tweens.add({
       targets: this,
-      x: tx,
-      y: ty,
+      x: tx, y: ty,
       duration: dur,
-      ease: 'Sine.easeInOut',
+      ease: 'Cubic.easeInOut',
+      onUpdate: () => {
+        this._updateDepth();
+      },
       onComplete: () => {
-        footTween.stop();
-        this._feetGfx.setAngle(0);
-        this._walkTween = null;
+        this._finishWalk();
       },
     });
   }
 
-  /* ================================================================== */
-  /*  Idle animation                                                     */
-  /* ================================================================== */
+  /**
+   * Walk along a series of waypoints (anchor positions).
+   */
+  walkPath(waypoints, speed = 1.0) {
+    if (!waypoints || waypoints.length === 0) return;
 
-  _startIdleAnimation() {
-    // Subtle breathing / floating
-    this.scene.tweens.add({
-      targets: this,
-      y: this.y - 3,
-      duration: 1800 + Math.random() * 400,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    this._stopIdleWander();
+    this._startTrail();
+
+    const walkNext = (index) => {
+      if (index >= waypoints.length) {
+        this._finishWalk();
+        this._startIdleWander();
+        return;
+      }
+
+      const wp = waypoints[index];
+      const dist = Phaser.Math.Distance.Between(this.x, this.y, wp.x, wp.y);
+      const dur = Math.max(300, (dist * 3) / speed);
+
+      if (wp.x < this.x) {
+        this._sprite.setFlipX(true);
+      } else if (wp.x > this.x) {
+        this._sprite.setFlipX(false);
+      }
+
+      this._isWalking = true;
+      this._sprite.play(`${this.wizardType}_walk`);
+      this._startBob();
+
+      const leanAngle = wp.x < this.x ? -0.04 : 0.04;
+      this.scene.tweens.add({
+        targets: this._sprite,
+        rotation: leanAngle,
+        duration: 150,
+        ease: 'Sine.easeOut',
+      });
+
+      if (this._walkTween) this._walkTween.stop();
+      this._walkTween = this.scene.tweens.add({
+        targets: this,
+        x: wp.x, y: wp.y,
+        duration: dur,
+        ease: 'Cubic.easeInOut',
+        onUpdate: () => {
+          this._updateDepth();
+        },
+        onComplete: () => {
+          this._walkTween = null;
+          this._updateDepth();
+          walkNext(index + 1);
+        },
+      });
+    };
+
+    walkNext(0);
   }
 
   /* ================================================================== */
@@ -491,10 +702,23 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     if (data.name) {
       this.agentName = data.name;
       this._nameTag.setText(data.name);
+      this._refreshNameTag();
     }
-
-    // Move to new position if changed significantly
+    if (data.activity !== undefined) {
+      this.currentActivity = data.activity;
+    }
+    if (data.anchor_id !== undefined) {
+      this.anchorId = data.anchor_id;
+    }
+    if (data.home_anchor_id !== undefined) {
+      this.homeAnchorId = data.home_anchor_id;
+    }
+    if (data.meeting_id !== undefined) {
+      this.meetingId = data.meeting_id;
+    }
     if (data.x !== undefined && data.y !== undefined) {
+      this._wanderHomeX = data.x;
+      this._wanderHomeY = data.y;
       const dist = Phaser.Math.Distance.Between(this.x, this.y, data.x, data.y);
       if (dist > 5) {
         this.moveTo(data.x, data.y);
@@ -508,7 +732,36 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
 
   destroy() {
     this.hideBubble();
+    this._stopIdleWander();
+    this._stopIdleBehaviors();
+    this._stopTrail();
+    this._stopBob();
+    this._stopAmbientAura();
     if (this._walkTween) this._walkTween.stop();
     super.destroy(true);
+  }
+
+  _drawShadow() {
+    this._shadowGfx.clear();
+    this._shadowGfx.fillStyle(0x000000, 0.18);
+    this._shadowGfx.fillEllipse(0, SPRITE_H / 2 + 7, SPRITE_W * 1.04, 22);
+    this._shadowGfx.fillStyle(0x000000, 0.28);
+    this._shadowGfx.fillEllipse(0, SPRITE_H / 2 + 7, SPRITE_W * 0.84, 16);
+  }
+
+  _refreshNameTag() {
+    const y = SPRITE_H / 2 + 12;
+    const labelW = Math.max(58, this.agentName.length * 7 + 18);
+
+    this._nameTagBg.clear();
+    this._nameTagBg.fillStyle(0x000000, 0.16);
+    this._nameTagBg.fillRoundedRect(-labelW / 2 + 2, y + 2, labelW, 18, 9);
+    this._nameTagBg.fillStyle(0xffffff, 0.92);
+    this._nameTagBg.fillRoundedRect(-labelW / 2, y, labelW, 18, 9);
+    this._nameTagBg.lineStyle(1, 0xcccccc, 0.4);
+    this._nameTagBg.strokeRoundedRect(-labelW / 2, y, labelW, 18, 9);
+
+    this._nameTag.setPosition(0, y + 9);
+    this._nameTag.setColor('#4b311e');
   }
 }

@@ -65,6 +65,30 @@ Use the assets in this order during launch week:
    - [`docs/assets/contextgraph-dashboard-demo.mp4`](./assets/contextgraph-dashboard-demo.mp4)
    - Best for showing operator workflow after the initial post.
 
+## Product Hunt Gallery
+
+For Product Hunt, prefer a short story-driven gallery over uploading multiple videos with similar pacing.
+
+Use these assets in this order:
+
+1. Thumbnail
+   - [`docs/assets/product-hunt/ph-thumbnail.png`](./assets/product-hunt/ph-thumbnail.png)
+2. Cover / positioning
+   - [`docs/assets/product-hunt/ph-cover.png`](./assets/product-hunt/ph-cover.png)
+3. Reactive delta compaction
+   - [`docs/assets/product-hunt/ph-reactive-delta.png`](./assets/product-hunt/ph-reactive-delta.png)
+4. Branch-aware cache
+   - [`docs/assets/product-hunt/ph-branch-cache.png`](./assets/product-hunt/ph-branch-cache.png)
+5. Repo-local memory directory
+   - [`docs/assets/product-hunt/ph-memory-directory.png`](./assets/product-hunt/ph-memory-directory.png)
+6. Governed memory and operator visibility
+   - [`docs/assets/product-hunt/ph-operator-visibility.png`](./assets/product-hunt/ph-operator-visibility.png)
+
+Source files for editing the gallery:
+
+- [`docs/product-hunt-gallery.html`](./product-hunt-gallery.html)
+- [`docs/product-hunt-gallery.css`](./product-hunt-gallery.css)
+
 ## Suggested Captions Per Asset
 
 - Social preview image:
