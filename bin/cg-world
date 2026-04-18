@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# cg-world — start/stop/status for the ContextGraph World server.
+#
+# Daemonizes `python -m contextgraph.server` with a PID file + health check.
+# Called from the `world_session_start` hook so every Claude Code session
+# lands with the visualizer already running on http://localhost:8420/world.
+#
+# Commands:
+#   cg-world start    — start if not already up; wait for health ok
+#   cg-world stop     — kill the daemon if running
+#   cg-world status   — print running/port and exit 0 if healthy
+#   cg-world restart  — stop then start
+#   cg-world ensure   — idempotent: start only if not already healthy
+
+set -euo pipefail
+
+PORT="${CG_WORLD_PORT:-8420}"
+HOST="${CG_WORLD_HOST:-127.0.0.1}"
+BASE_URL="http://${HOST}:${PORT}"
+STATE_DIR="${CG_WORLD_STATE_DIR:-$HOME/.contextgraph}"
+PID_FILE="${STATE_DIR}/world.pid"
+LOG_FILE="${STATE_DIR}/world.log"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+mkdir -p "$STATE_DIR"
+
+is_running() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+is_healthy() {
+  curl -fsS --max-time 1 "${BASE_URL}/world" >/dev/null 2>&1
+}
+
+start_daemon() {
+  if is_running && is_healthy; then
+    echo "cg-world: already running on ${BASE_URL}"
+    return 0
+  fi
+
+  # Clean stale PID file
+  rm -f "$PID_FILE"
+
+  echo "cg-world: starting daemon…"
+  (
+    cd "$REPO_ROOT"
+    export CG_HOST="$HOST"
+    export CG_PORT="$PORT"
+    export CG_ENABLE_WORLD="${CG_ENABLE_WORLD:-true}"
+    export CG_ENABLE_STREAMING="${CG_ENABLE_STREAMING:-true}"
+    nohup python3 -m contextgraph.server \
+      >> "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+  )
+
+  # Wait up to 10 s for health
+  for _ in $(seq 1 40); do
+    if is_healthy; then
+      echo "cg-world: up on ${BASE_URL}"
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  echo "cg-world: failed to come up; see $LOG_FILE" >&2
+  return 1
+}
+
+stop_daemon() {
+  if ! is_running; then
+    echo "cg-world: not running"
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  local pid
+  pid="$(cat "$PID_FILE")"
+  echo "cg-world: stopping pid=$pid"
+  kill "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+  rm -f "$PID_FILE"
+}
+
+status_daemon() {
+  if is_running && is_healthy; then
+    echo "cg-world: up pid=$(cat "$PID_FILE") url=${BASE_URL}"
+    return 0
+  fi
+  if is_running; then
+    echo "cg-world: pid alive but unhealthy"
+    return 2
+  fi
+  echo "cg-world: down"
+  return 1
+}
+
+cmd="${1:-ensure}"
+case "$cmd" in
+  start)   start_daemon ;;
+  stop)    stop_daemon ;;
+  restart) stop_daemon; start_daemon ;;
+  status)  status_daemon ;;
+  ensure)
+    if is_healthy; then
+      echo "cg-world: already healthy"
+      exit 0
+    fi
+    start_daemon
+    ;;
+  *) echo "usage: cg-world {start|stop|restart|status|ensure}" >&2; exit 2 ;;
+esac

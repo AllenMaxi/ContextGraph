@@ -149,6 +149,39 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_session_start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_user_prompt.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_agent_pre.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "*",
@@ -156,6 +189,26 @@
           {
             "type": "command",
             "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_activity.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_agent_post.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/maximilianoallende/ContextGraph/ContextGraph/.claude/hooks/world_stop.sh"
           }
         ]
       }
