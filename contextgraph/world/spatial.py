@@ -14,6 +14,7 @@ from .models import (
     Facing,
     GlowColor,
     Meeting,
+    MeetingPhase,
     RoomInfo,
     ZoneType,
     rank_for_counts,
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 class SpatialState:
     """Tracks every agent's visual / spatial state in the world."""
 
-    def __init__(self, identity_store: "IdentityStore | None" = None) -> None:
+    def __init__(self, identity_store: IdentityStore | None = None) -> None:
         self._agents: dict[str, AgentVisual] = {}
         self._meetings: dict[str, Meeting] = {}
         # Track which meeting circles are in use: room_id → meeting_id
@@ -369,7 +370,7 @@ class SpatialState:
 
         return True
 
-    def update_meeting_phase(self, meeting_id: str, phase: "MeetingPhase") -> None:
+    def update_meeting_phase(self, meeting_id: str, phase: MeetingPhase) -> None:
         meeting = self._meetings.get(meeting_id)
         if meeting is not None:
             meeting.phase = phase

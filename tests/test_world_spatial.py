@@ -1,8 +1,6 @@
 """Tests for contextgraph.world.spatial — SpatialState."""
 from __future__ import annotations
 
-import pytest
-
 from contextgraph.world.models import (
     Accessory,
     Expression,
@@ -11,7 +9,6 @@ from contextgraph.world.models import (
 )
 from contextgraph.world.rooms import DEMO_ROOM_SPECS
 from contextgraph.world.spatial import SpatialState
-
 
 # ---------------------------------------------------------------------------
 # Helpers

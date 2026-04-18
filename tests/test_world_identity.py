@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -13,7 +12,6 @@ from contextgraph.world.models import (
     GameEventType,
     rank_for_counts,
 )
-
 
 # ── Task 1: AgentArchetype ───────────────────────────────────────────
 
@@ -101,7 +99,7 @@ def test_new_event_types():
 # ── Task 5: IdentityStore ────────────────────────────────────────────
 
 def test_identity_store_roundtrip(tmp_path):
-    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+    from contextgraph.world.identity_store import IdentityRecord, IdentityStore
 
     store_path = tmp_path / "identities.json"
     store = IdentityStore(store_path)
@@ -134,7 +132,7 @@ def test_identity_store_get_missing(tmp_path):
 
 
 def test_identity_store_atomic_write(tmp_path):
-    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+    from contextgraph.world.identity_store import IdentityRecord, IdentityStore
 
     store_path = tmp_path / "identities.json"
     store = IdentityStore(store_path)
@@ -153,7 +151,7 @@ def test_identity_store_atomic_write(tmp_path):
 # ── Task 6: SpatialState + IdentityStore ─────────────────────────────
 
 def test_spatial_state_uses_identity_store(tmp_path):
-    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+    from contextgraph.world.identity_store import IdentityRecord, IdentityStore
     from contextgraph.world.spatial import SpatialState
 
     store_path = tmp_path / "identities.json"

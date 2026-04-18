@@ -1,5 +1,5 @@
 """Integration test: CG event → gateway → game event broadcast."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -22,7 +22,7 @@ def _session_event(agent_id, event_type, content="", seq=1):
         agent_id=agent_id,
         event_type=event_type,
         content=content,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
         sequence=seq,
     )
 
@@ -53,7 +53,7 @@ async def test_bus_event_agent_registered(gateway):
         event_id="e1",
         event_type=EventType.AGENT_REGISTERED,
         data={"name": "new-bot"},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         agent_id="new-bot",
     )
     await gateway.process_bus_event(event)
@@ -115,7 +115,7 @@ async def test_agent_despawn(gateway):
         event_id="e2",
         event_type=EventType.AGENT_DELETED,
         data={},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         agent_id="alice",
     )
     await gateway.process_bus_event(event)
@@ -132,7 +132,7 @@ async def test_memory_stored_moves_to_library(gateway):
         event_id="e3",
         event_type=EventType.MEMORY_STORED,
         data={"content": "stored a fact"},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         agent_id="carol",
     )
     await gateway.process_bus_event(event)

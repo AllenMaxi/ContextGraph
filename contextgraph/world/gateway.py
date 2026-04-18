@@ -10,7 +10,7 @@ from contextgraph.models import SessionEvent
 from contextgraph.service import ContextGraphService
 
 from .meeting import MeetingOrchestrator
-from .models import Activity, GameEvent, GameEventType, MeetingTrigger
+from .models import GameEvent, GameEventType, MeetingTrigger
 from .rooms import get_layout, get_room_theme_key
 from .spatial import SpatialState
 from .translator import BlockerTracker, translate_bus_event, translate_session_event

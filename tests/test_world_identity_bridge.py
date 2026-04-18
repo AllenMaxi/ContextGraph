@@ -207,6 +207,7 @@ def test_despawn_subagent_missing_actor(gateway):
 def _make_http_client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from contextgraph.events import EventBus
     from contextgraph.world.routes import register_world_routes
 

@@ -12,18 +12,16 @@ import pytest
 from contextgraph.events import Event, EventBus, EventType
 from contextgraph.models import SessionEvent
 from contextgraph.world.gateway import WorldGateway
-from contextgraph.world.meeting import MeetingOrchestrator, PHASE_ORDER
+from contextgraph.world.meeting import PHASE_ORDER, MeetingOrchestrator
 from contextgraph.world.models import (
     Activity,
-    Anchor,
     AgentVisual,
+    Anchor,
     Facing,
-    GameEventType,
     Meeting,
     MeetingCircle,
     MeetingPhase,
     MeetingTrigger,
-    RoomLayout,
     ZoneType,
 )
 from contextgraph.world.rooms import (
@@ -38,7 +36,6 @@ from contextgraph.world.rooms import (
 )
 from contextgraph.world.spatial import SpatialState
 from contextgraph.world.translator import BlockerTracker, translate_bus_event, translate_session_event
-
 
 # ══════════════════════════════════════════════════════════════════════
 # Room Layout Tests
@@ -497,7 +494,7 @@ class TestGatewayV2:
         gw.spatial.register_agent("a1", "Alice")
         gw.spatial.move_agent_to_room("a1", "proj")
         gw.spatial.move_agent_to_zone("a1", ZoneType.CODE_DESK)
-        initial_anchor = gw.spatial.get_agent("a1").anchor_id
+        _ = gw.spatial.get_agent("a1").anchor_id
 
         evt = SessionEvent(
             event_id="e1", session_id="s1", agent_id="a1",

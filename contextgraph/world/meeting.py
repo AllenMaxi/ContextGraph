@@ -47,7 +47,7 @@ PHASE_ORDER = [
 class MeetingOrchestrator:
     """Manages the lifecycle of meetings in the world."""
 
-    def __init__(self, spatial: "SpatialState") -> None:
+    def __init__(self, spatial: SpatialState) -> None:
         self.spatial = spatial
         self._active_tasks: dict[str, asyncio.Task] = {}
         # Callback for broadcasting — set by gateway

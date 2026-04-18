@@ -6,6 +6,7 @@ on upgrade events.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -45,7 +46,7 @@ class IdentityRecord:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "IdentityRecord":
+    def from_dict(cls, d: dict) -> IdentityRecord:
         return cls(
             agent_id=d["agent_id"],
             name=d.get("name", d["agent_id"]),
@@ -89,10 +90,8 @@ class IdentityStore:
                 json.dump(payload, fh, indent=2, sort_keys=True)
             os.replace(tmp, self.path)
         except Exception:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     def get(self, agent_id: str) -> IdentityRecord | None:

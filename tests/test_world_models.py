@@ -4,10 +4,8 @@ import unittest
 
 from contextgraph.world.models import (
     Accessory,
-    Activity,
     AgentVisual,
     Expression,
-    Facing,
     GameEvent,
     GameEventType,
     GlowColor,

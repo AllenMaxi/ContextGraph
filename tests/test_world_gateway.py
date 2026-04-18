@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -11,7 +11,6 @@ from contextgraph.events import Event, EventBus, EventType
 from contextgraph.models import SessionEvent
 from contextgraph.world.gateway import WorldGateway
 from contextgraph.world.models import GameEventType
-
 
 # ---------------------------------------------------------------------------
 # Helpers

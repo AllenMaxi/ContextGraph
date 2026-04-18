@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 from contextgraph.world.models import ZoneType
 from contextgraph.world.rooms import (
     AGENT_COLORS,
@@ -19,7 +17,6 @@ from contextgraph.world.rooms import (
     get_room_theme_key,
     get_zone_position,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -40,7 +37,7 @@ class TestAgentColors:
             "#6366f1", "#f97316", "#06b6d4", "#ec4899", "#10b981", "#f59e0b",
             "#f43f5e", "#0ea5e9", "#8b5cf6", "#14b8a6", "#84cc16", "#d946ef",
         ]
-        assert AGENT_COLORS == expected
+        assert expected == AGENT_COLORS
 
 
 class TestRoomZones:

@@ -10,6 +10,7 @@ Enable with env var CG_ENABLE_WORLD_DEMO=true.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 from dataclasses import dataclass
@@ -93,7 +94,7 @@ ROOM_POOL: tuple[str, ...] = (
 class DemoAgentRuntime:
     """Scripted agent loop for visual QA of the world."""
 
-    def __init__(self, gateway: "WorldGateway", event_bus: EventBus) -> None:
+    def __init__(self, gateway: WorldGateway, event_bus: EventBus) -> None:
         self._gateway = gateway
         self._event_bus = event_bus
         self._task: asyncio.Task | None = None
@@ -112,7 +113,7 @@ class DemoAgentRuntime:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=2.0)
-            except (asyncio.TimeoutError, asyncio.CancelledError):
+            except (TimeoutError, asyncio.CancelledError):
                 self._task.cancel()
             self._task = None
             logger.info("DemoAgentRuntime: stopped")
@@ -127,10 +128,8 @@ class DemoAgentRuntime:
                     await self._drive_tick()
                 except Exception:
                     logger.exception("DemoAgentRuntime: tick failed")
-                try:
+                with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self._stop.wait(), timeout=4.0)
-                except asyncio.TimeoutError:
-                    pass
         except asyncio.CancelledError:
             pass
 

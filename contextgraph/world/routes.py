@@ -41,7 +41,7 @@ def register_world_routes(app: Any, event_bus: EventBus, graph_service: ContextG
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=5.0)
                     await gateway.process_bus_event(event)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 except Exception:
                     logger.exception("World: error processing event")

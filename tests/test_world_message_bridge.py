@@ -82,6 +82,7 @@ def test_set_bubble_spawns_user_if_missing(gateway):
 def test_http_message_endpoint():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from contextgraph.events import EventBus
     from contextgraph.world.routes import register_world_routes
 
