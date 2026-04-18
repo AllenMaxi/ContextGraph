@@ -410,6 +410,22 @@ export default class LobbyScene extends Phaser.Scene {
       this._removeAgent(msg.agent_id);
     });
 
+    this.events.on('ws:agent_upgrade', (msg) => {
+      const sprite = this.agents.get(msg.agent_id);
+      const newRank = msg.data?.new_rank || msg.data?.rank;
+      if (sprite && newRank && typeof sprite.playUpgradeBurst === 'function') {
+        sprite.playUpgradeBurst(newRank);
+      }
+    });
+
+    this.events.on('ws:handoff_orb', (msg) => {
+      const from = this.agents.get(msg.data?.from_agent);
+      const to = this.agents.get(msg.data?.to_agent);
+      if (from && to && typeof from.playHandoffOrb === 'function') {
+        from.playHandoffOrb(to);
+      }
+    });
+
     this.events.on('ws:agent_move', (msg) => {
       const id = msg.agent_id;
       const data = msg.data || {};

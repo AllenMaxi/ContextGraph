@@ -34,6 +34,28 @@ const GOLD = 0xd4a54a;
 const SPRITE_W = 64;
 const SPRITE_H = 68;
 
+// ── Archetype hat styles (tint + shape hint) ──
+const ARCHETYPE_STYLES = {
+  archmage:   { tint: 0x8b5cf6, shape: 'pointy_tall',   label: '✦' },
+  scout:      { tint: 0x10b981, shape: 'cap_short',     label: '»' },
+  oracle:     { tint: 0x06b6d4, shape: 'pointy_eye',    label: '◉' },
+  scribe:     { tint: 0x94a3b8, shape: 'cap_quill',     label: '✎' },
+  apprentice: { tint: 0x3b82f6, shape: 'pointy_plain',  label: '·' },
+  artificer:  { tint: 0xf97316, shape: 'cap_gear',      label: '⚙' },
+  sage:       { tint: 0xf59e0b, shape: 'pointy_star',   label: '★' },
+  user:       { tint: 0x8b5a2b, shape: 'traveler',      label: '◇' },
+  unknown:    { tint: 0x64748b, shape: 'pointy_plain',  label: '?' },
+};
+
+// ── Rank tiers → cape + aura intensity ──
+const RANK_STYLES = {
+  novice:    { cape: null,       aura: 0.0 },
+  adept:     { cape: 0x94a3b8,   aura: 0.15 },
+  mage:      { cape: 0x3b82f6,   aura: 0.30 },
+  high_mage: { cape: 0x8b5cf6,   aura: 0.50 },
+  avatar:    { cape: GOLD,       aura: 0.85 },
+};
+
 export { COLORS };
 
 export default class AgentSprite extends Phaser.GameObjects.Container {
@@ -47,6 +69,9 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     this.colorIndex = data.color_index ?? 0;
     this.bodyColor = COLORS[this.colorIndex % COLORS.length];
     this.wizardType = WIZARD_TYPES[this.colorIndex % WIZARD_TYPES.length];
+    this.archetype = data.archetype || 'unknown';
+    this.rank = data.rank || 'novice';
+    this.parentAgentId = data.parent_agent_id || null;
     this.currentExpression = 'happy';
     this.currentGlow = 'gray';
     this.currentActivity = data.activity || 'idle';
@@ -115,6 +140,11 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     this._drawGlow(0x64748b);
     this.add(this._glowGfx);
 
+    // ── Rank cape (behind the body) ──
+    this._capeGfx = this.scene.add.graphics();
+    this._drawRankCape(this.rank);
+    this.add(this._capeGfx);
+
     // ── The actual wizard sprite ──
     const firstFrame = `${this.wizardType}_idle_1`;
     this._sprite = this.scene.add.sprite(0, 0, firstFrame);
@@ -124,6 +154,22 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
 
     // Play idle animation
     this._sprite.play(`${this.wizardType}_idle`);
+
+    // ── Archetype hat (above body) ──
+    this._hatGfx = this.scene.add.graphics();
+    this._hatLabel = this.scene.add.text(0, -SPRITE_H / 2 - 14, '', {
+      fontFamily: 'Nunito, sans-serif',
+      fontSize: '10px',
+      fontStyle: 'bold',
+      color: '#fff7ed',
+    }).setOrigin(0.5, 0.5);
+    this._drawArchetypeHat(this.archetype);
+    this.add(this._hatGfx);
+    this.add(this._hatLabel);
+
+    // ── Rank aura emitter (ambient particles) ──
+    this._rankAuraEmitter = null;
+    this._startRankAura(this.rank);
 
     // ── Name tag ──
     this._nameTagBg = this.scene.add.graphics();
@@ -515,7 +561,23 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     this.hideBubble();
     if (!text) return;
 
-    const display = text.length > 60 ? text.substring(0, 57) + '...' : text;
+    // Role tagging: "[u]..." = user prompt, "[a]..." = assistant reply
+    let role = null;
+    let body = text;
+    if (text.length >= 3 && text[0] === '[' && text[2] === ']') {
+      const tag = text[1];
+      if (tag === 'u') role = 'user';
+      else if (tag === 'a') role = 'assistant';
+      body = text.slice(3);
+    }
+
+    const borderColor = role === 'user' ? 0x3b82f6
+      : role === 'assistant' ? 0x8b5cf6
+      : 0xcccccc;
+    const borderAlpha = role ? 0.9 : 0.6;
+    const borderWidth = role ? 2 : 1;
+
+    const display = body.length > 60 ? body.substring(0, 57) + '...' : body;
     const bubbleContainer = this.scene.add.container(0, -SPRITE_H / 2 - 14);
 
     const txt = this.scene.add.text(0, 0, display, {
@@ -539,7 +601,7 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     bg.fillRoundedRect(-bw / 2, -bh, bw, bh, 14);
     bg.fillStyle(0xffffff, 0.98);
     bg.fillTriangle(-7, 0, 7, 0, 0, 10);
-    bg.lineStyle(1, 0xcccccc, 0.6);
+    bg.lineStyle(borderWidth, borderColor, borderAlpha);
     bg.strokeRoundedRect(-bw / 2, -bh, bw, bh, 14);
 
     txt.setY(-padY);
@@ -690,6 +752,15 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
   /* ================================================================== */
 
   updateFromData(data) {
+    if (data.archetype && data.archetype !== this.archetype) {
+      this.setArchetype(data.archetype);
+    }
+    if (data.rank && data.rank !== this.rank) {
+      this.setRank(data.rank);
+    }
+    if (data.parent_agent_id !== undefined) {
+      this.parentAgentId = data.parent_agent_id;
+    }
     if (data.expression && data.expression !== this.currentExpression) {
       this._setExpression(data.expression);
     }
@@ -737,8 +808,308 @@ export default class AgentSprite extends Phaser.GameObjects.Container {
     this._stopTrail();
     this._stopBob();
     this._stopAmbientAura();
+    this._stopRankAura();
     if (this._walkTween) this._walkTween.stop();
     super.destroy(true);
+  }
+
+  /* ================================================================== */
+  /*  Archetype Hat                                                      */
+  /* ================================================================== */
+
+  _drawArchetypeHat(archetype) {
+    const style = ARCHETYPE_STYLES[archetype] || ARCHETYPE_STYLES.unknown;
+    const g = this._hatGfx;
+    g.clear();
+
+    const baseY = -SPRITE_H / 2 + 4;   // sits on the head
+    const tint = style.tint;
+
+    // Hat shape variations — all small cartoon shapes, quick to read.
+    switch (style.shape) {
+      case 'pointy_tall': { // archmage
+        g.fillStyle(tint, 1);
+        g.beginPath();
+        g.moveTo(-12, baseY);
+        g.lineTo(12, baseY);
+        g.lineTo(4, baseY - 26);
+        g.closePath();
+        g.fillPath();
+        g.fillStyle(0x000000, 0.25);
+        g.fillRect(-14, baseY - 2, 28, 3);
+        break;
+      }
+      case 'cap_short': { // scout
+        g.fillStyle(tint, 1);
+        g.fillEllipse(0, baseY - 4, 22, 10);
+        g.fillRect(-2, baseY - 4, 16, 4);
+        break;
+      }
+      case 'pointy_eye': { // oracle
+        g.fillStyle(tint, 1);
+        g.beginPath();
+        g.moveTo(-11, baseY);
+        g.lineTo(11, baseY);
+        g.lineTo(0, baseY - 22);
+        g.closePath();
+        g.fillPath();
+        g.fillStyle(0xfff7ed, 1);
+        g.fillCircle(0, baseY - 10, 2.2);
+        g.fillStyle(0x0f172a, 1);
+        g.fillCircle(0, baseY - 10, 1.1);
+        break;
+      }
+      case 'cap_quill': { // scribe
+        g.fillStyle(tint, 1);
+        g.fillEllipse(0, baseY - 4, 22, 10);
+        g.lineStyle(2, 0xf8fafc, 1);
+        g.beginPath();
+        g.moveTo(8, baseY - 6);
+        g.lineTo(16, baseY - 16);
+        g.strokePath();
+        break;
+      }
+      case 'pointy_plain': { // apprentice, unknown
+        g.fillStyle(tint, 1);
+        g.beginPath();
+        g.moveTo(-10, baseY);
+        g.lineTo(10, baseY);
+        g.lineTo(2, baseY - 20);
+        g.closePath();
+        g.fillPath();
+        break;
+      }
+      case 'cap_gear': { // artificer
+        g.fillStyle(tint, 1);
+        g.fillEllipse(0, baseY - 4, 22, 10);
+        g.fillStyle(0xf8fafc, 1);
+        g.fillCircle(6, baseY - 8, 3);
+        g.fillStyle(tint, 1);
+        g.fillCircle(6, baseY - 8, 1.2);
+        break;
+      }
+      case 'pointy_star': { // sage
+        g.fillStyle(tint, 1);
+        g.beginPath();
+        g.moveTo(-12, baseY);
+        g.lineTo(12, baseY);
+        g.lineTo(3, baseY - 25);
+        g.closePath();
+        g.fillPath();
+        g.fillStyle(0xfff7ed, 1);
+        // mini star
+        g.fillCircle(-2, baseY - 14, 1.6);
+        g.fillCircle(4, baseY - 10, 1.3);
+        break;
+      }
+      case 'traveler': { // user
+        g.fillStyle(tint, 1);
+        g.fillEllipse(0, baseY - 2, 28, 6);  // brim
+        g.fillRect(-7, baseY - 11, 14, 10);  // crown
+        break;
+      }
+      default: {
+        g.fillStyle(tint, 1);
+        g.fillTriangle(-10, baseY, 10, baseY, 0, baseY - 18);
+      }
+    }
+
+    // Tiny label glyph — only visible up close
+    if (this._hatLabel) {
+      this._hatLabel.setText(style.label || '');
+      this._hatLabel.setColor('#fff7ed');
+      this._hatLabel.setY(baseY - 32);
+    }
+  }
+
+  /* ================================================================== */
+  /*  Rank Cape + Aura                                                   */
+  /* ================================================================== */
+
+  _drawRankCape(rank) {
+    const g = this._capeGfx;
+    g.clear();
+    const style = RANK_STYLES[rank] || RANK_STYLES.novice;
+    if (style.cape == null) return;
+
+    const topY = -SPRITE_H / 4;
+    const botY = SPRITE_H / 2 + 4;
+    g.fillStyle(0x000000, 0.22);
+    g.fillTriangle(-10, topY + 4, 10, topY + 4, 0, botY + 4);
+    g.fillStyle(style.cape, 0.9);
+    g.fillTriangle(-12, topY, 12, topY, 0, botY);
+    // Gold hem for top tier
+    if (rank === 'avatar') {
+      g.lineStyle(1.5, GOLD, 1);
+      g.strokeTriangle(-12, topY, 12, topY, 0, botY);
+    }
+  }
+
+  _startRankAura(rank) {
+    this._stopRankAura();
+    const style = RANK_STYLES[rank] || RANK_STYLES.novice;
+    if (style.aura <= 0) return;
+    if (!this.scene.textures.exists('particle_sparkle')) return;
+
+    const density = Math.round(2 + style.aura * 8);      // 2..10
+    const lifespan = 800 + style.aura * 1200;
+    const tint = style.cape || this.bodyColor;
+
+    this._rankAuraEmitter = this.scene.add.particles(0, 0, 'particle_sparkle', {
+      x: () => this.x,
+      y: () => this.y + (Math.random() - 0.5) * 20,
+      speed: { min: 4, max: 14 },
+      angle: { min: 250, max: 290 },
+      scale: { start: 0.25 * style.aura + 0.1, end: 0 },
+      alpha: { start: 0.45, end: 0 },
+      lifespan,
+      tint,
+      frequency: 900 - density * 70,
+      quantity: 1,
+      blendMode: 'ADD',
+    }).setDepth(this.y - 1);
+  }
+
+  _stopRankAura() {
+    if (this._rankAuraEmitter) {
+      this._rankAuraEmitter.destroy();
+      this._rankAuraEmitter = null;
+    }
+  }
+
+  /* ================================================================== */
+  /*  Public: update archetype / rank                                    */
+  /* ================================================================== */
+
+  setArchetype(archetype) {
+    this.archetype = archetype || 'unknown';
+    this._drawArchetypeHat(this.archetype);
+  }
+
+  setRank(rank) {
+    this.rank = rank || 'novice';
+    this._drawRankCape(this.rank);
+    this._startRankAura(this.rank);
+  }
+
+  /* ================================================================== */
+  /*  Upgrade burst — vertical beam + sparkles + "RANK UP"              */
+  /* ================================================================== */
+
+  playUpgradeBurst(newRank) {
+    // Swap cape + aura immediately
+    this.setRank(newRank);
+
+    const style = RANK_STYLES[newRank] || RANK_STYLES.mage;
+    const beamColor = style.cape || 0xfacc15;
+
+    // Vertical beam
+    const beam = this.scene.add.graphics();
+    beam.fillStyle(beamColor, 0.55);
+    beam.fillRect(-4, -SPRITE_H, 8, SPRITE_H * 3);
+    beam.setDepth(this.y + 50);
+    beam.setPosition(this.x, this.y);
+    this.scene.tweens.add({
+      targets: beam,
+      alpha: 0,
+      scaleX: 3,
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onComplete: () => beam.destroy(),
+    });
+
+    // Sparkles burst
+    if (this.scene.textures.exists('particle_sparkle')) {
+      const burst = this.scene.add.particles(this.x, this.y, 'particle_sparkle', {
+        speed: { min: 40, max: 120 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.7, end: 0 },
+        alpha: { start: 0.9, end: 0 },
+        lifespan: 900,
+        tint: beamColor,
+        quantity: 26,
+        blendMode: 'ADD',
+      }).setDepth(this.y + 51);
+      this.scene.time.delayedCall(1200, () => burst.destroy());
+    }
+
+    // Floating label
+    const label = this.scene.add.text(this.x, this.y - SPRITE_H, 'RANK UP', {
+      fontFamily: 'Nunito, sans-serif',
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: '#fde68a',
+      stroke: '#78350f',
+      strokeThickness: 3,
+    }).setOrigin(0.5, 0.5).setDepth(this.y + 52);
+    this.scene.tweens.add({
+      targets: label,
+      y: label.y - 36,
+      alpha: 0,
+      duration: 1400,
+      ease: 'Sine.easeOut',
+      onComplete: () => label.destroy(),
+    });
+
+    // Tiny self-hop
+    this.scene.tweens.add({
+      targets: this._sprite,
+      y: -8,
+      duration: 180,
+      yoyo: true,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  /* ================================================================== */
+  /*  Handoff orb — green orb tween to target, flash target              */
+  /* ================================================================== */
+
+  playHandoffOrb(toSprite) {
+    if (!toSprite) return;
+    const orb = this.scene.add.graphics();
+    orb.fillStyle(0x22c55e, 0.95);
+    orb.fillCircle(0, 0, 7);
+    orb.lineStyle(2, 0xa7f3d0, 0.9);
+    orb.strokeCircle(0, 0, 9);
+    orb.setPosition(this.x, this.y - SPRITE_H / 2);
+    orb.setDepth(10_000);
+
+    const dur = 700;
+    this.scene.tweens.add({
+      targets: orb,
+      x: toSprite.x,
+      y: toSprite.y - SPRITE_H / 2,
+      duration: dur,
+      ease: 'Cubic.easeInOut',
+      onComplete: () => {
+        // Flash target green
+        if (toSprite._glowGfx) {
+          this.scene.tweens.add({
+            targets: toSprite._glowGfx,
+            alpha: { from: 0.2, to: 1 },
+            duration: 180,
+            yoyo: true,
+            repeat: 2,
+          });
+        }
+        // Small absorb burst
+        if (this.scene.textures.exists('particle_sparkle')) {
+          const burst = this.scene.add.particles(toSprite.x, toSprite.y, 'particle_sparkle', {
+            speed: { min: 20, max: 60 },
+            angle: { min: 0, max: 360 },
+            scale: { start: 0.4, end: 0 },
+            alpha: { start: 0.8, end: 0 },
+            lifespan: 500,
+            tint: 0x22c55e,
+            quantity: 12,
+            blendMode: 'ADD',
+          }).setDepth(toSprite.y + 1);
+          this.scene.time.delayedCall(700, () => burst.destroy());
+        }
+        orb.destroy();
+      },
+    });
   }
 
   _drawShadow() {
