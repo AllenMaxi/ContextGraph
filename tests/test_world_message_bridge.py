@@ -75,3 +75,25 @@ def test_set_bubble_spawns_user_if_missing(gateway):
     user = gateway.spatial.get_agent("user")
     assert user is not None
     assert user.archetype == AgentArchetype.USER
+
+
+# ── Task 16: HTTP /message endpoint ──────────────────────────────────
+
+def test_http_message_endpoint():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from contextgraph.events import EventBus
+    from contextgraph.world.routes import register_world_routes
+
+    app = FastAPI()
+    event_bus = EventBus()
+    service = MagicMock()
+    service.repository.list_agents.return_value = []
+    register_world_routes(app, event_bus, service)
+    client = TestClient(app)
+
+    r = client.post("/v1/world/message", json={
+        "actor": "user", "role": "user", "text": "Hello Claude",
+    })
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
