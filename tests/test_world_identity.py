@@ -96,3 +96,55 @@ def test_agent_visual_to_dict_includes_identity():
 def test_new_event_types():
     assert GameEventType.AGENT_UPGRADE == "agent_upgrade"
     assert GameEventType.HANDOFF_ORB == "handoff_orb"
+
+
+# ── Task 5: IdentityStore ────────────────────────────────────────────
+
+def test_identity_store_roundtrip(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+
+    store_path = tmp_path / "identities.json"
+    store = IdentityStore(store_path)
+    rec = IdentityRecord(
+        agent_id="claude",
+        name="Claude",
+        archetype=AgentArchetype.ARCHMAGE,
+        rank=AgentRank.MAGE,
+        color_index=2,
+        tools_count=18,
+        skills_count=4,
+    )
+    store.upsert(rec)
+    store.save()
+
+    reloaded = IdentityStore(store_path)
+    reloaded.load()
+    got = reloaded.get("claude")
+    assert got is not None
+    assert got.archetype == AgentArchetype.ARCHMAGE
+    assert got.rank == AgentRank.MAGE
+    assert got.color_index == 2
+    assert got.tools_count == 18
+
+
+def test_identity_store_get_missing(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore
+    store = IdentityStore(tmp_path / "identities.json")
+    assert store.get("nobody") is None
+
+
+def test_identity_store_atomic_write(tmp_path):
+    from contextgraph.world.identity_store import IdentityStore, IdentityRecord
+
+    store_path = tmp_path / "identities.json"
+    store = IdentityStore(store_path)
+    store.upsert(IdentityRecord(
+        agent_id="claude", name="Claude",
+        archetype=AgentArchetype.ARCHMAGE, rank=AgentRank.NOVICE,
+        color_index=0, tools_count=0, skills_count=0,
+    ))
+    store.save()
+
+    data = json.loads(store_path.read_text())
+    assert "claude" in data
+    assert data["claude"]["archetype"] == "archmage"
