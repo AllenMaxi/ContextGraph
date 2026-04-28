@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/allenmaxi-contextgraph-badge.png)](https://mseep.ai/app/allenmaxi-contextgraph)
+
 <p align="center">
   <img src="docs/assets/contextgraph-hero.jpeg" alt="ContextGraph hero" width="600">
 </p>
